@@ -1,9 +1,22 @@
-# Bangumi 搜索插件使用指南
+<div align="center">
 
-## v1.1新增
+# Bangumi 搜索插件使用指南
+[![repo](https://img.shields.io/badge/repo-v1.2-blue.svg)](https://github.com/united-pooh/astrbot_plugin_bangumi)
+[![License](https://img.shields.io/badge/license-Apacha2.0-green.svg)](LICENSE-2.0)
+[![AstrBot](https://img.shields.io/badge/AstrBot-%3E%3D4.0.0-orange.svg)](https://github.com/Soulter/AstrBot)
+[![Python](https://img.shields.io/badge/python-3.8%2B-blue.svg)](https://www.python.org/)
+
+**和 AI 一起追番**
+
+</div>
+
+> [!NOTE]  
+> 本项目在[astrbot_plugin_bangumi](https://github.com/Amatsutsumi/astrbot_plugin_bangumi) 的基础上进行二次开发
+
+## 
+`/bgm角色搜索 关键词`
 
 ### 角色模糊搜索
-`/bgm角色搜索 关键词`
 
 - 通过名称模糊匹配条目
 - 示例：`/bgm角色搜索 鹿岛理理` 
@@ -60,49 +73,3 @@
 | max_fuzzy_results | int | 5 | 模糊搜索最大结果数 |
 | use_forward | bool | false | 是否使用转发消息样式 |
 | if_fromfilesystem | bool | false | 是否从本地加载图片 |
-
-## 🌟 功能特点
-
-✅ **多维度信息展示**
-- 中文/原名对照
-- 类型图标自动匹配（📚/🎬/🎵）
-- 豆瓣式评分展示（⭐ 8.7）
-
-✅ **智能缓存机制**
-- 搜索结果缓存5分钟
-- 自动请求频率控制（1.1秒/次）
-
-✅ **多重容错处理**
-- 图片加载失败自动降级
-- API限流自动提醒
-- 网络异常自动重试
-
-## 💡 使用技巧
-
-1. **ID精确查询**  
-   在Bangumi官网找到条目ID后使用：  
-   `/bgm搜索 123456`
-
-2. **日文原名搜索**  
-   部分动画用日文名更准确：  
-   `/bgm搜索 進撃の巨人`
-
-3. **类型筛选**  
-   在结果中查看类型标识：  
-   🎬=动画 📚=书籍 🎮=游戏
-
-## ⚠️ 注意事项
-
-1. 每日API调用上限为1000次
-2. 图片显示需要配置正确的TEMP_DIR路径
-3. 中文名可能因翻译不同有差异
-
-## 🔄 更新日志
-
-### v1.1 (2025-07-31)
-- 新增图片缓存系统
-- 优化错误提示文案
-- 修复特殊字符搜索问题
-
-> 遇到问题请提交Issue：  
-> [GitHub仓库](https://github.com/Amatsutsumi/astrbot_plugin_bangumi)
