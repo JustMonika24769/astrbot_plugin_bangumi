@@ -75,11 +75,9 @@ class API_Bangumi():
         try:
             async with aiohttp.ClientSession(headers=self.headers) as session:
                 if method.upper() == 'POST':
-                    # 【已修复】移除 ssl=False
                     async with session.post(url, json=json_data, params=params) as response:
                         return await self._handle_response(response)
                 else:
-                    # 【已修复】移除 ssl=False
                     async with session.get(url, params=params) as response:
                         return await self._handle_response(response)
         except aiohttp.ClientError as e:
@@ -353,7 +351,7 @@ class BangumiPlugin(Star):
         query = cmd[1].strip()
 
         try:
-            await event.reply(f"🔍 正在搜索: {query} ...")
+            event.plain_result(f"🔍 正在搜索: {query} ...")
 
             if query.isdigit():
                 # ID搜索
@@ -394,7 +392,7 @@ class BangumiPlugin(Star):
         query = cmd[1].strip()
         
         try:
-            await event.reply(f"🔍 正在模糊搜索: {query} ...")
+            event.plain_result(f"🔍 正在模糊搜索: {query} ...")
             search_data = await self.bgm_api.search_subjects(query, limit=self.max_fuzzy_results)
             result_text = self.bgm_api.format_fuzzy_list(search_data, self.max_fuzzy_results)
             
@@ -424,7 +422,7 @@ class BangumiPlugin(Star):
         query = cmd[1].strip()
 
         try:
-            await event.reply(f"🔍 正在查询角色: {query} ...")
+            event.plain_result(f"🔍 正在查询角色: {query} ...")
             if query.isdigit():
                 character = await self.bgm_api.get_character_details(int(query))
             else:
@@ -462,7 +460,7 @@ class BangumiPlugin(Star):
         query = cmd[1].strip()
         
         try:
-            await event.reply(f"🔍 正在搜索角色: {query} ...")
+            event.plain_result(f"🔍 正在搜索角色: {query} ...")
             search_data = await self.bgm_api.search_characters(query, limit=self.max_fuzzy_results)
             result_text = self.bgm_api.format_character_list(search_data, self.max_fuzzy_results)
             
@@ -492,7 +490,7 @@ class BangumiPlugin(Star):
         query = cmd[1].strip()
         
         try:
-            await event.reply(f"🔍 正在查询人物: {query} ...")
+            event.plain_result(f"🔍 正在查询人物: {query} ...")
             if query.isdigit():
                 person = await self.bgm_api.get_person_details(int(query))
             else:
@@ -530,7 +528,7 @@ class BangumiPlugin(Star):
         query = cmd[1].strip()
         
         try:
-            await event.reply(f"🔍 正在搜索人物: {query} ...")
+            event.plain_result(f"🔍 正在搜索人物: {query} ...")
             search_data = await self.bgm_api.search_persons(query, limit=self.max_fuzzy_results)
             result_text = self.bgm_api.format_person_list(search_data, self.max_fuzzy_results)
             
@@ -560,7 +558,7 @@ class BangumiPlugin(Star):
         username = cmd[1].strip()
         
         try:
-            await event.reply(f"🔍 正在查询用户: {username} ...")
+            event.plain_result(f"🔍 正在查询用户: {username} ...")
             user = await self.bgm_api.get_user_details(username)
             info_text, avatar_url = self.bgm_api.format_user_info(user)
             
@@ -575,6 +573,10 @@ class BangumiPlugin(Star):
         except Exception as e:
             logger.exception("用户查询异常")
             return event.plain_result("❌ 内部错误，请查看日志")
+
+    async def send(self, event: AstrMessageEvent, content: List[Any]):
+        """发送消息"""
+        pass
 
     # --- 通用构建回复方法 ---
     async def _build_reply(self, img_url: Optional[str], info_text: str, event: AstrMessageEvent):
