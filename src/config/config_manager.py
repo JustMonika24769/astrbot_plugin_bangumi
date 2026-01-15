@@ -1,7 +1,7 @@
 from astrbot.api import AstrBotConfig, logger
+from astrbot.core.utils.astrbot_path import get_astrbot_plugin_path
 import yaml
-
-
+from pathlib import Path
 class ConfigManager:
     def __init__(self, config: AstrBotConfig):
         self.config = config
@@ -15,7 +15,7 @@ class ConfigManager:
     def get_user_agent(self) -> str:
         user_agent = self.config.get("user_agent", "")
         if user_agent == "":
-            with open("metadata.yaml", "r") as f:
+            with open(f"{Path(__file__).resolve().parent.parent.parent}/metadata.yaml", "r") as f:
                 metadata = yaml.safe_load(f)
                 user_agent = f"AstrBot-Bangumi-Plugin/{metadata['version']} (https://github.com/united-pooh/astrbot_plugin_bangumi)"
         return user_agent

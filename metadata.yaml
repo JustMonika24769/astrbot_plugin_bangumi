@@ -1,5 +1,5 @@
-name: bangumi
+name: astrbot_plugin_bangumi
 desc: 一个用于查询 Bangumi条目的插件
-version: v1.2
+version: v1.3
 author: united_pooh
 repo: https://github.com/united-pooh/astrbot_plugin_bangumi
