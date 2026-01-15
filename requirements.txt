@@ -1,3 +1,4 @@
 playwright
+jinja2
 pillow
 aiohttp

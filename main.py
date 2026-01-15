@@ -2,8 +2,10 @@ import json
 import asyncio
 from typing import Optional
 import tempfile
+import os
+from pathlib import Path
 
-from astrbot.api.message_components import Plain, Image as AstrImage
+import astrbot.api.message_components as Comp
 from astrbot.api.event import filter, AstrMessageEvent
 from astrbot.api.star import Context, Star, register
 from astrbot.api.all import AstrBotConfig
@@ -42,7 +44,7 @@ class BangumiPlugin(Star):
             proxy_port = self.config_manager.get_port()
             if proxy_host and proxy_port:
                  # 简单的格式构造，假设是 http 代理
-                 proxy_url = f"http://{proxy_host}:{proxy_port}"
+                 proxy_url = f"{proxy_host}:{proxy_port}"
 
             # 初始化聚合后的API类
             self.service = BangumiService(
@@ -58,6 +60,7 @@ class BangumiPlugin(Star):
 
     @filter.command("bgm搜索")
     async def accurate_search(self, event: AstrMessageEvent):
+
         if not self.service:
             yield event.plain_result("❌ 配置未完成")
             return
@@ -86,19 +89,30 @@ class BangumiPlugin(Star):
             return
 
         # 3. 渲染图片并保存到临时文件
-        renderer = SubjectRenderer()        
-        # 创建一个临时文件用于保存图片
-        with tempfile.NamedTemporaryFile(suffix=".png") as tmp_file:
+        renderer = SubjectRenderer()
+        
+        # 使用 tempfile 创建临时文件
+        # delete=False 确保文件在关闭后不会立即被删除，以便发送
+        with tempfile.NamedTemporaryFile(suffix=".png", delete=False) as tmp_file:
             tmp_path = tmp_file.name
 
-            try:
-                await renderer.render_subject_card(subject_data, output_path=tmp_path)
-                yield event.plain_result("测试")
-                # 4. 发送图片
+        try:
+            # 渲染图片
+            await renderer.render_subject_card(subject_data, output_path=tmp_path)
+            
+            # 4. 发送图片
+            if os.path.exists(tmp_path) and os.path.getsize(tmp_path) > 0:
                 yield event.chain_result([
-                    AstrImage.fromFileSystem(tmp_path)
+                    Comp.Image.fromFileSystem(tmp_path)
                 ])
-            except Exception as e:
-                logger.error(f"渲染或发送失败: {e}")
-                yield event.plain_result(f"❌ 处理失败: {e}")
-        
+            else:
+                yield event.plain_result("❌ 图片生成失败")
+                
+        except Exception as e:
+            logger.error(f"渲染或发送失败: {e}")
+            yield event.plain_result(f"❌ 处理失败: {e}")
+        finally:
+            # 清理临时文件 (可选，视 astrbot 处理机制而定，这里建议稍后清理或依赖系统清理)
+            # 为了保险起见，这里不立即删除，因为 yield 出去的消息可能还没发送完成
+            # 如果确认 astrbot 读取了文件内容，可以使用 os.remove(tmp_path)
+            pass
