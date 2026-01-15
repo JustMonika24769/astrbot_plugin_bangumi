@@ -1,2 +1,6 @@
 __pycache__/
 tests/
+*test*
+.DS_STORE
+settings.json
+data/

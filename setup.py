@@ -1,9 +1,18 @@
 from setuptools import setup, find_packages
 from setuptools.command.install import install
+from setuptools.command.develop import develop
 import subprocess
 import sys
 import os
 
+def install_playwright():
+    print("Installing Playwright browsers...")
+    try:
+        subprocess.check_call([sys.executable, '-m', 'playwright', 'install', 'chromium'])
+    except subprocess.CalledProcessError as e:
+        print(f"Failed to install Playwright browsers: {e}")
+    except Exception as e:
+        print(f"Error installing Playwright browsers: {e}")
 
 class PostInstall(install):
     """
@@ -11,10 +20,15 @@ class PostInstall(install):
     """
     def run(self):
         install.run(self)
-        pw = os.path.join(sys.base_exec_prefix,
-                          'Scripts' if os.name == 'nt' else 'bin',
-                          'playwright')
-        subprocess.check_call([pw, 'install', 'chromium'])   # 只装谷歌内核
+        install_playwright()
+
+class PostDevelop(develop):
+    """
+    运行pip install -e . 后自动安装browser
+    """
+    def run(self):
+        develop.run(self)
+        install_playwright()
 
 setup(
     name='astrbot_plugin_bangumi',
@@ -29,5 +43,8 @@ setup(
             'mytool = mytool.cli:main',
         ]
     },
-    cmdclass={'install': PostInstall},    # 关键：挂钩 post-install
+    cmdclass={
+        'install': PostInstall,
+        'develop': PostDevelop,
+    },    # 关键：挂钩 post-install
 )

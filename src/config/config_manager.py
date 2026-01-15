@@ -22,6 +22,12 @@ class ConfigManager:
 
     def get_max_fuzzy_results(self) -> int:
         return self.config.get("max_fuzzy_results", 5)
+    
+    def get_proxy_http(self) -> str:
+        return self.config.get("proxy_http", "127.0.0.1")
+    
+    def get_port(self) -> str:
+        return self.config.get("port", "7890")
 
     def save_config(self):
         """

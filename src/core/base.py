@@ -8,7 +8,7 @@ from .exceptions import BangumiApiError, BangumiRateLimitError, NoSubjectFound
 
 
 class BaseBangumiService:
-    def __init__(self, access_token: str, user_agent: str):
+    def __init__(self, access_token: str, user_agent: str, proxy: str | None = None):
         if not access_token:
             raise ValueError("Bangumi access_token 未设置")
         self.base_url = "https://api.bgm.tv"
@@ -17,6 +17,7 @@ class BaseBangumiService:
             "Accept": "application/json",
             "User-Agent": user_agent,
         }
+        self.proxy = proxy
         self.last_request_time = 0
         # 这里只放通用的缓存，或者具体业务的缓存放到具体类中
         self.search_cache: Dict[str, Dict] = {}
@@ -41,11 +42,11 @@ class BaseBangumiService:
             async with aiohttp.ClientSession(headers=self.headers) as session:
                 if method.upper() == "POST":
                     async with session.post(
-                        url, json=json_data, params=params
+                        url, json=json_data, params=params, proxy=self.proxy
                     ) as response:
                         return await self._handle_response(response)
                 else:
-                    async with session.get(url, params=params) as response:
+                    async with session.get(url, params=params, proxy=self.proxy) as response:
                         return await self._handle_response(response)
         except aiohttp.ClientError as e:
             logger.error(f"网络请求失败: {e}")

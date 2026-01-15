@@ -22,9 +22,6 @@ class SubjectsService(BaseBangumiService):
         data = await self._request(
             url, method="POST", json_data={"keyword": keyword}, params={"limit": limit}
         )
-
-        # TODO:搞清楚search_cache用在哪, 可能要做清理
-        self.search_cache[cache_key] = data
         return data
 
     async def get_subject_details(self, subject_id: int) -> Dict[str, Any]:
