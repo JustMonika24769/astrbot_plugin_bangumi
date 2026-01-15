@@ -42,8 +42,8 @@ class BangumiPlugin(Star):
 
             # 初始化聚合后的API类
             self.service = BangumiService(
-                self.config_manager.get_access_token(),
-                self.config_manager.get_user_agent(),
+                access_token=self.config_manager.get_access_token(),
+                user_agent=self.config_manager.get_user_agent(),
                 proxy=proxy_url
             )
             logger.info("Bangumi插件初始化成功")

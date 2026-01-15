@@ -1,6 +1,7 @@
 from typing import Dict, Any
 from .base import BaseBangumiService
 
+
 class SubjectsService(BaseBangumiService):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
@@ -12,14 +13,23 @@ class SubjectsService(BaseBangumiService):
             6: "🌐 三次元",
         }
 
-    async def search_subjects(self, keyword: str, limit: int = 10) -> Dict[str, Any]:
+    async def search_subjects(
+        self, keyword: str, limit: int = 10, offset: int = 0, type: int = 2
+    ) -> Dict[str, Any]:
         cache_key = f"search:{keyword}:{limit}"
         if cache_key in self.search_cache:
             return self.search_cache[cache_key]
 
         url = f"{self.base_url}/v0/search/subjects"
         data = await self._request(
-            url, method="POST", json_data={"keyword": keyword}, params={"limit": limit}
+            url,
+            method="POST",
+            json_data={
+                "keyword": keyword,
+                "filter": {"type": [type]},
+                "limit": limit,
+                "offset": offset,
+            },
         )
         return data
 
