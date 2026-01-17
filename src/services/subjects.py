@@ -21,7 +21,7 @@ class SubjectsService(BaseBangumiService):
             return self.search_cache[cache_key]
 
         url = f"{self.base_url}/v0/search/subjects"
-        json_data : dict[str,Any] = {
+        json_data: dict[str, Any] = {
             "keyword": keyword,
             "limit": limit,
             "offset": offset,

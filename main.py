@@ -52,16 +52,18 @@ class BangumiPlugin(Star):
 
     # --- 内部核心逻辑 ---
 
-    async def _render_subjects(self, subjects: list, top_k: int = 1) -> tuple[list[Comp.Image], list[str]]:
+    async def _render_subjects(
+        self, subjects: list, top_k: int = 1
+    ) -> tuple[list[Comp.Image], list[str]]:
         """
         核心渲染逻辑：处理条目列表，获取详情并生成图片。
-        
+
         Args:
             subjects: 条目列表，可以是包含 'id' 的字典列表，也可以是 ID 列表。
             top_k: 最大处理数量。
-            
+
         Returns:
-            tuple[list[Comp.Image], list[str]]: 
+            tuple[list[Comp.Image], list[str]]:
                 - 生成的图片组件列表
                 - 产生的临时文件路径列表（需要调用者负责清理）
         """
@@ -70,14 +72,14 @@ class BangumiPlugin(Star):
 
         # 截取前 top_k 个结果
         iterator = subjects[:top_k]
-        
+
         for item in iterator:
             # 兼容处理：支持直接传ID或传包含id的字典
             if isinstance(item, dict):
                 subject_id = item.get("id")
             else:
                 subject_id = item
-            
+
             if not subject_id:
                 continue
 
@@ -108,10 +110,16 @@ class BangumiPlugin(Star):
                     logger.warning(f"图片生成失败: {subject_id}")
             except Exception as e:
                 logger.error(f"渲染条目 {subject_id} 失败: {e}")
-        
+
         return image_components, temp_files
 
-    async def _handle_search(self, event: AstrMessageEvent, query: str, top_k: int | None = None, subject_type: list[int] | None = None):
+    async def _handle_search(
+        self,
+        event: AstrMessageEvent,
+        query: str,
+        top_k: int | None = None,
+        subject_type: list[int] | None = None,
+    ):
         """
         通用搜索处理逻辑：搜索 -> 渲染 -> 发送 -> 清理
         """
@@ -130,7 +138,7 @@ class BangumiPlugin(Star):
             top_k = int(top_k)
         except (ValueError, TypeError):
             top_k = 1
-            
+
         logger.info(f"搜索: {query}, type={subject_type}, top_k={top_k}")
 
         try:
@@ -143,7 +151,9 @@ class BangumiPlugin(Star):
             logger.info(f"搜索结果数量: {len(search_res['data'])}")
 
             # 2. 渲染条目
-            image_components, temp_files = await self._render_subjects(search_res["data"], top_k)
+            image_components, temp_files = await self._render_subjects(
+                search_res["data"], top_k
+            )
 
             # 3. 发送图片
             if image_components:
@@ -179,7 +189,9 @@ class BangumiPlugin(Star):
             yield result
 
     @filter.command("bgm动画")
-    async def search_anime(self, event: AstrMessageEvent, query: str, top_k: int | None = None):
+    async def search_anime(
+        self, event: AstrMessageEvent, query: str, top_k: int | None = None
+    ):
         """
         搜索动画命令 (type=2)
         """

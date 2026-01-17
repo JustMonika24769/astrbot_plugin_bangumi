@@ -1,8 +1,9 @@
 # src/api/__init__.py
 from .subjects import SubjectsService
 from .characters import CharactersService
-from .persons import PersonsService       
-from .users import UsersService           
+from .persons import PersonsService
+from .users import UsersService
+
 
 # 聚合类：继承所有子Service的功能
 class BangumiService(SubjectsService, CharactersService, PersonsService, UsersService):

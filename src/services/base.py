@@ -6,8 +6,15 @@ from typing import Dict, Any
 from astrbot.api import logger
 from .exceptions import BangumiApiError, BangumiRateLimitError, NoSubjectFound
 
+
 class BaseBangumiService:
-    def __init__(self, access_token: str, user_agent: str, proxy: str | None = None, max_retries: int = 3):
+    def __init__(
+        self,
+        access_token: str,
+        user_agent: str,
+        proxy: str | None = None,
+        max_retries: int = 3,
+    ):
         if not access_token:
             raise ValueError("Bangumi access_token 未设置")
         self.base_url = "https://api.bgm.tv"
@@ -33,23 +40,27 @@ class BaseBangumiService:
         通用API请求函数，带限流和重试处理
         """
         last_exception = None
-        
+
         for attempt in range(self.max_retries):
             current_time = time.time()
             if current_time - self.last_request_time < 1.1:
                 await asyncio.sleep(1.1 - (current_time - self.last_request_time))
             self.last_request_time = time.time()
 
-            logger.info(f"Bangumi API请求 (尝试 {attempt + 1}/{self.max_retries}): {method} {url}")
-            
+            logger.info(
+                f"Bangumi API请求 (尝试 {attempt + 1}/{self.max_retries}): {method} {url}"
+            )
+
             try:
                 async with aiohttp.ClientSession(headers=self.headers) as session:
                     request_context = (
-                        session.post(url, json=json_data, params=params, proxy=self.proxy)
+                        session.post(
+                            url, json=json_data, params=params, proxy=self.proxy
+                        )
                         if method.upper() == "POST"
                         else session.get(url, params=params, proxy=self.proxy)
                     )
-                    
+
                     async with request_context as response:
                         # 遇到 5xx 服务器错误，主动抛出 ClientError 以触发重试
                         if response.status >= 500:
@@ -57,7 +68,7 @@ class BaseBangumiService:
                             # 稍微等待一下再重试
                             await asyncio.sleep(1.5)
                             continue
-                            
+
                         return await self._handle_response(response)
 
             except aiohttp.ClientError as e:
