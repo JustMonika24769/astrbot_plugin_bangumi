@@ -13,10 +13,8 @@ from .src.config.config_manager import ConfigManager
 
 # 导入我们重构后的统一API类
 from .src.services import BangumiService
-from .src.services.storage import StorageManager
 from .src.render.subject_renderer import SubjectRenderer
 from .src.render.calendar_renderer import CalendarRenderer
-from .src.render.render_result import RenderResult
 
 from typing import Any
 
@@ -26,7 +24,7 @@ from typing import Any
     "Gemini",
     "一个用于查询Bangumi条目信息的插件",
     "1.3.0",
-    "https://github.com/bangumi/api",
+    "https://github.com/united-pooh/astrbot_plugin_bangumi",
 )
 class BangumiPlugin(Star):
     def __init__(self, context: Context, config: AstrBotConfig):
@@ -56,6 +54,10 @@ class BangumiPlugin(Star):
             logger.error(f"插件初始化失败: {e}")
 
     async def initialize(self):
+        """
+        插件加载时自动运行
+        自动安装web driver以及依赖
+        """
         logger.info("正在检查并安装插件依赖...")
         try:
             # 安装 Playwright 系统依赖
@@ -108,7 +110,7 @@ class BangumiPlugin(Star):
         """
         image_components = []
         temp_files = []
-
+        subjects_id_list = []
         # 截取前 top_k 个结果
         iterator = subjects[:top_k]
 
@@ -121,6 +123,8 @@ class BangumiPlugin(Star):
 
             if not subject_id:
                 continue
+
+            subjects_id_list.append(subject_id)
 
             # 获取详细信息
             subject_data = await self.service.get_subject_details(subject_id)
@@ -137,20 +141,20 @@ class BangumiPlugin(Star):
             temp_files.append(tmp_path)
 
         try:
-                await renderer.render_subject_card(
-                    subject_data,
-                    output_path=tmp_path,
-                    max_retries=self.config_manager.get_max_retries(),
+            await renderer.render_subject_card(
+                subject_data,
+                output_path=tmp_path,
+                max_retries=self.config_manager.get_max_retries(),
             )
 
-                if os.path.exists(tmp_path) and os.path.getsize(tmp_path) > 0:
-                    image_components.append(Comp.Image.fromFileSystem(tmp_path))
-                else:
-                    logger.warning(f"图片生成失败: {subject_id}")
+            if os.path.exists(tmp_path) and os.path.getsize(tmp_path) > 0:
+                image_components.append(Comp.Image.fromFileSystem(tmp_path))
+            else:
+                logger.warning(f"图片生成失败: {subject_id}")
         except Exception as e:
-                logger.error(f"渲染条目 {subject_id} 失败: {e}")
+            logger.error(f"渲染条目 {subject_id} 失败: {e}")
 
-        return image_components, temp_files
+        return image_components, temp_files, subjects_id_list
 
     async def _handle_subject(
         self,
@@ -161,6 +165,7 @@ class BangumiPlugin(Star):
         subject_tags: list[str] | None = None,
     ):
         """
+        渲染图片全流程
         通用搜索处理逻辑：搜索 -> 渲染 -> 发送 -> 清理
         """
         if not self.service:
@@ -204,8 +209,6 @@ class BangumiPlugin(Star):
                 yield event.plain_result("❌ 未能生成任何图片")
 
             # 4. 清理临时文件
-            # 注意：这里在 yield 之后执行。AstrBot 可能会在 yield 后继续执行生成器的剩余部分。
-            # 为了确保图片已发送，稍作等待。
             await asyncio.sleep(1)
             for path in temp_files:
                 try:
@@ -280,7 +283,9 @@ class BangumiPlugin(Star):
         """
         通用搜索命令
         """
-        async for result in self._handle_subject(event, query, top_k, subject_type=None):
+        async for result in self._handle_subject(
+            event, query, top_k, subject_type=None
+        ):
             yield result
 
     @filter.command("bgm番剧")
@@ -332,9 +337,9 @@ class BangumiPlugin(Star):
 
         # 获取 group_id
         group_id = None
-        if hasattr(event, 'message_obj') and hasattr(event.message_obj, 'group_id'):
+        if hasattr(event, "message_obj") and hasattr(event.message_obj, "group_id"):
             group_id = event.message_obj.group_id
-        
+
         if not group_id:
             yield event.plain_result("❌ 无法获取群组ID，请在群聊中使用")
             return
@@ -342,7 +347,7 @@ class BangumiPlugin(Star):
         if not query:
             yield event.plain_result("❌ 请提供番剧名称")
             return
-            
+
         logger.info(f"处理追番请求: {query}, group_id={group_id}")
 
         try:
@@ -350,41 +355,7 @@ class BangumiPlugin(Star):
             search_res = await self.service.search_subjects(
                 keyword=query, subject_type=[2], subject_tags=None
             )
-            if not search_res or "data" not in search_res or not search_res["data"]:
-                yield event.plain_result("🔍 未找到相关条目")
-                return
-
-            # 2. 渲染条目 (Top 1)
-            (
-                image_components,
-                temp_files,
-                subjects_id_list,
-            ) = await self._render_subjects(search_res["data"], top_k=1)
-
-            # 3. 发送图片
-            if image_components:
-                yield event.chain_result(image_components)
-            else:
-                yield event.plain_result("❌ 未能生成图片")
-                return
-
-            # 4. 存储订阅
-            if subjects_id_list:
-                subject_id = subjects_id_list[0]
-                if self.storage.add_subscription(group_id, str(subject_id)):
-                    yield event.plain_result(f"✅ 已成功添加订阅 (ID: {subject_id})")
-                else:
-                    yield event.plain_result(f"⚠️ 订阅可能已存在或保存失败")
-            
-            # 5. 清理临时文件
-            await asyncio.sleep(1)
-            for path in temp_files:
-                try:
-                    if os.path.exists(path):
-                        os.remove(path)
-                except Exception as e:
-                    logger.warning(f"清理临时文件失败 {path}: {e}")
-
+            yield event.plain_result(str(search_res))
         except Exception as e:
             logger.error(f"处理追番请求失败: {e}")
             yield event.plain_result(f"❌ 处理失败: {e}")
