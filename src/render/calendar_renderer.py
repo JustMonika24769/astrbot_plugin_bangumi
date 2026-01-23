@@ -3,11 +3,34 @@ from pathlib import Path
 from typing import List, Dict, Any, Optional
 import jinja2
 from astrbot.api import logger
-from .renderer import Renderer
 import datetime
 
+from utils.browser import create_page
+from utils.async_utils import retry
 
-class CalendarRenderer(Renderer):
+
+def reorder_days(calendar_data: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    """
+    重新排序天数，使今天排在第一位。
+    """
+    # 获取今天的星期 (1-7, Mon-Sun)
+    # datetime.datetime.now().isoweekday() 返回 1-7
+    today_id = datetime.datetime.now().isoweekday()
+
+    # 寻找今天在列表中的索引
+    today_index = 0
+    for i, day in enumerate(calendar_data):
+        if day.get("weekday", {}).get("id") == today_id:
+            today_index = i
+            day["is_today"] = True
+            break
+
+    # 重新排序：从今天开始，循环一周
+    reordered = calendar_data[today_index:] + calendar_data[:today_index]
+    return reordered
+
+
+class CalendarRenderer:
     def __init__(self):
         super().__init__()
         # 设置 Jinja2 环境
@@ -15,28 +38,6 @@ class CalendarRenderer(Renderer):
         self.template_env = jinja2.Environment(
             loader=jinja2.FileSystemLoader(str(template_dir)), autoescape=True
         )
-
-    def _reorder_days(
-        self, calendar_data: List[Dict[str, Any]]
-    ) -> List[Dict[str, Any]]:
-        """
-        重新排序天数，使今天排在第一位。
-        """
-        # 获取今天的星期 (1-7, Mon-Sun)
-        # datetime.datetime.now().isoweekday() 返回 1-7
-        today_id = datetime.datetime.now().isoweekday()
-
-        # 寻找今天在列表中的索引
-        today_index = 0
-        for i, day in enumerate(calendar_data):
-            if day.get("weekday", {}).get("id") == today_id:
-                today_index = i
-                day["is_today"] = True
-                break
-
-        # 重新排序：从今天开始，循环一周
-        reordered = calendar_data[today_index:] + calendar_data[:today_index]
-        return reordered
 
     async def render_calendar(
         self,
@@ -49,13 +50,13 @@ class CalendarRenderer(Renderer):
         渲染放送表图片。
         """
         try:
-            reordered_days = self._reorder_days(calendar_data)
+            reordered_days = reorder_days(calendar_data)
         except Exception as e:
             logger.error(f"处理日历数据失败: {e}")
             return None
 
         async def _render_task():
-            page = await self.create_page()
+            page = await create_page()
             if not page:
                 raise Exception("浏览器页面创建失败")
 
@@ -121,7 +122,7 @@ class CalendarRenderer(Renderer):
                         pass
 
         try:
-            return await self.retry(_render_task, retries=max_retries, delay=1.0)
+            return await retry(_render_task, retries=max_retries, delay=1.0)
         except Exception as e:
             logger.error(f"渲染放送表失败: {e}")
             return None

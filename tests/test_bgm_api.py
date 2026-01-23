@@ -21,7 +21,7 @@ except ImportError:
     astrbot_api_mock = MagicMock()
     sys.modules["astrbot.api"] = astrbot_api_mock
 
-    # Setup a simple logger that prints to stdout
+    # Set up a simple logger that prints to stdout
     mock_logger = MagicMock()
     mock_logger.info = lambda msg: print(f"[INFO] {msg}")
     mock_logger.warning = lambda msg: print(f"[WARN] {msg}")

@@ -94,7 +94,7 @@ class BangumiPlugin(Star):
 
     async def _render_subjects(
         self, subjects: list, top_k: int = 1
-    ) -> tuple[list[Comp.Image], list[str]]:
+    ) -> tuple[list[Comp.Image], list[str], list[str]]:
         """
         核心渲染逻辑：处理条目列表，获取详情并生成图片。
 
@@ -103,56 +103,48 @@ class BangumiPlugin(Star):
             top_k: 最大处理数量。
 
         Returns:
-            tuple[list[Comp.Image], list[str]]:
+            tuple[list[Comp.Image], list[str], list[str]]:
                 - 生成的图片组件列表
                 - 产生的临时文件路径列表（需要调用者负责清理）
                 - 成功的条目ID列表
         """
-        image_components = []
-        temp_files = []
         subjects_id_list = []
-        # 截取前 top_k 个结果
-        iterator = subjects[:top_k]
-
-        for item in iterator:
-            # 兼容处理：支持直接传ID或传包含id的字典
+        data_list = []
+        temp_files = []
+        # 构造第一个传入参数
+        for item in subjects[:top_k]:
+            subject_id = None
             if isinstance(item, dict):
-                subject_id = item.get("id")
-            else:
-                subject_id = item
-
-            if not subject_id:
+                subject_id = item.get("id", None)
+            if subject_id is None:
                 continue
-
             subjects_id_list.append(subject_id)
 
-            # 获取详细信息
             subject_data = await self.service.get_subject_details(subject_id)
-            if not subject_data:
+            if len(subject_data) == 0:
                 logger.warning(f"获取条目 {subject_id} 详情失败，跳过")
                 continue
-
-            # 渲染图片
-            renderer = SubjectRenderer()
+            data_list.append(subject_data)
 
             # 创建临时文件
             tmp_fd, tmp_path = tempfile.mkstemp(suffix=".png")
             os.close(tmp_fd)  # 立即关闭文件描述符，只保留路径
             temp_files.append(tmp_path)
-
+        
+        # 创建渲染器实例
+        renderer = SubjectRenderer()
+        await renderer.render_batch_subject_cards(
+            data_list=data_list, output_paths=temp_files
+        )
+        image_components = []
         try:
-            await renderer.render_subject_card(
-                subject_data,
-                output_path=tmp_path,
-                max_retries=self.config_manager.get_max_retries(),
-            )
-
-            if os.path.exists(tmp_path) and os.path.getsize(tmp_path) > 0:
-                image_components.append(Comp.Image.fromFileSystem(tmp_path))
-            else:
-                logger.warning(f"图片生成失败: {subject_id}")
+            for path in temp_files:
+                if os.path.exists(path) and os.path.getsize(path) > 0:
+                    image_components.append(Comp.Image.fromFileSystem(path))
+                else:
+                    logger.warning("图片生成失败")
         except Exception as e:
-            logger.error(f"渲染条目 {subject_id} 失败: {e}")
+            logger.error(f"渲染图片失败: {e}")
 
         return image_components, temp_files, subjects_id_list
 

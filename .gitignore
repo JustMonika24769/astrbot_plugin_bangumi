@@ -4,3 +4,4 @@ settings.json
 data/
 *.xml
 *.iml
+.env
