@@ -1,5 +1,6 @@
-from astrbot.api import logger
 import asyncio
+
+from astrbot.api import logger
 
 
 async def retry(func, retries: int = 3, delay: float = 1.0, *args, **kwargs) -> None:

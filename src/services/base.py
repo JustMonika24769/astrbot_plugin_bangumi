@@ -1,9 +1,11 @@
-import time
-import json
 import asyncio
+import json
+import time
+from typing import Any, Dict
+
 import aiohttp
-from typing import Dict, Any
 from astrbot.api import logger
+
 from .exceptions import BangumiApiError, BangumiRateLimitError, NoSubjectFound
 
 

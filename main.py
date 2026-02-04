@@ -1,22 +1,22 @@
 import asyncio
-import tempfile
 import os
+import tempfile
+from typing import Any
 
 import astrbot.api.message_components as Comp
-from astrbot.api.event import filter, AstrMessageEvent
-from astrbot.api.star import Context, Star, register
-from astrbot.api.all import AstrBotConfig
 from astrbot.api import logger
+from astrbot.api.all import AstrBotConfig
+from astrbot.api.event import AstrMessageEvent, filter
+from astrbot.api.star import Context, Star, register
 
 # 导入配置管理器
 from .src.config.config_manager import ConfigManager
+from .src.render.calendar_renderer import CalendarRenderer
+from .src.render.subject_renderer import SubjectRenderer
 
 # 导入我们重构后的统一API类
 from .src.services import BangumiService
-from .src.render.subject_renderer import SubjectRenderer
-from .src.render.calendar_renderer import CalendarRenderer
-
-from typing import Any
+from .src.services.storage import StorageManager
 
 
 @register(
@@ -31,19 +31,25 @@ class BangumiPlugin(Star):
         super().__init__(context)
         self.config = config
         self.config_manager = ConfigManager(config)
+        self.max_fuzzy_results = 10
+        
+        # 1. 优先初始化存储，确保即使网络配置失败也能访问数据库
+        try:
+            self.storage = StorageManager()
+        except Exception as e:
+            logger.error(f"数据库初始化失败: {e}")
+            self.storage = None
 
-        self.max_fuzzy_results = 10  # 假设的默认值
         self.service = None
         try:
-            # 构造代理 URL (如果配置了)
+            # 构造代理 URL
             proxy_url = None
             proxy_host = self.config_manager.get_proxy_http()
             proxy_port = self.config_manager.get_port()
             if proxy_host and proxy_port:
-                # 简单的格式构造，假设是 http 代理
                 proxy_url = f"{proxy_host}:{proxy_port}"
 
-            # 初始化聚合后的API类
+            # 初始化 API 服务
             self.service = BangumiService(
                 access_token=self.config_manager.get_access_token(),
                 user_agent=self.config_manager.get_user_agent(),
@@ -51,14 +57,25 @@ class BangumiPlugin(Star):
             )
 
         except ValueError as e:
-            logger.error(f"插件初始化失败: {e}")
+            logger.error(f"插件配置错误: {e}")
+        except Exception as e:
+            logger.error(f"服务初始化失败: {e}")
 
     async def initialize(self):
         """
         插件加载时自动运行
-        自动安装web driver以及依赖
+        检查并安装依赖 (仅首次运行)
         """
-        logger.info("正在检查并安装插件依赖...")
+        # 获取插件数据目录
+        from astrbot.core.utils.astrbot_path import get_astrbot_data_path
+        data_dir = get_astrbot_data_path()
+        flag_file = os.path.join(data_dir, "plugin_data", "astrbot_plugin_bangumi", ".playwright_installed")
+        
+        if os.path.exists(flag_file):
+            logger.info("Playwright 依赖标记已存在，跳过安装检查。")
+            return
+
+        logger.info("正在检查并安装插件依赖 (首次运行)...")
         try:
             # 安装 Playwright 系统依赖
             logger.info("正在运行 playwright install-deps...")
@@ -67,11 +84,10 @@ class BangumiPlugin(Star):
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE,
             )
-            stdout, stderr = await process.communicate()
+            _, stderr = await process.communicate()
             if process.returncode != 0:
                 logger.warning(f"系统依赖安装可能失败 (非关键错误): {stderr.decode()}")
-                return
-            logger.info("系统依赖安装完成")
+                # 注意：这里不return，尝试继续安装chromium
 
             # 安装 Playwright Chromium
             logger.info("正在安装 Playwright Chromium...")
@@ -80,12 +96,16 @@ class BangumiPlugin(Star):
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE,
             )
-            stdout, stderr = await process.communicate()
+            _, stderr = await process.communicate()
 
             if process.returncode == 0:
                 logger.info("Playwright Chromium 安装成功")
+                # 创建标记文件
+                with open(flag_file, "w") as f:
+                    f.write("installed")
             else:
                 logger.warning(f"Playwright Chromium 安装返回错误: {stderr.decode()}")
+                
             logger.info("Bangumi插件初始化成功")
         except Exception as e:
             logger.error(f"依赖安装流程失败: {e}")
@@ -130,7 +150,7 @@ class BangumiPlugin(Star):
             tmp_fd, tmp_path = tempfile.mkstemp(suffix=".png")
             os.close(tmp_fd)  # 立即关闭文件描述符，只保留路径
             temp_files.append(tmp_path)
-        
+
         # 创建渲染器实例
         renderer = SubjectRenderer()
         await renderer.render_batch_subject_cards(
@@ -321,6 +341,43 @@ class BangumiPlugin(Star):
         async for result in self._handle_calendar(event):
             yield result
 
+    @filter.command("bgm_debug")
+    async def bgm_debug(self, event: AstrMessageEvent):
+        """调试指令：查看数据库状态"""
+        if not self.storage:
+            yield event.plain_result("Storage not initialized")
+            return
+
+        msg = [f"DB Path: {self.storage.db_path}"]
+        if os.path.exists(self.storage.db_path):
+            msg.append(
+                f"File exists, size: {os.path.getsize(self.storage.db_path)} bytes"
+            )
+        else:
+            msg.append("File does NOT exist")
+
+        # 查询数据
+        try:
+            from .src.services.storage import BangumiSubject, Subscription
+
+            session = self.storage.Session()
+
+            subjects = session.query(BangumiSubject).all()
+            msg.append(f"\nSubjects ({len(subjects)}):")
+            for s in subjects:
+                msg.append(f"- {s.name} ({s.subject_id})")
+
+            subs = session.query(Subscription).all()
+            msg.append(f"\nSubscriptions ({len(subs)}):")
+            for s in subs:
+                msg.append(f"- {s.group_id} -> {s.subject_id}")
+
+            session.close()
+        except Exception as e:
+            msg.append(f"\nError querying DB: {e}")
+
+        yield event.plain_result("\n".join(msg))
+
     @filter.command("追番")
     async def subscribe(self, event: AstrMessageEvent, query: str):
         if not self.service:
@@ -331,6 +388,8 @@ class BangumiPlugin(Star):
         group_id = None
         if hasattr(event, "message_obj") and hasattr(event.message_obj, "group_id"):
             group_id = event.message_obj.group_id
+        elif hasattr(event, "session_id"):  # Fallback for some adapters
+            group_id = event.session_id
 
         if not group_id:
             yield event.plain_result("❌ 无法获取群组ID，请在群聊中使用")
@@ -343,11 +402,41 @@ class BangumiPlugin(Star):
         logger.info(f"处理追番请求: {query}, group_id={group_id}")
 
         try:
-            # 1. 搜索条目
-            search_res = await self.service.search_subjects(
-                keyword=query, subject_type=[2], subject_tags=None
+            # 使用 Service 层的新方法进行匹配
+            error_msg, subject_info = await self.service.match_subscribable_subject(
+                query
             )
-            yield event.plain_result(str(search_res))
+
+            if error_msg:
+                yield event.plain_result(error_msg)
+                return
+
+            if not subject_info:
+                yield event.plain_result("❌ 未知错误：未能获取番剧信息")
+                return
+
+            # 解包数据
+            subject_id = subject_info["subject_id"]
+            name = subject_info["name"]
+
+            # 入库
+            self.storage.update_subject(
+                subject_id=subject_id,
+                name=name,
+                air_date=subject_info["air_date"],
+                total_episodes=subject_info["total_episodes"],
+            )
+
+            # 添加订阅
+            success = self.storage.add_subscription(group_id, subject_id)
+
+            if success:
+                yield event.plain_result(
+                    f"✅ 成功订阅《{name}》！\n如有更新将推送到本群。"
+                )
+            else:
+                yield event.plain_result("❌ 订阅失败，数据库错误。")
+
         except Exception as e:
             logger.error(f"处理追番请求失败: {e}")
             yield event.plain_result(f"❌ 处理失败: {e}")

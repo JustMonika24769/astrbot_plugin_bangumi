@@ -41,7 +41,7 @@
             padding: 24px;
             box-sizing: border-box;
             gap: 28px;
-            border: 1px solid rgba(0,0,0,0.02);
+            border: 1px solid rgba(0, 0, 0, 0.02);
             position: relative;
         }
 
@@ -53,7 +53,7 @@
             right: -50px;
             width: 150px;
             height: 150px;
-            background: linear-gradient(135deg, var(--secondary-color) 0%, rgba(255,255,255,0) 70%);
+            background: linear-gradient(135deg, var(--secondary-color) 0%, rgba(255, 255, 255, 0) 70%);
             border-radius: 50%;
             z-index: 0;
             opacity: 0.6;
@@ -93,7 +93,7 @@
             background: #fff;
             border-radius: 12px;
             padding: 12px 8px;
-            box-shadow: 0 4px 12px rgba(0,0,0,0.04);
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.04);
             margin-top: auto; /* 推到底部 */
             display: flex;
             flex-direction: column;
@@ -137,7 +137,7 @@
             min-height: 2px; /* 确保0分也能看到一点点底 */
             transition: height 0.3s;
         }
-        
+
         /* 高分段颜色加深 */
         .bar-wrapper:nth-child(n+8) .bar {
             background-color: var(--primary-color);
@@ -267,7 +267,7 @@
             font-weight: 500;
             transition: all 0.2s;
         }
-        
+
         /* 简介 */
         .summary-container {
             margin-top: 8px;
@@ -299,7 +299,7 @@
             overflow: hidden;
             text-overflow: ellipsis;
         }
-        
+
         /* 底部信息 */
         .footer {
             margin-top: auto;
@@ -323,7 +323,7 @@
         .info-icon {
             opacity: 0.7;
         }
-        
+
         .id-badge {
             margin-left: auto;
             font-family: monospace;
@@ -340,27 +340,27 @@
     </style>
 </head>
 <body>
-    <div id="card">
-        <!-- 左侧封面 -->
-        <div class="cover-container">
-            <div class="cover-wrapper">
-                {% if image_url %}
-                <img class="cover-image" 
-                     src="{{ image_url }}" 
-                     alt="Cover" 
+<div id="card">
+    <!-- 左侧封面 -->
+    <div class="cover-container">
+        <div class="cover-wrapper">
+            {% if image_url %}
+                <img class="cover-image"
+                     src="{{ image_url }}"
+                     alt="Cover"
                      referrerpolicy="no-referrer"
                      onerror="this.style.display='none'">
-                {% endif %}
-            </div>
+            {% endif %}
+        </div>
 
-            <!-- 评分直方图 (左下角) -->
-            {% if rating and rating.count %}
+        <!-- 评分直方图 (左下角) -->
+        {% if rating and rating.count %}
             <div class="chart-container">
                 <div class="chart-title">Rating Dist</div>
                 <div class="chart-bars">
                     <!-- 使用过滤器直接获取最大值，避免循环作用域问题 -->
                     {% set max_count = rating.count.values() | max if rating.count else 1 %}
-                    
+
                     {% for i in range(1, 11) %}
                         {% set count = rating.count[i|string] or 0 %}
                         {% set height_percent = (count / max_count * 100) if max_count > 0 else 0 %}
@@ -384,21 +384,21 @@
                     <span class="chart-label">10</span>
                 </div>
             </div>
+        {% endif %}
+    </div>
+
+    <!-- 右侧信息 -->
+    <div class="content">
+        <!-- 标题 -->
+        <div class="header">
+            <h1 class="title">{{ name_cn or name }}</h1>
+            {% if name_cn and name != name_cn %}
+                <p class="subtitle">{{ name }}</p>
             {% endif %}
         </div>
 
-        <!-- 右侧信息 -->
-        <div class="content">
-            <!-- 标题 -->
-            <div class="header">
-                <h1 class="title">{{ name_cn or name }}</h1>
-                {% if name_cn and name != name_cn %}
-                <p class="subtitle">{{ name }}</p>
-                {% endif %}
-            </div>
-
-            <!-- 评分与排名 -->
-            {% if rating %}
+        <!-- 评分与排名 -->
+        {% if rating %}
             <div class="meta-row">
                 <div class="score-badge">
                     <span class="star-icon">★</span>
@@ -406,63 +406,63 @@
                 </div>
                 {% set display_rank = rating.rank or rank %}
                 {% if display_rank %}
-                <div class="rank-badge">
-                    #{{ display_rank }}
-                </div>
+                    <div class="rank-badge">
+                        #{{ display_rank }}
+                    </div>
                 {% endif %}
                 <div class="rating-count">
                     {{ rating.total }} 人评分
                 </div>
                 {% if collection and collection.doing %}
-                <div class="rating-count" style="margin-left: 8px;">
-                    {{ collection.doing }} 人在看
-                </div>
+                    <div class="rating-count" style="margin-left: 8px;">
+                        {{ collection.doing }} 人在看
+                    </div>
                 {% endif %}
             </div>
-            {% else %}
-             <div class="meta-row">
+        {% else %}
+            <div class="meta-row">
                 <span class="no-data">暂无评分</span>
             </div>
-            {% endif %}
+        {% endif %}
 
-            <!-- 标签 -->
-            {% if tags %}
+        <!-- 标签 -->
+        {% if tags %}
             <div class="tags-container">
                 {% for tag in tags[:8] %}
-                <span class="tag">{{ tag.name }}</span>
+                    <span class="tag">{{ tag.name }}</span>
                 {% endfor %}
             </div>
-            {% endif %}
+        {% endif %}
 
-            <!-- 简介 -->
-            <div class="summary-container">
-                <div class="summary-label">STORY</div>
-                <p class="summary-text">
-                    {{ summary if summary else '暂无简介' }}
-                </p>
-            </div>
-            
-            <!-- 底部额外信息 -->
-            <div class="footer">
-                {% if date %}
+        <!-- 简介 -->
+        <div class="summary-container">
+            <div class="summary-label">STORY</div>
+            <p class="summary-text">
+                {{ summary if summary else '暂无简介' }}
+            </p>
+        </div>
+
+        <!-- 底部额外信息 -->
+        <div class="footer">
+            {% if date %}
                 <div class="info-item">
                     <span class="info-icon">📅</span>
                     <span>{{ date }}</span>
                 </div>
-                {% endif %}
-                {% if platform %}
+            {% endif %}
+            {% if platform %}
                 <div class="info-item">
                     <span class="info-icon">📺</span>
                     <span>{{ platform }}</span>
                 </div>
-                {% endif %}
-                 {% if id %}
+            {% endif %}
+            {% if id %}
                 <div class="id-badge">
                     ID: {{ id }}
                 </div>
-                {% endif %}
-            </div>
+            {% endif %}
         </div>
     </div>
+</div>
 </body>
 </html>

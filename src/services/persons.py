@@ -1,5 +1,6 @@
+from typing import Any, Dict
+
 from .base import BaseBangumiService
-from typing import Dict, Any
 
 
 class PersonsService(BaseBangumiService):

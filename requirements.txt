@@ -3,4 +3,4 @@ jinja2
 pillow
 aiohttp
 
-astrbot
+SQLAlchemy

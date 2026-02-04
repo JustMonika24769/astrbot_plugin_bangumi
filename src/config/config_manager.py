@@ -1,6 +1,7 @@
-from astrbot.api import AstrBotConfig, logger
-import yaml
 from pathlib import Path
+
+import yaml
+from astrbot.api import AstrBotConfig, logger
 
 
 class ConfigManager:

@@ -75,7 +75,7 @@
             display: flex;
             flex-direction: column;
             min-height: 600px;
-            border: 1px solid rgba(0,0,0,0.03);
+            border: 1px solid rgba(0, 0, 0, 0.03);
             backdrop-filter: blur(10px);
         }
 
@@ -206,7 +206,7 @@
             box-shadow: 0 2px 8px rgba(251, 140, 0, 0.4);
             z-index: 2;
         }
-        
+
         .empty-day {
             padding: 40px 20px;
             text-align: center;
@@ -217,13 +217,14 @@
     </style>
 </head>
 <body>
-    <div class="container">
-        <header class="calendar-header">
-            <h1 class="calendar-title">每日放送表 <span style="font-size: 16px; color: var(--text-sub); font-weight: 500;">Bangumi Calendar</span></h1>
-        </header>
+<div class="container">
+    <header class="calendar-header">
+        <h1 class="calendar-title">每日放送表 <span style="font-size: 16px; color: var(--text-sub); font-weight: 500;">Bangumi Calendar</span>
+        </h1>
+    </header>
 
-        <div class="calendar-grid">
-            {% for day in days %}
+    <div class="calendar-grid">
+        {% for day in days %}
             <div class="day-column {{ 'today' if day.is_today else '' }}">
                 <div class="day-header">
                     <span class="day-name-cn">{{ day.weekday.cn }}</span>
@@ -231,35 +232,35 @@
                 </div>
                 <div class="items-list">
                     {% for item in day['items'] %}
-                    <div class="anime-item">
-                        <div class="anime-cover-wrapper">
-                            <img class="anime-cover" 
-                                 src="{{ item.images.common or item.images.large or item.images.medium }}"
-                                 alt="{{ item.name_cn or item.name }}"
-                                 referrerpolicy="no-referrer">
-                        </div>
-                        <div class="anime-info">
-                            <div class="anime-title">{{ item.name_cn or item.name }}</div>
-                            <div class="anime-meta">
-                                {% if item.rating and item.rating.score %}
-                                <div class="anime-score">
-                                    <span>★</span>
-                                    <span>{{ item.rating.score }}</span>
+                        <div class="anime-item">
+                            <div class="anime-cover-wrapper">
+                                <img class="anime-cover"
+                                     src="{{ item.images.common or item.images.large or item.images.medium }}"
+                                     alt="{{ item.name_cn or item.name }}"
+                                     referrerpolicy="no-referrer">
+                            </div>
+                            <div class="anime-info">
+                                <div class="anime-title">{{ item.name_cn or item.name }}</div>
+                                <div class="anime-meta">
+                                    {% if item.rating and item.rating.score %}
+                                        <div class="anime-score">
+                                            <span>★</span>
+                                            <span>{{ item.rating.score }}</span>
+                                        </div>
+                                    {% endif %}
+                                    {% if item.rank %}
+                                        <div class="anime-rank">#{{ item.rank }}</div>
+                                    {% endif %}
                                 </div>
-                                {% endif %}
-                                {% if item.rank %}
-                                <div class="anime-rank">#{{ item.rank }}</div>
-                                {% endif %}
                             </div>
                         </div>
-                    </div>
                     {% else %}
-                    <div class="empty-day">今日无更新内容</div>
+                        <div class="empty-day">今日无更新内容</div>
                     {% endfor %}
                 </div>
             </div>
-            {% endfor %}
-        </div>
+        {% endfor %}
     </div>
+</div>
 </body>
 </html>

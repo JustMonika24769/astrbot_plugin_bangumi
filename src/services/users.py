@@ -1,6 +1,7 @@
-from .base import BaseBangumiService
-from typing import Dict, Any
+from typing import Any, Dict
 from urllib.parse import quote
+
+from .base import BaseBangumiService
 
 
 class UsersService(BaseBangumiService):

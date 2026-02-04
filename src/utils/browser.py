@@ -1,6 +1,5 @@
 from astrbot.api import logger
-from playwright.async_api import async_playwright
-from playwright.async_api import ViewportSize
+from playwright.async_api import ViewportSize, async_playwright
 
 
 async def create_page(
