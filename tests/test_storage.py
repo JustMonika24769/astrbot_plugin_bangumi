@@ -8,22 +8,22 @@ from unittest.mock import patch
 # 将项目根目录添加到 sys.path 以便导入 src
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
-from src.services.storage import BangumiSubject, StorageManager
+from src.db import BangumiSubject, BangumiRepository
 
 
-class TestStorageManager(unittest.TestCase):
+class TestBangumiRepository(unittest.TestCase):
     def setUp(self):
         # 创建临时目录用于测试数据库
         self.test_dir = tempfile.mkdtemp()
 
         # Mock get_astrbot_data_path
         self.patcher = patch(
-            "src.services.storage.get_astrbot_data_path", return_value=self.test_dir
+            "src.db.repository.get_astrbot_data_path", return_value=self.test_dir
         )
         self.mock_get_path = self.patcher.start()
 
-        # 初始化 StorageManager
-        self.storage = StorageManager()
+        # 初始化 BangumiRepository
+        self.storage = BangumiRepository()
 
     def tearDown(self):
         # 停止 mock
@@ -77,7 +77,7 @@ class TestStorageManager(unittest.TestCase):
         subject_id = "999"
 
         # 先保存番剧信息 (虽然 add_subscription 会自动处理不存在的 subject，但最好先有)
-        self.storage.update_subject(subject_id, "My Favorite Anime")
+        self.storage.update_subject(subject_id, name="My Favorite Anime")
 
         # 1. 添加订阅
         self.storage.add_subscription(group_id_1, subject_id)
@@ -99,10 +99,10 @@ class TestStorageManager(unittest.TestCase):
     def test_monitored_subjects(self):
         """测试获取监控列表"""
         # 添加两个番剧和订阅
-        self.storage.update_subject("1001", "Anime 1")
+        self.storage.update_subject("1001", name="Anime 1")
         self.storage.add_subscription("g1", "1001")
 
-        self.storage.update_subject("1002", "Anime 2")
+        self.storage.update_subject("1002", name="Anime 2")
         self.storage.add_subscription("g1", "1002")
 
         # 获取监控列表
@@ -116,7 +116,7 @@ class TestStorageManager(unittest.TestCase):
     def test_update_episode(self):
         """测试更新集数"""
         sid = "555"
-        self.storage.update_subject(sid, "Episodic Anime", current_episode=5)
+        self.storage.update_subject(sid, name="Episodic Anime", current_episode=5)
 
         # 更新集数
         self.storage.update_subject_episode(sid, 6)

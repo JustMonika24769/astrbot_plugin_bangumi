@@ -8,7 +8,7 @@ import astrbot.api.message_components as Comp
 from astrbot.api import logger
 from astrbot.api.all import AstrBotConfig
 from astrbot.api.event import AstrMessageEvent, filter
-from astrbot.api.star import Context, Star, register
+from astrbot.api.star import Context, Star, register, StarTools
 
 # 导入配置管理器
 from .src.config.config_manager import ConfigManager
@@ -18,7 +18,7 @@ from .src.utils.scheduler import SchedulerManager
 
 # 导入我们重构后的统一API类
 from .src.services import BangumiService
-from .src.services.storage import StorageManager
+from .src.db import BangumiRepository
 
 
 @register(
@@ -43,10 +43,10 @@ class BangumiPlugin(Star):
         self.config_manager = ConfigManager(config)
         self.scheduler_manager = SchedulerManager()
         self.max_fuzzy_results = 10
-        
+
         # 1. 优先初始化存储，确保即使网络配置失败也能访问数据库
         try:
-            self.storage = StorageManager()
+            self.storage = BangumiRepository()
         except Exception as e:
             logger.error(f"数据库初始化失败: {e}")
             self.storage = None
@@ -83,9 +83,12 @@ class BangumiPlugin(Star):
         """
         # 获取插件数据目录
         from astrbot.core.utils.astrbot_path import get_astrbot_data_path
+
         data_dir = get_astrbot_data_path()
-        flag_file = os.path.join(data_dir, "plugin_data", "astrbot_plugin_bangumi", ".playwright_installed")
-        
+        flag_file = os.path.join(
+            data_dir, "plugin_data", "astrbot_plugin_bangumi", ".playwright_installed"
+        )
+
         if os.path.exists(flag_file):
             logger.info("Playwright 依赖标记已存在，跳过安装检查。")
             return
@@ -119,90 +122,79 @@ class BangumiPlugin(Star):
                     f.write("installed")
             else:
                 logger.warning(f"Playwright Chromium 安装返回错误: {stderr.decode()}")
-                
+
             logger.info("Bangumi插件初始化成功")
 
             # 定时更新番剧信息
-            self.scheduler_manager.add_job(func=self.update_episodes, trigger="cron", minute=0)
+            self.scheduler_manager.add_job(
+                func=self.update_episodes, trigger="cron", minute=0
+            )
         except Exception as e:
             logger.error(f"依赖安装流程失败: {e}")
 
-    async def notify_subscribers(self, subject_id: str, subject_name: str, new_episode_number: int):
+    async def notify_subscribers(
+        self,
+        subject_id: str,
+        subject_name: str,
+        new_episode_number: int,
+    ):
         """
         向订阅了指定番剧的所有群组发送更新通知。
         """
         subscribed_groups = self.storage.get_subject_subscribers(subject_id)
         message = f"《{subject_name}》更新啦！当前最新集数：{new_episode_number}"
+        from astrbot.core.message.message_event_result import MessageChain
+
+        chain = MessageChain()
         for group_id in subscribed_groups:
             try:
-                await self.context.send_group_message(group_id=group_id, message=message)
+                # 类方法直接通过类调用，cls 会自动传入
+                await StarTools.send_message_by_id(
+                    type="GroupMessage",
+                    id=group_id,
+                    message_chain=chain.message(message),
+                )
                 logger.info(f"向群组 {group_id} 发送《{subject_name}》更新通知成功。")
             except Exception as e:
-                logger.error(f"向群组 {group_id} 发送《{subject_name}》更新通知失败: {e}")
+                logger.error(
+                    f"向群组 {group_id} 发送《{subject_name}》更新通知失败: {e}"
+                )
 
     async def update_episodes(self):
         """
-        一个定时任务函数，用于更新所有已订阅番剧的最新集数信息。
-        它会获取当前所有要追的番剧列表，并进行相应的更新操作（具体更新逻辑待实现）。
+        定时任务：更新所有已订阅番剧的最新集数。
 
-        :return: None
+        流程：
+        1. 从数据库获取所有被订阅的番剧
+        2. 逐个调用 API 获取最新 episode
+        3. 比对数据库中的 current_episode，如果有更新则更新数据库并通知
         """
-        
-        # 获取当前所有要追的番，维护一个列表
-        bangumi_list = self.storage.get_monitored_subjects()
-        current_datetime = datetime.datetime.now()
+        # 1. 获取所有被订阅的番剧
+        subjects = self.storage.get_monitored_subjects()
+        logger.info(f"开始更新 {len(subjects)} 个番剧的集数信息")
 
-        for subject in bangumi_list:
+        for subject in subjects:
             try:
-                episodes_data = await self.service.get_subject_episodes(int(subject.subject_id))
-                if not episodes_data or "data" not in episodes_data:
-                    logger.warning(f"获取番剧 {subject.name} ({subject.subject_id}) 剧集信息失败，跳过。")
+                # 2. 获取最新 episode
+                latest_episode = await self.service.get_latest_episode(
+                    int(subject.subject_id)
+                )
+                if not latest_episode:
                     continue
-                
-                latest_notifiable_episode_number = subject.current_episode
-                
-                for episode in episodes_data["data"]:
-                    episode_number = episode.get("ep", 0)
-                    episode_airdate_str = episode.get("airdate")
-                    episode_comment_count = episode.get("comment", 0)
 
-                    if episode_number == 0: # Skip if episode number is not valid
-                        continue
-
-                    is_aired = False
-                    if episode_airdate_str:
-                        try:
-                            episode_airdate = datetime.datetime.strptime(episode_airdate_str, "%Y-%m-%d").date()
-                            if episode_airdate <= current_datetime.date():
-                                is_aired = True
-                        except ValueError:
-                            logger.warning(f"番剧 {subject.name} ({subject.subject_id}) 剧集 {episode_number} 的 airdate 格式错误: {episode_airdate_str}")
-                            pass # Continue without airdate check if format is wrong
-                    
-                    has_comments = (episode_comment_count != 0)
-
-                    # Determine if this episode is "released and notifiable"
-                    # An episode is considered released if:
-                    # 1. It's a new episode (ep > current_episode in DB)
-                    # 2. AND (its airdate has passed OR it has comments, indicating actual availability)
-                    if episode_number > subject.current_episode and (is_aired or has_comments):
-                        latest_notifiable_episode_number = max(latest_notifiable_episode_number, episode_number)
-                
-                if latest_notifiable_episode_number > subject.current_episode:
-                    logger.info(f"番剧《{subject.name}》({subject.subject_id}) 有更新：从 {subject.current_episode} 更新到 {latest_notifiable_episode_number}")
-                    self.storage.update_subject(
-                        subject_id=subject.subject_id,
-                        current_episode=latest_notifiable_episode_number
+                # 3. 比对并更新
+                if latest_episode.ep > subject.current_episode:
+                    logger.info(
+                        f"番剧《{subject.name}》有更新: {subject.current_episode} -> {latest_episode.ep}"
                     )
-                    # Add notification logic here (e.g., self.notify_subscribers(subject, latest_notifiable_episode_number))
+                    self.storage.update_subject_episode(
+                        subject.subject_id, latest_episode.ep
+                    )
                     await self.notify_subscribers(
-                        subject_id=subject.subject_id,
-                        subject_name=subject.name,
-                        new_episode_number=latest_notifiable_episode_number
+                        subject.subject_id, subject.name, latest_episode.ep
                     )
-                
             except Exception as e:
-                logger.error(f"处理番剧 {subject.name} ({subject.subject_id}) 更新失败: {e}")
+                logger.error(f"更新番剧《{subject.name}》失败: {e}")
 
     # --- 内部核心逻辑 ---
 
@@ -284,7 +276,7 @@ class BangumiPlugin(Star):
         :param subject_type: 查询内容的类型列表，例如 [1] 表示书籍，[2] 表示动画等。
         :param subject_tags: 查询内容的标签列表，例如 ["TV"]。
 
-        :yield: 异步迭代器，每次产出一个 AstrMessageEvent.plain_result 或 AstrMessageEvent.chain_result 对象，
+        :return: 异步迭代器，每次产出一个 AstrMessageEvent.plain_result 或 AstrMessageEvent.chain_result 对象，
                 用于向用户发送文本消息或图片消息。
         """
         if not self.service:
@@ -350,7 +342,7 @@ class BangumiPlugin(Star):
         :param event: 消息平台事件对象，用于发送回复。
         :param api_result: (可选) 预先获取的 API 结果，如果提供则跳过 API 调用。
 
-        :yield: 异步迭代器，每次产出一个 AstrMessageEvent.plain_result 或 AstrMessageEvent.chain_result 对象，
+        :return: 异步迭代器，每次产出一个 AstrMessageEvent.plain_result 或 AstrMessageEvent.chain_result 对象，
                 用于向用户发送文本消息或图片消息。
         """
         if not self.service:
@@ -418,7 +410,7 @@ class BangumiPlugin(Star):
         :param query: 用户的搜索关键词。
         :param top_k: (可选) 与查询内容最接近的 `k` 个搜索结果。默认为 1。
 
-        :yield: 异步迭代器，产出搜索结果。
+        :return: 异步迭代器，产出搜索结果。
         """
         async for result in self._handle_subject(
             event, query, top_k, subject_type=None
@@ -438,7 +430,7 @@ class BangumiPlugin(Star):
         :param query: 用户的番剧搜索关键词。
         :param top_k: (可选) 与查询内容最接近的 `k` 个搜索结果。默认为 1。
 
-        :yield: 异步迭代器，产出番剧搜索结果。
+        :return: 异步迭代器，产出番剧搜索结果。
         """
         async for result in self._handle_subject(
             event, query, top_k, subject_type=[2], subject_tags=["TV"]
@@ -458,7 +450,7 @@ class BangumiPlugin(Star):
         :param query: 用户的剧场版搜索关键词。
         :param top_k: (可选) 与查询内容最接近的 `k` 个搜索结果。默认为 1。
 
-        :yield: 异步迭代器，产出剧场版搜索结果。
+        :return: 异步迭代器，产出剧场版搜索结果。
         """
         async for result in self._handle_subject(
             event, query, top_k, subject_type=[2], subject_tags=["剧场版"]
@@ -478,7 +470,7 @@ class BangumiPlugin(Star):
         :param query: 用户的漫画搜索关键词。
         :param top_k: (可选) 与查询内容最接近的 `k` 个搜索结果。默认为 1。
 
-        :yield: 异步迭代器，产出漫画搜索结果。
+        :return: 异步迭代器，产出漫画搜索结果。
         """
         async for result in self._handle_subject(
             event, query, top_k, subject_type=[1], subject_tags=["漫画"]
@@ -491,9 +483,9 @@ class BangumiPlugin(Star):
         获取今日番剧放送表命令。
         通过 `_handle_calendar` 方法处理用户的请求，获取并发送今日的番剧放送列表。
 
-        :param event: 消息平台事件对象。
+        Parameter event: 消息平台事件对象。
 
-        :yield: 异步迭代器，产出日历图片或错误消息。
+        Returns: 异步迭代器，产出日历图片或错误消息。
         """
         async for result in self._handle_calendar(event):
             yield result
@@ -507,11 +499,14 @@ class BangumiPlugin(Star):
 
         :param event: 消息平台事件对象。
 
-        :yield: 异步迭代器，产出包含数据库状态信息的文本消息。
+        :return: 异步迭代器，产出包含数据库状态信息的文本消息。
         """
         if not self.storage:
             yield event.plain_result("Storage not initialized")
             return
+
+        # 测试用：重置番剧 525565 的 current_episode 为 0
+        self.storage.update_subject_episode("525565", 0)
 
         msg = [f"DB Path: {self.storage.db_path}"]
         if os.path.exists(self.storage.db_path):
@@ -523,23 +518,40 @@ class BangumiPlugin(Star):
 
         # 查询数据
         try:
-            from .src.services.storage import BangumiSubject, Subscription
+            from .src.db import BangumiSubject, Subscription
+            from .src.services.schemas import Episode
 
             session = self.storage.Session()
 
             subjects = session.query(BangumiSubject).all()
             msg.append(f"\nSubjects ({len(subjects)}):")
             for s in subjects:
-                msg.append(f"- {s.name} ({s.subject_id})")
+                msg.append(str(s))
+                episode: Episode | None = await self.service.get_latest_episode(
+                    s.subject_id
+                )
+                msg.append("最新集数: " + str(episode.ep) if episode else "")
 
             subs = session.query(Subscription).all()
-            msg.append(f"\nSubscriptions ({len(subs)}):")
+            msg.append(f"\n订阅详情 ({len(subs)}):")
             for s in subs:
-                msg.append(f"- {s.group_id} -> {s.subject_id}")
+                msg.append(str(s))
 
             session.close()
         except Exception as e:
             msg.append(f"\nError querying DB: {e}")
+
+        # 设置10秒后更新 episode 的定时任务
+        run_time = datetime.datetime.now() + datetime.timedelta(seconds=10)
+        job_id = self.scheduler_manager.add_job(
+            func=self.update_episodes,
+            trigger="date",
+            run_date=run_time,
+        )
+        if job_id:
+            msg.append(f"\n⏰ 已设置10秒后更新 episode 的定时任务 (job_id: {job_id})")
+        else:
+            msg.append("\n❌ 设置定时任务失败")
 
         yield event.plain_result("\n".join(msg))
 
@@ -553,7 +565,7 @@ class BangumiPlugin(Star):
         :param event: 消息平台事件对象，用于获取群组 ID 和发送回复。
         :param query: 用户提供的番剧名称或关键词。
 
-        :yield: 异步迭代器，产出订阅成功或失败的文本消息。
+        :return: 异步迭代器，产出订阅成功或失败的文本消息。
         """
         if not self.service:
             yield event.plain_result("❌ 配置未完成")
@@ -625,4 +637,4 @@ class BangumiPlugin(Star):
         """
         logger.info("正在清理旧的调度器...")
         if self.scheduler_manager.scheduler.running:
-            self.scheduler_manager.scheduler.shutdown(wait=False) # 强制关闭
+            self.scheduler_manager.scheduler.shutdown(wait=False)  # 强制关闭
