@@ -1,5 +1,6 @@
 import asyncio
 import os
+import sys
 import tempfile
 import datetime
 from typing import Any
@@ -72,11 +73,27 @@ class BangumiPlugin(Star):
         except Exception as e:
             logger.error(f"服务初始化失败: {e}")
 
+    async def _verify_playwright(self) -> bool:
+        """
+        验证 Playwright 是否安装成功并可运行。
+        """
+        try:
+            from playwright.async_api import async_playwright
+            async with async_playwright() as p:
+                browser = await p.chromium.launch(
+                    headless=True,
+                    args=["--no-sandbox", "--disable-setuid-sandbox", "--disable-dev-shm-usage"]
+                )
+                await browser.close()
+            return True
+        except Exception as e:
+            logger.debug(f"Playwright 验证运行失败: {e}")
+            return False
+
     async def initialize(self):
         """
         插件加载时自动运行的初始化方法。
-        检查并安装必要的依赖（如 Playwright 及其 Chromium 浏览器），仅在首次运行时执行。
-        成功安装后会创建标记文件以跳过后续检查。
+        检查并安装必要的依赖（如 Playwright 及其 Chromium 浏览器），并在需要时重新运行安装。
         同时，会添加定时任务用于更新番剧信息。
 
         :return: None
@@ -89,48 +106,66 @@ class BangumiPlugin(Star):
             data_dir, "plugin_data", "astrbot_plugin_bangumi", ".playwright_installed"
         )
 
+        need_install = False
         if os.path.exists(flag_file):
-            logger.info("Playwright 依赖标记已存在，跳过安装检查。")
-            return
-
-        logger.info("正在检查并安装插件依赖 (首次运行)...")
-        try:
-            # 安装 Playwright 系统依赖
-            logger.info("正在运行 playwright install-deps...")
-            process = await asyncio.create_subprocess_shell(
-                "playwright install-deps",
-                stdout=asyncio.subprocess.PIPE,
-                stderr=asyncio.subprocess.PIPE,
-            )
-            _, stderr = await process.communicate()
-            if process.returncode != 0:
-                logger.warning(f"系统依赖安装可能失败 (非关键错误): {stderr.decode()}")
-
-            # 安装 Playwright Chromium
-            logger.info("正在安装 Playwright Chromium...")
-            process = await asyncio.create_subprocess_shell(
-                "playwright install chromium",
-                stdout=asyncio.subprocess.PIPE,
-                stderr=asyncio.subprocess.PIPE,
-            )
-            _, stderr = await process.communicate()
-
-            if process.returncode == 0:
-                logger.info("Playwright Chromium 安装成功")
-                # 创建标记文件
-                with open(flag_file, "w") as f:
-                    f.write("installed")
+            logger.info("Playwright 依赖标记已存在，正在验证环境...")
+            if not await self._verify_playwright():
+                logger.warning("Playwright 环境验证失败，将尝试重新安装。")
+                need_install = True
             else:
-                logger.warning(f"Playwright Chromium 安装返回错误: {stderr.decode()}")
+                logger.info("Playwright 验证通过。")
+        else:
+            need_install = True
 
-            logger.info("Bangumi插件初始化成功")
+        if need_install:
+            logger.info("正在初始化插件依赖 (Playwright)...")
+            try:
+                # 安装 Playwright 系统依赖
+                logger.info("正在运行 playwright install-deps...")
+                process = await asyncio.create_subprocess_shell(
+                    f"{sys.executable} -m playwright install-deps",
+                    stdout=asyncio.subprocess.PIPE,
+                    stderr=asyncio.subprocess.PIPE,
+                )
+                _, stderr = await process.communicate()
+                if process.returncode != 0:
+                    logger.warning(f"系统依赖安装返回非零状态 (可能非关键): {stderr.decode()}")
 
-            # 定时更新番剧信息
+                # 安装 Playwright Chromium
+                logger.info("正在安装 Playwright Chromium...")
+                process = await asyncio.create_subprocess_shell(
+                    f"{sys.executable} -m playwright install chromium",
+                    stdout=asyncio.subprocess.PIPE,
+                    stderr=asyncio.subprocess.PIPE,
+                )
+                _, stderr = await process.communicate()
+
+                if process.returncode == 0:
+                    # 再次验证
+                    if await self._verify_playwright():
+                        logger.info("Playwright Chromium 安装并验证成功")
+                        # 创建/更新标记文件
+                        os.makedirs(os.path.dirname(flag_file), exist_ok=True)
+                        with open(flag_file, "w") as f:
+                            f.write("installed")
+                    else:
+                        logger.error("Playwright 安装后验证依然失败，请检查网络或手动安装依赖。")
+                else:
+                    logger.warning(f"Playwright Chromium 安装返回错误: {stderr.decode()}")
+
+            except Exception as e:
+                logger.error(f"依赖安装流程失败: {e}")
+
+        # 始终尝试添加定时任务，即便渲染环境有问题，API 查询仍可工作
+        try:
             self.scheduler_manager.add_job(
                 func=self.update_episodes, trigger="cron", minute=0
             )
+            logger.info("Bangumi 插件定时任务已启动")
         except Exception as e:
-            logger.error(f"依赖安装流程失败: {e}")
+            logger.error(f"添加定时任务失败: {e}")
+
+        logger.info("Bangumi 插件初始化流程结束")
 
     async def notify_subscribers(
         self,
