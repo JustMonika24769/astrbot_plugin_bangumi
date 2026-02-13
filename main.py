@@ -672,7 +672,7 @@ class BangumiPlugin(Star):
             logger.error(f"处理追番请求失败: {e}")
             yield event.plain_result(f"❌ 处理失败: {e}")
 
-    def terminate(self):
+    async def terminate(self):
         """
         插件终止时自动运行的清理方法。
         负责关闭调度器中运行的定时任务，确保插件优雅地停止。
