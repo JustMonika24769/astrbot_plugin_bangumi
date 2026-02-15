@@ -722,6 +722,7 @@ class BangumiPlugin(Star):
 
         :return: None
         """
+
         logger.info("正在清理旧的调度器...")
         if self.scheduler_manager.scheduler.running:
             self.scheduler_manager.scheduler.shutdown(wait=False)  # 强制关闭
