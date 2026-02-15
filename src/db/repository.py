@@ -210,3 +210,20 @@ class BangumiRepository:
             return []
         finally:
             session.close()
+
+    def get_all_subscribed_groups(self) -> list[str]:
+        """
+        获取所有拥有订阅的群组 ID
+
+        Returns:
+            群组 ID 列表
+        """
+        session = self.Session()
+        try:
+            groups = session.query(Subscription.group_id).distinct().all()
+            return [g[0] for g in groups]
+        except Exception as e:
+            logger.error(f"获取所有订阅群组失败: {e}")
+            return []
+        finally:
+            session.close()

@@ -120,25 +120,52 @@ class BangumiPlugin(Star):
         if need_install:
             logger.info("正在初始化插件依赖 (Playwright)...")
             try:
-                # 安装 Playwright 系统依赖
-                logger.info("正在运行 playwright install-deps...")
-                process = await asyncio.create_subprocess_shell(
-                    f"{sys.executable} -m playwright install-deps",
-                    stdout=asyncio.subprocess.PIPE,
-                    stderr=asyncio.subprocess.PIPE,
-                )
-                _, stderr = await process.communicate()
-                if process.returncode != 0:
-                    logger.warning(f"系统依赖安装返回非零状态 (可能非关键): {stderr.decode()}")
+                # 1. 安装 Playwright 系统依赖 (仅限 Linux)
+                if sys.platform == "linux":
+                    logger.info("正在运行 playwright install-deps...")
+                    # 使用 DEBIAN_FRONTEND=noninteractive 减少交互，并实时输出日志
+                    env = os.environ.copy()
+                    env["DEBIAN_FRONTEND"] = "noninteractive"
+                    
+                    process = await asyncio.create_subprocess_shell(
+                        f"{sys.executable} -m playwright install-deps",
+                        stdout=asyncio.subprocess.PIPE,
+                        stderr=asyncio.subprocess.STDOUT,
+                        env=env
+                    )
+                    
+                    # 实时读取输出，防止缓冲区满且让用户看到进度
+                    while True:
+                        line = await process.stdout.readline()
+                        if not line:
+                            break
+                        msg = line.decode().strip()
+                        if msg:
+                            logger.info(f"[Playwright] {msg}")
+                    
+                    await process.wait()
+                    if process.returncode != 0:
+                        logger.warning(f"系统依赖安装返回状态码: {process.returncode} (可能由于非 root 权限)")
+                else:
+                    logger.info(f"当前系统为 {sys.platform}，跳过系统依赖安装 (install-deps)。")
 
-                # 安装 Playwright Chromium
+                # 2. 安装 Playwright Chromium
                 logger.info("正在安装 Playwright Chromium...")
                 process = await asyncio.create_subprocess_shell(
                     f"{sys.executable} -m playwright install chromium",
                     stdout=asyncio.subprocess.PIPE,
-                    stderr=asyncio.subprocess.PIPE,
+                    stderr=asyncio.subprocess.STDOUT,
                 )
-                _, stderr = await process.communicate()
+                
+                while True:
+                    line = await process.stdout.readline()
+                    if not line:
+                        break
+                    msg = line.decode().strip()
+                    if msg:
+                        logger.info(f"[Playwright] {msg}")
+                
+                await process.wait()
 
                 if process.returncode == 0:
                     # 再次验证
@@ -200,11 +227,27 @@ class BangumiPlugin(Star):
         定时任务：更新所有已订阅番剧的最新集数。
 
         流程：
-        1. 从数据库获取所有被订阅的番剧
-        2. 逐个调用 API 获取最新 episode
-        3. 比对数据库中的 current_episode，如果有更新则更新数据库并通知
+        1. 向所有有订阅的群发送开始执行任务的通知
+        2. 从数据库获取所有被订阅的番剧
+        3. 逐个调用 API 获取最新 episode
+        4. 比对数据库中的 current_episode，如果有更新则更新数据库并通知
         """
-        # 1. 获取所有被订阅的番剧
+        # 1. 向所有有订阅的群发送通知
+        all_groups = self.storage.get_all_subscribed_groups()
+        from astrbot.core.message.message_event_result import MessageChain
+        chain = MessageChain()
+        start_msg = "🔔 开始执行 Bangumi 定时更新任务..."
+        for group_id in all_groups:
+            try:
+                await StarTools.send_message_by_id(
+                    type="GroupMessage",
+                    id=group_id,
+                    message_chain=chain.message(start_msg),
+                )
+            except Exception as e:
+                logger.error(f"向群组 {group_id} 发送定时任务启动通知失败: {e}")
+
+        # 2. 获取所有被订阅的番剧
         subjects = self.storage.get_monitored_subjects()
         logger.info(f"开始更新 {len(subjects)} 个番剧的集数信息")
 
