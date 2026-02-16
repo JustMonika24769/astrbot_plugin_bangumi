@@ -1,0 +1,371 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Episode Card Update</title>
+    <!-- Preconnect for fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;800;900&family=Noto+Sans+SC:wght@400;700;900&display=swap"
+          rel="stylesheet">
+
+    <style>
+        :root {
+            /* Card Dimensions */
+            --card-width: 540px;
+            --card-height: 960px;
+
+            /* Color Palette */
+            --bg-dark: #09090b;
+            --text-white: #ffffff;
+            --accent-pink: #ec4899;
+            --accent-gradient: linear-gradient(135deg, #ec4899 0%, #be185d 100%);
+
+            /* Fonts */
+            --font-main: 'Inter', 'Noto Sans SC', system-ui, sans-serif;
+        }
+
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: var(--font-main);
+            background-color: #1a1a1a;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+            -webkit-font-smoothing: antialiased;
+        }
+
+        .card-container {
+            width: var(--card-width);
+            height: var(--card-height);
+            background-color: var(--bg-dark);
+            position: relative;
+            overflow: hidden;
+            box-shadow: 0 50px 100px -20px rgba(0, 0, 0, 0.5);
+            display: flex;
+            flex-direction: column;
+        }
+
+        /* --- Background Layer --- */
+        .bg-layer {
+            position: absolute;
+            inset: 0;
+            width: 100%;
+            height: 100%;
+            z-index: 0;
+            background-color: #000;
+        }
+
+        /* Ambient blurred background */
+        .bg-image-blur {
+            position: absolute;
+            inset: 0;
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+            filter: blur(30px) brightness(0.6) saturate(1.2);
+            transform: scale(1.2);
+        }
+
+        /* Main content image */
+        .bg-image-main {
+            position: absolute;
+            inset: 0;
+            width: 100%;
+            height: 100%;
+            object-fit: contain;
+            z-index: 1;
+            /* Padding removed to prevent squeezing the image */
+            filter: drop-shadow(0 10px 30px rgba(0, 0, 0, 0.5));
+        }
+
+        .bg-fallback {
+            width: 100%;
+            height: 100%;
+            background: radial-gradient(circle at center, #2a2a35 0%, #09090b 100%);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .bg-fallback span {
+            font-size: 120px;
+            opacity: 0.1;
+        }
+
+        /* --- Overlays --- */
+        .overlay-gradient {
+            position: absolute;
+            left: 0;
+            width: 100%;
+            pointer-events: none;
+            z-index: 2;
+        }
+
+        /* Darker top gradient to help text pop even more */
+        .overlay-top {
+            top: 0;
+            height: 35%;
+            background: linear-gradient(to bottom, rgba(0, 0, 0, 0.7) 0%, rgba(0, 0, 0, 0.2) 60%, transparent 100%);
+        }
+
+        .overlay-bottom {
+            bottom: 0;
+            height: 50%;
+            background: linear-gradient(to top, #000000 0%, rgba(0, 0, 0, 0.9) 30%, transparent 100%);
+        }
+
+        /* --- Layout Containers --- */
+
+        /* TOP SECTION: Titles centered */
+        .top-section {
+            position: absolute;
+            /* Position comfortably from top, not sticking to edge */
+            top: 48px;
+            left: 0;
+            width: 100%;
+            padding: 0 32px;
+            z-index: 20;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            text-align: center;
+        }
+
+        /* Row for Episode and Title */
+        .header-row {
+            display: flex;
+            align-items: flex-start;
+            justify-content: center;
+            gap: 12px;
+            width: 100%;
+            flex-wrap: nowrap; /* Prevent wrapping of EP and Title to different lines */
+        }
+
+        /* Anime-style text stroke effect for readability on any image */
+        .stroked-text {
+            /* Robust shadow/stroke combo */
+            -webkit-text-stroke: 1px #000;
+            text-shadow: 0 4px 12px rgba(0, 0, 0, 0.8),
+                         2px 2px 0 #000;
+            paint-order: stroke fill;
+        }
+
+        .ep-text {
+            font-size: 32px;
+            font-weight: 900;
+            line-height: 1.2;
+            color: var(--accent-pink);
+            letter-spacing: 1px;
+            white-space: nowrap;
+            /* Ensure EP stays next to title if possible, but allow wrap if needed */
+            flex-shrink: 0;
+            display: inline-block;
+            vertical-align: top;
+        }
+
+        .main-title {
+            font-size: 32px;
+            font-weight: 900;
+            line-height: 1.2;
+            color: #fff;
+            display: -webkit-box;
+            -webkit-line-clamp: 2;
+            -webkit-box-orient: vertical;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            margin: 0;
+            min-width: 0; /* Allow title to shrink in flex container */
+        }
+
+        .subtitle {
+            font-size: 18px;
+            font-weight: 700;
+            color: rgba(255, 255, 255, 0.95);
+            margin-top: 6px;
+            line-height: 1.4;
+            display: -webkit-box;
+            -webkit-line-clamp: 1;
+            -webkit-box-orient: vertical;
+            overflow: hidden;
+        }
+
+        /* BOTTOM SECTION: Description & Meta */
+        .bottom-section {
+            position: absolute;
+            bottom: 0;
+            left: 0;
+            width: 100%;
+            padding: 32px;
+            z-index: 20;
+            display: flex;
+            flex-direction: column;
+            gap: 16px;
+        }
+
+        .description-box {
+            background: rgba(0, 0, 0, 0.4);
+            backdrop-filter: blur(8px);
+            border-left: 4px solid var(--accent-pink);
+            padding: 16px 20px;
+            border-radius: 0 12px 12px 0;
+            margin-bottom: 8px;
+        }
+
+        .description-text {
+            font-size: 15px;
+            line-height: 1.6;
+            color: rgba(255, 255, 255, 0.9);
+            display: -webkit-box;
+            -webkit-line-clamp: 3;
+            -webkit-box-orient: vertical;
+            overflow: hidden;
+            font-weight: 500;
+            text-shadow: 0 1px 2px rgba(0, 0, 0, 0.8);
+        }
+
+        .meta-row {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding-top: 16px;
+            border-top: 1px solid rgba(255, 255, 255, 0.15);
+        }
+
+        .brand-tag {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .brand-icon {
+            width: 32px;
+            height: 32px;
+            background: var(--accent-gradient);
+            border-radius: 8px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: white;
+            font-weight: 900;
+            font-size: 14px;
+            box-shadow: 0 0 10px rgba(236, 72, 153, 0.5);
+        }
+
+        .brand-text {
+            font-size: 12px;
+            font-weight: 700;
+            color: white;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+        }
+
+        .info-pills {
+            display: flex;
+            gap: 8px;
+        }
+
+        .pill {
+            background: rgba(255, 255, 255, 0.1);
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            padding: 6px 12px;
+            border-radius: 20px;
+            color: #fff;
+            font-size: 12px;
+            font-weight: 600;
+            display: flex;
+            align-items: center;
+            gap: 4px;
+        }
+
+    </style>
+    <script type="importmap">
+        {
+          "imports": {
+            "react": "https://esm.sh/react@^19.2.4",
+            "react-dom/": "https://esm.sh/react-dom@^19.2.4/",
+            "react/": "https://esm.sh/react@^19.2.4/",
+            "lucide-react": "https://esm.sh/lucide-react@^0.564.0"
+          }
+        }
+    </script>
+</head>
+<body>
+
+<div class="card-container" id="card-container">
+
+    <!-- Background Layer -->
+    <div class="bg-layer">
+        {% if image_url %}
+            <!-- Blurred Background for Ambience -->
+            <img src="{{ image_url }}" alt="" class="bg-image-blur" referrerpolicy="no-referrer">
+
+            <!-- Main Image: Contained, with padding to sit nicely between top text and bottom desc -->
+            <img src="{{ image_url }}" alt="Cover" class="bg-image-main" referrerpolicy="no-referrer">
+        {% else %}
+            <div class="bg-fallback">
+                <span>🎬</span>
+            </div>
+        {% endif %}
+    </div>
+
+    <!-- Gradient Overlays -->
+    <div class="overlay-gradient overlay-top"></div>
+    <div class="overlay-gradient overlay-bottom"></div>
+
+    <!-- TOP SECTION: Titles & Episode Number -->
+    <div class="top-section">
+        <!-- Flex Row for Same-Line Layout -->
+        <div class="header-row">
+            <span class="ep-text stroked-text">EP {{ sort }}</span>
+            <h1 class="main-title stroked-text">{{ name_cn or name or "第 " + (sort|string) + " 话" }}</h1>
+        </div>
+
+        <!-- Subtitle (Original Name) centered below if available -->
+        {% if name_cn and name %}
+            <div class="subtitle stroked-text">{{ name }}</div>
+        {% endif %}
+    </div>
+
+    <!-- BOTTOM SECTION: Description & Meta -->
+    <div class="bottom-section">
+
+        {% if desc %}
+            <div class="description-box">
+                <p class="description-text">{{ desc }}</p>
+            </div>
+        {% endif %}
+
+        <div class="meta-row">
+            <div class="brand-tag">
+                <div class="brand-icon">B</div>
+                <span class="brand-text">Bangumi Update</span>
+            </div>
+
+            <div class="info-pills">
+                {% if airdate %}
+                    <div class="pill">
+                        <span>📅</span> {{ airdate }}
+                    </div>
+                {% endif %}
+
+                {% if comment > 0 %}
+                    <div class="pill">
+                        <span>💬</span> {{ comment }}
+                    </div>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+
+</div>
+
+</body>
+</html>
