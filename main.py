@@ -726,6 +726,69 @@ class BangumiPlugin(Star):
             logger.error(f"处理追番请求失败: {e}")
             yield event.plain_result(f"❌ 处理失败: {e}")
 
+    @filter.command("弃坑")
+    async def unsubscribe(self, event: AstrMessageEvent, query: str):
+        """
+        取消订阅番剧命令。
+        用户通过提供番剧名称来取消订阅番剧，插件会将该群组从该番剧的订阅列表中移除。
+
+        :param event: 消息平台事件对象，用于获取群组 ID 和发送回复。
+        :param query: 用户提供的番剧名称或关键词。
+
+        :return: 异步迭代器，产出取消订阅成功或失败的文本消息。
+        """
+        if not self.service:
+            yield event.plain_result("❌ 配置未完成")
+            return
+
+        # 获取 group_id
+        group_id = None
+        if hasattr(event, "message_obj") and hasattr(event.message_obj, "group_id"):
+            group_id = event.message_obj.group_id
+        elif hasattr(event, "session_id"):
+            group_id = event.session_id
+
+        if not group_id:
+            yield event.plain_result("❌ 无法获取群组ID，请在群聊中使用")
+            return
+
+        if not query:
+            yield event.plain_result("❌ 请提供番剧名称")
+            return
+
+        logger.info(f"处理取消追番请求: {query}, group_id={group_id}")
+
+        try:
+            # 同样使用 match_subscribable_subject 找到对应的番剧
+            error_msg, subject_info = await self.service.match_subscribable_subject(
+                query
+            )
+
+            if error_msg:
+                yield event.plain_result(error_msg)
+                return
+
+            if not subject_info:
+                yield event.plain_result("❌ 未知错误：未能获取番剧信息")
+                return
+
+            subject_id = subject_info["subject_id"]
+            name = subject_info["name"]
+
+            # 移除订阅
+            success = self.storage.remove_subscription(group_id, subject_id)
+
+            if success:
+                yield event.plain_result(f"✅ 已成功取消订阅《{name}》。")
+            else:
+                yield event.plain_result(
+                    f"❌ 取消订阅失败：你可能并没有订阅《{name}》。"
+                )
+
+        except Exception as e:
+            logger.error(f"处理取消追番请求失败: {e}")
+            yield event.plain_result(f"❌ 处理失败: {e}")
+
     async def terminate(self):
         """
         插件终止时自动运行的清理方法。

@@ -134,6 +134,36 @@ class BangumiRepository:
         finally:
             session.close()
 
+    def remove_subscription(self, group_id: str, subject_id: str) -> bool:
+        """
+        移除订阅关系
+
+        Args:
+            group_id: 群组 ID
+            subject_id: 番剧 ID
+
+        Returns:
+            操作是否成功
+        """
+        session = self.Session()
+        try:
+            sub = (
+                session.query(Subscription)
+                .filter_by(group_id=str(group_id), subject_id=str(subject_id))
+                .first()
+            )
+            if sub:
+                session.delete(sub)
+                session.commit()
+                return True
+            return False  # 订阅不存在
+        except Exception as e:
+            logger.error(f"移除订阅失败: {e}")
+            session.rollback()
+            return False
+        finally:
+            session.close()
+
     def get_subscriptions(self, group_id: str) -> list[str]:
         """
         获取指定群组的所有订阅
