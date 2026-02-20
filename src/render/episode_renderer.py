@@ -62,7 +62,7 @@ class EpisodeRenderer:
         """
         同步辅助函数：负责模板渲染和 HTML 静态路径处理。
         """
-        template = self.template_env.get_template("episode.html")
+        template = self.template_env.get_template("update/episode2.html")
         html = template.render(**data)
 
         # 注入 <base> 标签，确保 HTML 能找到本地 CSS/图片等资源

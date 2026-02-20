@@ -221,11 +221,9 @@ class BangumiPlugin(Star):
         """
         renderer = EpisodeRenderer()
         subscribed_groups = self.storage.get_subject_subscribers(subject_id)
-        message = f"《{subject_name}》更新啦！当前最新集数：{episode.ep}"
         from astrbot.core.message.message_event_result import MessageChain
 
         chain = MessageChain()
-        chain = chain.message(message)
         base64_image: str | None = await renderer.render_episode(episode)
         if base64_image:
             chain = chain.base64_image(base64_image)
@@ -252,29 +250,11 @@ class BangumiPlugin(Star):
         3. 逐个调用 API 获取最新 episode
         4. 比对数据库中的 current_episode，如果有更新则更新数据库并通知
         """
-        # 1. 向所有有订阅的群发送通知
-        all_groups = self.storage.get_all_subscribed_groups()
-        from astrbot.core.message.message_event_result import MessageChain
-
-        chain = MessageChain()
-        start_msg = "🔔 开始执行 Bangumi 定时更新任务..."
-        for group_id in all_groups:
-            try:
-                await StarTools.send_message_by_id(
-                    type="GroupMessage",
-                    id=group_id,
-                    message_chain=chain.message(start_msg),
-                )
-            except Exception as e:
-                logger.error(f"向群组 {group_id} 发送定时任务启动通知失败: {e}")
-
-        # 2. 获取所有被订阅的番剧
         subjects = self.storage.get_monitored_subjects()
         logger.info(f"开始更新 {len(subjects)} 个番剧的集数信息")
 
         for subject in subjects:
             try:
-                # 2. 获取最新 episode
                 latest_episode = await self.service.get_latest_episode(
                     int(subject.subject_id)
                 )
@@ -282,7 +262,7 @@ class BangumiPlugin(Star):
                     continue
                 try:
                     image_base64 = await self.service.get_subject_base64image(
-                        subject.subject_id, size=ImageSize.LARGE
+                        subject.subject_id, size=ImageSize.MEDIUM
                     )
                     if image_base64:
                         latest_episode.image_url = (
@@ -291,7 +271,6 @@ class BangumiPlugin(Star):
                 except Exception as e:
                     logger.error(f"获取条目图片失败: {e}")
 
-                # 3. 比对并更新
                 if latest_episode.ep > subject.current_episode:
                     logger.info(
                         f"番剧《{subject.name}》有更新: {subject.current_episode} -> {latest_episode.ep}"
