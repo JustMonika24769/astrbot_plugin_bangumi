@@ -1,5 +1,6 @@
 import asyncio
 import datetime
+import base64
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
@@ -14,11 +15,8 @@ def reorder_days(calendar_data: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
     """
     重新排序天数，使今天排在第一位。
     """
-    # 获取今天的星期 (1-7, Mon-Sun)
-    # datetime.datetime.now().isoweekday() 返回 1-7
     today_id = datetime.datetime.now().isoweekday()
 
-    # 寻找今天在列表中的索引
     today_index = 0
     for i, day in enumerate(calendar_data):
         if day.get("weekday", {}).get("id") == today_id:
@@ -26,29 +24,26 @@ def reorder_days(calendar_data: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
             day["is_today"] = True
             break
 
-    # 重新排序：从今天开始，循环一周
     reordered = calendar_data[today_index:] + calendar_data[:today_index]
     return reordered
 
 
 class CalendarRenderer:
     def __init__(self):
-        super().__init__()
         # 设置 Jinja2 环境
-        template_dir = Path(__file__).resolve().parent.parent / "templates"
+        self.template_dir = Path(__file__).resolve().parent.parent / "templates"
         self.template_env = jinja2.Environment(
-            loader=jinja2.FileSystemLoader(str(template_dir)), autoescape=True
+            loader=jinja2.FileSystemLoader(str(self.template_dir)), autoescape=True
         )
 
     async def render_calendar(
         self,
         calendar_data: List[Dict[str, Any]],
         headless: bool = True,
-        output_path: Optional[str] = None,
         max_retries: int = 3,
-    ) -> Optional[bytes]:
+    ) -> Optional[str]:
         """
-        渲染放送表图片。
+        渲染放送表图片并返回 Base64 字符串。
         """
         try:
             reordered_days = reorder_days(calendar_data)
@@ -56,74 +51,66 @@ class CalendarRenderer:
             logger.error(f"处理日历数据失败: {e}")
             return None
 
-        async def _render_task():
-            page = await create_page()
-            if not page:
-                raise Exception("浏览器页面创建失败")
+        try:
+            # 渲染 HTML
+            html_content = self._generate_html(reordered_days)
+        except Exception as e:
+            logger.error(f"渲染日历 HTML 失败: {e}")
+            return None
 
-            try:
-                # 渲染 HTML
-                try:
-                    template = self.template_env.get_template("calendar/calendar.html")
-                    html_content = template.render(days=reordered_days)
-                except Exception as e:
-                    logger.error(f"Jinja2 模板渲染错误: {e}")
-                    raise e
+        # 执行截图任务 (异步逻辑，带重试)
+        try:
+            image_bytes = await retry(
+                lambda: self._capture_screenshot(html_content, headless),
+                retries=max_retries,
+                delay=1.0,
+            )
+            if image_bytes:
+                return base64.b64encode(image_bytes).decode("utf-8")
+            return None
+        except Exception as e:
+            logger.error(f"渲染放送表在 {max_retries} 次尝试后最终失败: {e}")
+            return None
 
-                # 处理 Base URL
-                try:
-                    template_file_path = (
-                        Path(self.template_env.loader.searchpath[0]) / "calendar"
-                    )
-                    base_url = template_file_path.as_uri() + "/"
+    def _generate_html(self, days: List[Dict[str, Any]]) -> str:
+        """
+        生成 HTML 内容并注入 Base URL。
+        """
+        template = self.template_env.get_template("calendar/calendar.html")
+        html = template.render(days=days)
 
-                    if "<head>" in html_content:
-                        html_content = html_content.replace(
-                            "<head>", f'<head><base href="{base_url}">', 1
-                        )
-                except Exception as e:
-                    logger.warning(f"Base URL 处理失败 (可能导致样式丢失): {e}")
+        # 处理 Base URL
+        base_url = (self.template_dir / "calendar").as_uri() + "/"
+        if "<head>" in html:
+            return html.replace("<head>", f'<head><base href="{base_url}">', 1)
+        return f'<base href="{base_url}">{html}'
 
-                try:
-                    await page.set_content(
-                        html_content, wait_until="networkidle", timeout=30000
-                    )
-                except Exception as e:
-                    logger.error(f"页面内容加载超时或失败: {e}")
-                    raise e
-
-                # 等待一会儿确保图片加载（即便 networkidle 也可能有延迟）
-                await asyncio.sleep(2)
-
-                # 定位容器截图
-                try:
-                    container = page.locator(".container")
-
-                    screenshot_args = {"type": "png", "omit_background": False}
-                    if output_path:
-                        screenshot_args["path"] = output_path
-
-                    if await container.count() > 0:
-                        image_bytes = await container.screenshot(**screenshot_args)
-                    else:
-                        logger.warning("未找到 .container 元素，回退到全页截图")
-                        screenshot_args["full_page"] = True
-                        image_bytes = await page.screenshot(**screenshot_args)
-                except Exception as e:
-                    logger.error(f"截图失败: {e}")
-                    raise e
-
-                return image_bytes
-
-            finally:
-                if page:
-                    try:
-                        await page.close()
-                    except Exception:
-                        pass
+    @staticmethod
+    async def _capture_screenshot(html_content: str, headless: bool) -> bytes:
+        """
+        异步辅助函数：负责浏览器操作和内存截图。
+        """
+        page = await create_page(headless=headless)
+        if not page:
+            raise RuntimeError("浏览器页面创建失败")
 
         try:
-            return await retry(_render_task, retries=max_retries, delay=1.0)
-        except Exception as e:
-            logger.error(f"渲染放送表失败: {e}")
-            return None
+            await page.set_content(
+                html_content, wait_until="networkidle", timeout=30000
+            )
+
+            # 等待一会儿确保图片加载
+            await asyncio.sleep(2)
+
+            # 定位容器截图
+            container = page.locator(".container")
+            screenshot_args = {"type": "png", "omit_background": False}
+
+            if await container.count() > 0:
+                return await container.screenshot(**screenshot_args)
+            else:
+                logger.warning("未找到 .container 元素，回退到全页截图")
+                return await page.screenshot(full_page=True, **screenshot_args)
+        finally:
+            if page:
+                await page.close()

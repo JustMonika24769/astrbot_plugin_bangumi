@@ -37,7 +37,8 @@ class BaseBangumiService:
         method: str = "GET",
         params: Dict[str, Any] | None = None,
         json_data: Dict[str, Any] | None = None,
-    ) -> dict[str, Any] | list[Any]:
+        is_json: bool = True,
+    ) -> Any:
         """
         通用API请求函数，带限流和重试处理
         """
@@ -71,7 +72,7 @@ class BaseBangumiService:
                             await asyncio.sleep(1.5)
                             continue
 
-                        return await self._handle_response(response)
+                        return await self._handle_response(response, is_json=is_json)
 
             except aiohttp.ClientError as e:
                 logger.warning(f"网络请求失败: {e}")
@@ -83,12 +84,15 @@ class BaseBangumiService:
 
         raise BangumiApiError(f"网络连接异常，请稍后再试: {last_exception}")
 
-    async def _handle_response(self, response: aiohttp.ClientResponse) -> Dict:
+    async def _handle_response(self, response: aiohttp.ClientResponse, is_json: bool = True) -> Any:
         """
         处理api响应
         """
         if response.status == 200:
-            return await response.json()
+            if is_json:
+                return await response.json()
+            else:
+                return await response.read()
         elif response.status == 404:
             raise NoSubjectFound("未找到相关条目")
         elif response.status == 429:

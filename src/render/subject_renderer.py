@@ -7,6 +7,7 @@ from astrbot.api import logger
 
 from ..utils.async_utils import retry
 from ..utils.browser import create_page
+from ..services.types import SubjectType
 
 
 def preprocess_data(data: Dict[str, Any]) -> Dict[str, Any]:
@@ -32,17 +33,10 @@ def preprocess_data(data: Dict[str, Any]) -> Dict[str, Any]:
 
     # 处理类型映射
     if "platform" not in processed and "type" in processed:
-        type_map = {
-            1: "书籍",
-            2: "动画",
-            3: "音乐",
-            4: "游戏",
-            6: "三次元",
-        }
         # 确保 type 是 int，防止 API 变动返回 string
         try:
             type_id = int(processed["type"])
-            processed["platform"] = type_map.get(type_id, "未知")
+            processed["platform"] = SubjectType(type_id).to_display()
         except (ValueError, TypeError):
             processed["platform"] = "未知"
 

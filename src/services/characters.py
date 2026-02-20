@@ -6,7 +6,6 @@ from .base import BaseBangumiService
 class CharactersService(BaseBangumiService):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        self.type_map = {}
 
     async def search_persons(self, keyword: str, limit: int = 10) -> Dict[str, Any]:
         """通过关键词搜索人物"""

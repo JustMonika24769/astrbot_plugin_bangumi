@@ -10,15 +10,18 @@ from astrbot.api import logger
 from astrbot.api.all import AstrBotConfig
 from astrbot.api.event import AstrMessageEvent, filter
 from astrbot.api.star import Context, Star, register, StarTools
+from .src.services.schemas import Episode
 
 # 导入配置管理器
 from .src.config.config_manager import ConfigManager
 from .src.render.calendar_renderer import CalendarRenderer
 from .src.render.subject_renderer import SubjectRenderer
+from .src.render.episode_renderer import EpisodeRenderer
 from .src.utils.scheduler import SchedulerManager
 
 # 导入我们重构后的统一API类
 from .src.services import BangumiService
+from .src.services.types import ImageSize
 from .src.db import BangumiRepository
 
 
@@ -79,10 +82,15 @@ class BangumiPlugin(Star):
         """
         try:
             from playwright.async_api import async_playwright
+
             async with async_playwright() as p:
                 browser = await p.chromium.launch(
                     headless=True,
-                    args=["--no-sandbox", "--disable-setuid-sandbox", "--disable-dev-shm-usage"]
+                    args=[
+                        "--no-sandbox",
+                        "--disable-setuid-sandbox",
+                        "--disable-dev-shm-usage",
+                    ],
                 )
                 await browser.close()
             return True
@@ -126,14 +134,14 @@ class BangumiPlugin(Star):
                     # 使用 DEBIAN_FRONTEND=noninteractive 减少交互，并实时输出日志
                     env = os.environ.copy()
                     env["DEBIAN_FRONTEND"] = "noninteractive"
-                    
+
                     process = await asyncio.create_subprocess_shell(
                         f"{sys.executable} -m playwright install-deps",
                         stdout=asyncio.subprocess.PIPE,
                         stderr=asyncio.subprocess.STDOUT,
-                        env=env
+                        env=env,
                     )
-                    
+
                     # 实时读取输出，防止缓冲区满且让用户看到进度
                     while True:
                         line = await process.stdout.readline()
@@ -142,12 +150,16 @@ class BangumiPlugin(Star):
                         msg = line.decode().strip()
                         if msg:
                             logger.info(f"[Playwright] {msg}")
-                    
+
                     await process.wait()
                     if process.returncode != 0:
-                        logger.warning(f"系统依赖安装返回状态码: {process.returncode} (可能由于非 root 权限)")
+                        logger.warning(
+                            f"系统依赖安装返回状态码: {process.returncode} (可能由于非 root 权限)"
+                        )
                 else:
-                    logger.info(f"当前系统为 {sys.platform}，跳过系统依赖安装 (install-deps)。")
+                    logger.info(
+                        f"当前系统为 {sys.platform}，跳过系统依赖安装 (install-deps)。"
+                    )
 
                 # 2. 安装 Playwright Chromium
                 logger.info("正在安装 Playwright Chromium...")
@@ -156,7 +168,7 @@ class BangumiPlugin(Star):
                     stdout=asyncio.subprocess.PIPE,
                     stderr=asyncio.subprocess.STDOUT,
                 )
-                
+
                 while True:
                     line = await process.stdout.readline()
                     if not line:
@@ -164,7 +176,7 @@ class BangumiPlugin(Star):
                     msg = line.decode().strip()
                     if msg:
                         logger.info(f"[Playwright] {msg}")
-                
+
                 await process.wait()
 
                 if process.returncode == 0:
@@ -176,9 +188,13 @@ class BangumiPlugin(Star):
                         with open(flag_file, "w") as f:
                             f.write("installed")
                     else:
-                        logger.error("Playwright 安装后验证依然失败，请检查网络或手动安装依赖。")
+                        logger.error(
+                            "Playwright 安装后验证依然失败，请检查网络或手动安装依赖。"
+                        )
                 else:
-                    logger.warning(f"Playwright Chromium 安装返回错误: {stderr.decode()}")
+                    logger.warning(
+                        f"Playwright Chromium 安装返回错误: {stderr.decode()}"
+                    )
 
             except Exception as e:
                 logger.error(f"依赖安装流程失败: {e}")
@@ -196,25 +212,27 @@ class BangumiPlugin(Star):
 
     async def notify_subscribers(
         self,
+        episode: Episode,
         subject_id: str,
         subject_name: str,
-        new_episode_number: int,
-    ):
+    ) -> None:
         """
         向订阅了指定番剧的所有群组发送更新通知。
         """
+        renderer = EpisodeRenderer()
         subscribed_groups = self.storage.get_subject_subscribers(subject_id)
-        message = f"《{subject_name}》更新啦！当前最新集数：{new_episode_number}"
         from astrbot.core.message.message_event_result import MessageChain
 
         chain = MessageChain()
+        base64_image: str | None = await renderer.render_episode(episode)
+        if base64_image:
+            chain = chain.base64_image(base64_image)
+
         for group_id in subscribed_groups:
             try:
                 # 类方法直接通过类调用，cls 会自动传入
                 await StarTools.send_message_by_id(
-                    type="GroupMessage",
-                    id=group_id,
-                    message_chain=chain.message(message),
+                    type="GroupMessage", id=group_id, message_chain=chain
                 )
                 logger.info(f"向群组 {group_id} 发送《{subject_name}》更新通知成功。")
             except Exception as e:
@@ -232,35 +250,27 @@ class BangumiPlugin(Star):
         3. 逐个调用 API 获取最新 episode
         4. 比对数据库中的 current_episode，如果有更新则更新数据库并通知
         """
-        # 1. 向所有有订阅的群发送通知
-        all_groups = self.storage.get_all_subscribed_groups()
-        from astrbot.core.message.message_event_result import MessageChain
-        chain = MessageChain()
-        start_msg = "🔔 开始执行 Bangumi 定时更新任务..."
-        for group_id in all_groups:
-            try:
-                await StarTools.send_message_by_id(
-                    type="GroupMessage",
-                    id=group_id,
-                    message_chain=chain.message(start_msg),
-                )
-            except Exception as e:
-                logger.error(f"向群组 {group_id} 发送定时任务启动通知失败: {e}")
-
-        # 2. 获取所有被订阅的番剧
         subjects = self.storage.get_monitored_subjects()
         logger.info(f"开始更新 {len(subjects)} 个番剧的集数信息")
 
         for subject in subjects:
             try:
-                # 2. 获取最新 episode
                 latest_episode = await self.service.get_latest_episode(
                     int(subject.subject_id)
                 )
                 if not latest_episode:
                     continue
+                try:
+                    image_base64 = await self.service.get_subject_base64image(
+                        subject.subject_id, size=ImageSize.MEDIUM
+                    )
+                    if image_base64:
+                        latest_episode.image_url = (
+                            f"data:image/png;base64,{image_base64}"
+                        )
+                except Exception as e:
+                    logger.error(f"获取条目图片失败: {e}")
 
-                # 3. 比对并更新
                 if latest_episode.ep > subject.current_episode:
                     logger.info(
                         f"番剧《{subject.name}》有更新: {subject.current_episode} -> {latest_episode.ep}"
@@ -269,7 +279,9 @@ class BangumiPlugin(Star):
                         subject.subject_id, latest_episode.ep
                     )
                     await self.notify_subscribers(
-                        subject.subject_id, subject.name, latest_episode.ep
+                        latest_episode,
+                        subject.subject_id,
+                        subject.name,
                     )
             except Exception as e:
                 logger.error(f"更新番剧《{subject.name}》失败: {e}")
@@ -446,37 +458,16 @@ class BangumiPlugin(Star):
 
             # 2. 渲染图片
             renderer = CalendarRenderer()
+            base64_image = await renderer.render_calendar(
+                calendar_res,
+                max_retries=self.config_manager.get_max_retries(),
+            )
 
-            # 创建临时文件
-            tmp_fd, tmp_path = tempfile.mkstemp(suffix=".png")
-            os.close(tmp_fd)
-
-            try:
-                await renderer.render_calendar(
-                    calendar_res,
-                    output_path=tmp_path,
-                    max_retries=self.config_manager.get_max_retries(),
-                )
-
-                # 3. 发送图片
-                if os.path.exists(tmp_path) and os.path.getsize(tmp_path) > 0:
-                    yield event.chain_result([Comp.Image.fromFileSystem(tmp_path)])
-                else:
-                    yield event.plain_result("❌ 图片生成失败")
-
-                # 4. 清理临时文件
-                await asyncio.sleep(1)
-                if os.path.exists(tmp_path):
-                    os.remove(tmp_path)
-
-            except Exception as e:
-                logger.error(f"渲染放送表失败: {e}")
-                yield event.plain_result(f"❌ 渲染失败: {e}")
-                if os.path.exists(tmp_path):
-                    try:
-                        os.remove(tmp_path)
-                    except:
-                        pass
+            # 3. 发送图片
+            if base64_image:
+                yield event.chain_result([Comp.Image.fromBase64(base64_image)])
+            else:
+                yield event.plain_result("❌ 图片生成失败")
 
         except Exception as e:
             logger.error(f"处理每日放送失败: {e}")
@@ -484,7 +475,7 @@ class BangumiPlugin(Star):
 
     # --- 命令处理区 ---
 
-    @filter.command("bgm搜索")
+    @filter.command("bgm")
     async def search(
         self, event: AstrMessageEvent, query: str, top_k: int | None = None
     ):
@@ -606,7 +597,6 @@ class BangumiPlugin(Star):
         # 查询数据
         try:
             from .src.db import BangumiSubject, Subscription
-            from .src.services.schemas import Episode
 
             session = self.storage.Session()
 
@@ -715,6 +705,69 @@ class BangumiPlugin(Star):
             logger.error(f"处理追番请求失败: {e}")
             yield event.plain_result(f"❌ 处理失败: {e}")
 
+    @filter.command("弃坑")
+    async def unsubscribe(self, event: AstrMessageEvent, query: str):
+        """
+        取消订阅番剧命令。
+        用户通过提供番剧名称来取消订阅番剧，插件会将该群组从该番剧的订阅列表中移除。
+
+        :param event: 消息平台事件对象，用于获取群组 ID 和发送回复。
+        :param query: 用户提供的番剧名称或关键词。
+
+        :return: 异步迭代器，产出取消订阅成功或失败的文本消息。
+        """
+        if not self.service:
+            yield event.plain_result("❌ 配置未完成")
+            return
+
+        # 获取 group_id
+        group_id = None
+        if hasattr(event, "message_obj") and hasattr(event.message_obj, "group_id"):
+            group_id = event.message_obj.group_id
+        elif hasattr(event, "session_id"):
+            group_id = event.session_id
+
+        if not group_id:
+            yield event.plain_result("❌ 无法获取群组ID，请在群聊中使用")
+            return
+
+        if not query:
+            yield event.plain_result("❌ 请提供番剧名称")
+            return
+
+        logger.info(f"处理取消追番请求: {query}, group_id={group_id}")
+
+        try:
+            # 同样使用 match_subscribable_subject 找到对应的番剧
+            error_msg, subject_info = await self.service.match_subscribable_subject(
+                query
+            )
+
+            if error_msg:
+                yield event.plain_result(error_msg)
+                return
+
+            if not subject_info:
+                yield event.plain_result("❌ 未知错误：未能获取番剧信息")
+                return
+
+            subject_id = subject_info["subject_id"]
+            name = subject_info["name"]
+
+            # 移除订阅
+            success = self.storage.remove_subscription(group_id, subject_id)
+
+            if success:
+                yield event.plain_result(f"✅ 已成功取消订阅《{name}》。")
+            else:
+                yield event.plain_result(
+                    f"❌ 取消订阅失败：你可能并没有订阅《{name}》。"
+                )
+
+        except Exception as e:
+            logger.error(f"处理取消追番请求失败: {e}")
+            yield event.plain_result(f"❌ 处理失败: {e}")
+
     async def terminate(self):
         """
         插件终止时自动运行的清理方法。
@@ -722,6 +775,8 @@ class BangumiPlugin(Star):
 
         :return: None
         """
+
         logger.info("正在清理旧的调度器...")
         if self.scheduler_manager.scheduler.running:
             self.scheduler_manager.scheduler.shutdown(wait=False)  # 强制关闭
+        await super().terminate()

@@ -1,0 +1,327 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Episode Card Update</title>
+    <!-- Preconnect for fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;800;900&family=Noto+Sans+SC:wght@400;700;900&display=swap"
+          rel="stylesheet">
+
+    <style>
+        :root {
+            /* Color Palette */
+            --bg-dark: #09090b;
+            --text-white: #ffffff;
+            --accent-pink: #ec4899;
+            --accent-gradient: linear-gradient(135deg, #ec4899 0%, #be185d 100%);
+
+            /* Fonts */
+            --font-main: 'Inter', 'Noto Sans SC', system-ui, sans-serif;
+        }
+
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: var(--font-main);
+            background-color: #1a1a1a;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+            -webkit-font-smoothing: antialiased;
+            padding: 0;
+            margin: 0;
+            overflow: auto;
+        }
+
+        .card-container {
+            /* Width and height determined by the content (the image) */
+            width: fit-content;
+            height: fit-content;
+            max-width: 100%;
+            background-color: var(--bg-dark);
+            position: relative;
+            overflow: hidden;
+            box-shadow: 0 50px 100px -20px rgba(0, 0, 0, 0.5);
+            display: inline-block;
+        }
+
+        /* --- Background Layer --- */
+        .bg-layer {
+            position: relative;
+            z-index: 0;
+            line-height: 0;
+            width: 100%;
+            height: 100%;
+        }
+
+        /* Main content image */
+        .bg-image-main {
+            display: block;
+            width: 100%;
+            height: auto;
+            max-width: 100%;
+            z-index: 1;
+        }
+
+        /* Fallback needs explicit size since it has no natural image size */
+        .bg-fallback {
+            width: 540px;
+            height: 960px;
+            background: radial-gradient(circle at center, #2a2a35 0%, #09090b 100%);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .bg-fallback span {
+            font-size: 120px;
+            opacity: 0.1;
+        }
+
+        /* --- Text Styles --- */
+        /* Helper for stroked text (kept for other elements if needed) */
+        .stroked-text {
+            color: #fff;
+            text-shadow: 0 2px 4px rgba(0, 0, 0, 0.8),
+            0 4px 12px rgba(0, 0, 0, 0.8),
+            2px 2px 0 #000,
+            -1px -1px 0 #000,
+            1px -1px 0 #000,
+            -1px 1px 0 #000,
+            1px 1px 0 #000;
+            paint-order: stroke fill;
+        }
+
+        /* --- Top Bar Layout --- */
+        .top-bar {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            padding: 48px 32px;
+            z-index: 20;
+            display: flex;
+            justify-content: space-between;
+            align-items: flex-start;
+            pointer-events: none;
+        }
+
+        /* Left Side: Ep, Title, Date */
+        .left-info {
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+            max-width: 80%;
+        }
+
+        .title-row {
+            display: flex;
+            align-items: baseline;
+            gap: 12px;
+            flex-wrap: wrap;
+        }
+
+        .ep-text {
+            font-size: 36px;
+            font-weight: 900;
+            color: var(--accent-pink);
+            letter-spacing: 0.5px;
+            line-height: 1;
+            text-shadow: 2px 2px 0 #000,
+            -1px -1px 0 #000,
+            1px -1px 0 #000,
+            -1px 1px 0 #000,
+            1px 1px 0 #000;
+            paint-order: stroke fill;
+        }
+
+        .main-title {
+            font-size: 32px;
+            font-weight: 900;
+            line-height: 1.1;
+            color: #fff;
+            display: -webkit-box;
+            -webkit-line-clamp: 2;
+            -webkit-box-orient: vertical;
+            overflow: hidden;
+            text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.8);
+        }
+
+        .date-row {
+            font-size: 16px;
+            font-weight: 700;
+            color: rgba(255, 255, 255, 1);
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            margin-top: 4px;
+            text-shadow: 1px 1px 0 #000,
+            -1px -1px 0 #000,
+            0 2px 4px rgba(0, 0, 0, 0.8);
+        }
+
+        /* Right Side: Bangumi Logo */
+        .right-info {
+            flex-shrink: 0;
+        }
+
+        .bangumi-logo {
+            width: 42px;
+            height: 42px;
+            background: var(--accent-gradient);
+            border-radius: 10px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: white;
+            font-weight: 900;
+            font-size: 20px;
+            box-shadow: 0 4px 15px rgba(236, 72, 153, 0.5), 0 0 0 2px rgba(255, 255, 255, 0.2) inset;
+        }
+
+        /* --- Bottom Section (Description) --- */
+        .bottom-section {
+            position: absolute;
+            bottom: 0;
+            left: 0;
+            width: 100%;
+            padding: 32px;
+            z-index: 20;
+            display: flex;
+            flex-direction: column;
+            gap: 16px;
+        }
+
+        .description-box {
+            background: rgba(0, 0, 0, 0.6);
+            backdrop-filter: blur(12px);
+            border-left: 4px solid var(--accent-pink);
+            padding: 16px 20px;
+            border-radius: 12px;
+            box-shadow: 0 4px 20px rgba(0, 0, 0, 0.4);
+        }
+
+        .description-text {
+            font-size: 15px;
+            line-height: 1.6;
+            color: rgba(255, 255, 255, 0.95);
+            display: -webkit-box;
+            -webkit-line-clamp: 3;
+            -webkit-box-orient: vertical;
+            overflow: hidden;
+            font-weight: 500;
+        }
+
+        .comment-pill {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            background: rgba(0, 0, 0, 0.6);
+            backdrop-filter: blur(4px);
+            padding: 4px 10px;
+            border-radius: 20px;
+            font-size: 13px;
+            font-weight: 700;
+            color: #fff;
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            margin-top: 8px;
+        }
+
+        /* Responsive adjustments */
+        @media (max-width: 768px) {
+            .top-bar {
+                padding: 32px 24px;
+            }
+
+            .ep-text {
+                font-size: 28px;
+            }
+
+            .main-title {
+                font-size: 24px;
+            }
+
+            .bottom-section {
+                padding: 24px;
+            }
+        }
+
+    </style>
+    <script type="importmap">
+        {
+          "imports": {
+            "react": "https://esm.sh/react@^19.2.4",
+            "react-dom/": "https://esm.sh/react-dom@^19.2.4/",
+            "react/": "https://esm.sh/react@^19.2.4/",
+            "lucide-react": "https://esm.sh/lucide-react@^0.564.0"
+          }
+        }
+    </script>
+</head>
+<body>
+
+<div class="card-container" id="card-container">
+
+    <!-- Background Layer (Relative Flow) -->
+    <div class="bg-layer">
+        {% if image_url %}
+            <!-- Main Image: display: block so container takes its size -->
+            <img src="{{ image_url }}" alt="Cover" class="bg-image-main" referrerpolicy="no-referrer">
+        {% else %}
+            <div class="bg-fallback">
+                <span>🎬</span>
+            </div>
+        {% endif %}
+    </div>
+
+    <div class="top-bar">
+        <div class="left-info">
+            <div class="title-row">
+                <span class="ep-text">EP {{ sort }}</span>
+                <h1 class="main-title">
+                    {{ name_cn or name or "第 " + (sort|string) + " 话" }}
+                </h1>
+            </div>
+
+            <div class="date-row">
+                {% if airdate %}
+                    <span>📅 {{ airdate }}</span>
+                {% endif %}
+            </div>
+
+            {% if comment > 0 %}
+                <div>
+                    <div class="comment-pill">
+                        <span>💬</span> {{ comment }}
+                    </div>
+                </div>
+            {% endif %}
+        </div>
+
+        <!-- Right: Bangumi Logo -->
+        <div class="right-info">
+            <div class="bangumi-logo">B</div>
+        </div>
+    </div>
+
+    <!-- BOTTOM SECTION: Description -->
+    {% if desc %}
+        <div class="bottom-section">
+            <div class="description-box">
+                <p class="description-text">{{ desc }}</p>
+            </div>
+        </div>
+    {% endif %}
+
+</div>
+
+</body>
+</html>

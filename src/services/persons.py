@@ -6,7 +6,6 @@ from .base import BaseBangumiService
 class PersonsService(BaseBangumiService):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        self.type_map = {1: "👤 个人", 2: "🏢 公司", 3: "👥 组合"}
 
         # --- 新增人物相关方法 ---
 

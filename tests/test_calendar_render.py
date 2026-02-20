@@ -1,6 +1,7 @@
 import asyncio
 import os
 import sys
+import base64
 from pathlib import Path
 from unittest.mock import MagicMock
 
@@ -86,13 +87,17 @@ async def main():
     output_path = "tests/calendar_test.png"
     os.makedirs("tests", exist_ok=True)
 
-    print("开始渲染放送表...")
-    result = await renderer.render_calendar(
-        calendar_data=sample_data, output_path=output_path
+    print("开始渲染放送表 (Base64 模式)...")
+    base64_str = await renderer.render_calendar(
+        calendar_data=sample_data
     )
 
-    if result:
-        print(f"渲染成功: {output_path}")
+    if base64_str:
+        # 将 Base64 还原为文件以便预览
+        image_bytes = base64.b64decode(base64_str)
+        with open(output_path, "wb") as f:
+            f.write(image_bytes)
+        print(f"渲染并保存成功: {output_path}")
     else:
         print("渲染失败")
 
