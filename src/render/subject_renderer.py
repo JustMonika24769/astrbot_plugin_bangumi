@@ -1,203 +1,158 @@
-import asyncio
-from pathlib import Path
-from typing import Any, Dict, List
-
-import jinja2
+import datetime
+from collections import Counter
+from typing import Any, Dict, List, Optional, Tuple
 from astrbot.api import logger
-
-from ..utils.async_utils import retry
-from ..utils.browser import create_page
+from .base_renderer import BaseRenderer
 from ..services.types import SubjectType
+
+# --- 数据处理工具函数 (高度解耦模块) ---
+
+
+def _process_images(data: Dict[str, Any]) -> None:
+    """
+    处理图片 URL 的提取
+    """
+    if "image_url" in data:
+        return
+
+    images = data.get("images")
+    if not images:
+        return
+
+    data["image_url"] = (
+        images.get("large") or images.get("common") or images.get("medium") or ""
+    )
+
+
+def _process_dates(data: Dict[str, Any]) -> None:
+    """
+    处理日期字段
+    """
+    if "date" in data:
+        return
+
+    if "air_date" in data:
+        data["date"] = data["air_date"]
+
+
+def _process_platform(data: Dict[str, Any]) -> None:
+    """
+    处理平台/类型映射
+    """
+    if "platform" in data:
+        return
+
+    if "type" not in data:
+        return
+
+    try:
+        type_id = int(data["type"])
+        data["platform"] = SubjectType(type_id).to_display()
+    except (ValueError, TypeError):
+        data["platform"] = "未知"
+
+
+def _infer_air_weekday(aired_weekdays: List[int]) -> str:
+    """
+    从已播出的剧集中推断主要放送星期
+    """
+    if not aired_weekdays:
+        return ""
+
+    weekday_names = {1: "月", 2: "火", 3: "水", 4: "木", 5: "金", 6: "土", 7: "日"}
+    # 取最近 4 集的星期，避免早期特殊排期干扰
+    recent = aired_weekdays[-4:]
+    most_common = Counter(recent).most_common(1)[0][0]
+    return weekday_names.get(most_common, "")
+
+
+def _parse_episode_list(
+    episodes: List[Dict[str, Any]], today: datetime.date
+) -> Tuple[List[Dict[str, Any]], List[int]]:
+    """
+    解析剧集列表，返回 (渲染用列表, 已播出星期列表)
+    """
+    episode_list = []
+    aired_weekdays = []
+
+    for ep in episodes:
+        if ep.get("type", 0) != 0 or ep.get("ep", 0) == 0:
+            continue
+
+        aired = False
+        airdate_str = ep.get("airdate")
+
+        if airdate_str:
+            try:
+                airdate = datetime.datetime.strptime(airdate_str, "%Y-%m-%d").date()
+                aired = airdate <= today
+                if aired:
+                    aired_weekdays.append(airdate.isoweekday())
+            except ValueError:
+                pass
+
+        # 补充逻辑：有评论也视为已播出
+        if ep.get("comment", 0) > 0:
+            aired = True
+
+        episode_list.append({"ep": ep.get("ep"), "aired": aired})
+
+    return episode_list, aired_weekdays
+
+
+def _process_episodes(data: Dict[str, Any]) -> None:
+    """
+    处理剧集状态和更新日推算的主流程
+    """
+    episodes = data.get("episodes")
+    if not episodes:
+        return
+
+    today = datetime.date.today()
+
+    # 1. 解析剧集数据
+    episode_list, aired_weekdays = _parse_episode_list(episodes, today)
+    data["episode_list"] = episode_list
+
+    # 2. 推算放送星期
+    air_weekday = _infer_air_weekday(aired_weekdays)
+    if air_weekday:
+        data["air_weekday"] = air_weekday
 
 
 def preprocess_data(data: Dict[str, Any]) -> Dict[str, Any]:
-    """预处理数据以适配模板"""
-    import datetime
-
+    """
+    预处理数据以适配模板
+    """
     processed = data.copy()
 
-    # 处理图片 URL
-    if "image_url" not in processed:
-        images = processed.get("images", {})
-        if images:
-            processed["image_url"] = (
-                images.get("large")
-                or images.get("common")
-                or images.get("medium")
-                or ""
-            )
-
-    # 处理日期
-    if "date" not in processed and "air_date" in processed:
-        processed["date"] = processed["air_date"]
-
-    # 处理类型映射
-    if "platform" not in processed and "type" in processed:
-        # 确保 type 是 int，防止 API 变动返回 string
-        try:
-            type_id = int(processed["type"])
-            processed["platform"] = SubjectType(type_id).to_display()
-        except (ValueError, TypeError):
-            processed["platform"] = "未知"
-
-    # 处理 episodes 数据：标记每集的播出状态
-    if "episodes" in processed:
-        today = datetime.date.today()
-        episode_list = []
-        aired_weekdays: list[int] = []
-        for ep in processed["episodes"]:
-            # 只处理正片（type == 0），跳过 SP 等
-            if ep.get("type", 0) != 0:
-                continue
-            ep_num = ep.get("ep", 0)
-            if ep_num == 0:
-                continue
-
-            aired = False
-            airdate_str = ep.get("airdate")
-            if airdate_str:
-                try:
-                    airdate = datetime.datetime.strptime(airdate_str, "%Y-%m-%d").date()
-                    aired = airdate <= today
-                    # 收集已播出集的星期用于推算更新日
-                    if aired:
-                        aired_weekdays.append(airdate.isoweekday())
-                except ValueError:
-                    pass
-            # 有评论也视为已播出
-            if ep.get("comment", 0) > 0:
-                aired = True
-
-            episode_list.append({"ep": ep_num, "aired": aired})
-
-        processed["episode_list"] = episode_list
-
-        # 从最近几集推算更新日（取最常见的星期）
-        if aired_weekdays:
-            from collections import Counter
-
-            weekday_names = {
-                1: "月",
-                2: "火",
-                3: "水",
-                4: "木",
-                5: "金",
-                6: "土",
-                7: "日",
-            }
-            # 取最近 4 集的星期，避免早期特殊排期干扰
-            recent = aired_weekdays[-4:]
-            most_common = Counter(recent).most_common(1)[0][0]
-            processed["air_weekday"] = weekday_names.get(most_common, "")
+    _process_images(processed)
+    _process_dates(processed)
+    _process_platform(processed)
+    _process_episodes(processed)
 
     return processed
 
 
-class SubjectRenderer:
-    def __init__(self):
-        # 设置 Jinja2 环境
-        # 使用 resolve() 获取绝对路径，并转为 str 传给 FileSystemLoader 以保证兼容性
-        template_dir = Path(__file__).resolve().parent.parent / "templates"
-        self.template_env = jinja2.Environment(
-            loader=jinja2.FileSystemLoader(str(template_dir)), autoescape=True
-        )
-
-    async def render_batch_subject_cards(
-        self,
-        data_list: List[Dict[str, Any]],
-        output_paths: List[str],
-        headless: bool = True,
-        wait_time: int = 0,
-        max_retries: int = 3,
-    ) -> None:
-        """
-        批量渲染条目卡片。
-        通过循环调用单张渲染函数实现。
-        """
-        for data, output_path in zip(data_list, output_paths):
-            try:
-                await self.render_subject_card(
-                    data=data,
-                    output_path=output_path,
-                    headless=headless,
-                    wait_time=wait_time,
-                    max_retries=max_retries,
-                )
-                # render_subject_card 成功时返回条目id，失败时返回空字符串
-            except Exception as e:
-                logger.error(f"批量处理其中一个条目时发生未知错误: {e}")
-
+class SubjectRenderer(BaseRenderer):
     async def render_subject_card(
         self,
         data: Dict[str, Any],
         headless: bool = True,
-        output_path: str | None = None,
         wait_time: int = 0,
         max_retries: int = 3,
-    ) -> None:
+    ) -> Optional[str]:
         """
-        将条目卡片渲染为图片。
-        返回渲染条目的id
+        渲染条目卡片并返回 Base64 字符串
         """
-        # 预处理数据
         render_data = preprocess_data(data)
 
-        async def _render_task() -> None:
-            page = await create_page()
-            try:
-                # 渲染 HTML
-                template = self.template_env.get_template("subject/subject.html")
-                html_content = template.render(**render_data)
-                # 获取模板文件的父目录作为 base_url，以便正确解析相对路径（如 CSS/JS）
-                template_file_path = (
-                    Path(self.template_env.loader.searchpath[0]) / "subject"
-                )
-                base_url = template_file_path.as_uri() + "/"
-
-                # 注入 <base> 标签以解决相对路径问题
-                if "<head>" in html_content:
-                    html_content = html_content.replace(
-                        "<head>", f'<head><base href="{base_url}">', 1
-                    )
-
-                try:
-                    await page.set_content(
-                        html_content, wait_until="networkidle", timeout=15000
-                    )
-                except TimeoutError as timeout_error:
-                    logger.warning(
-                        f"等待页面加载时发生超时或错误，尝试继续截图: {timeout_error}"
-                    )
-
-                # 额外等待（如果指定）
-                if wait_time > 0:
-                    logger.info(f"等待 {wait_time} 秒后关闭浏览器...")
-                    await asyncio.sleep(wait_time)
-
-                # 定位卡片元素
-                card_locator = page.locator("#card")
-
-                # 截图参数
-                screenshot_args = {"type": "png", "omit_background": True}
-                if output_path:
-                    screenshot_args["path"] = output_path
-
-                # 检查元素是否存在并截图
-                if await card_locator.count() > 0:
-                    await card_locator.screenshot(**screenshot_args)
-                else:
-                    logger.warning("未找到 #card 元素，进行全页截图")
-                    screenshot_args["full_page"] = True
-                    if "omit_background" in screenshot_args:
-                        del screenshot_args["omit_background"]
-                    await page.screenshot(**screenshot_args)
-            finally:
-                # 确保资源释放
-                if page is not None:
-                    await page.close()
-
-        # 使用基类的重试机制执行渲染任务
-        try:
-            await retry(_render_task, retries=max_retries, delay=1.0)
-        except Exception as e:
-            logger.error(f"渲染最终失败: {e}")
+        return await self._render_to_base64(
+            template_path="subject/subject.html",
+            render_data=render_data,
+            selector="#card",
+            sub_dir="subject",
+            headless=headless,
+            max_retries=max_retries,
+            wait_time=wait_time,
+        )

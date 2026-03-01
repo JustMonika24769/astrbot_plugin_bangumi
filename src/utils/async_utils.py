@@ -1,14 +1,29 @@
 import asyncio
-
+import functools
+from typing import TypeVar, Callable, Any, Awaitable
 from astrbot.api import logger
 
+T = TypeVar("T")
 
-async def retry(func, retries: int = 3, delay: float = 1.0, *args, **kwargs) -> None:
+
+async def retry(
+    func: Callable[..., Awaitable[T]],
+    retries: int = 3,
+    delay: float = 1.0,
+    label: str = "任务",
+    *args: Any,
+    **kwargs: Any,
+) -> T:
     """
-    通用重试方法
+    通用异步重试方法
     :param func: 需要重试的异步函数
-    :param retries: 重试次数
+    :param retries: 最大重试次数
     :param delay: 重试间隔(秒)
+    :param label: 用于日志显示的标签
+    :param args: 传递给 func 的位置参数
+    :param kwargs: 传递给 func 的关键字参数
+    :return: 异步函数的返回结果
+
     """
     last_exception = None
     for i in range(retries):
@@ -16,9 +31,9 @@ async def retry(func, retries: int = 3, delay: float = 1.0, *args, **kwargs) -> 
             return await func(*args, **kwargs)
         except Exception as e:
             last_exception = e
-            logger.warning(f"渲染任务执行失败 (尝试 {i + 1}/{retries}): {e}")
+            logger.warning(f"{label} 执行失败 (尝试 {i + 1}/{retries}): {e}")
             if i < retries - 1:
                 await asyncio.sleep(delay)
 
-    logger.error(f"渲染任务在 {retries} 次尝试后最终失败")
+    logger.error(f"{label} 在 {retries} 次尝试后最终失败")
     raise last_exception

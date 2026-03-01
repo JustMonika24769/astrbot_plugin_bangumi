@@ -2,6 +2,7 @@
 数据访问层（Repository 模式）
 
 此模块封装所有数据库操作，为业务层提供数据访问接口。
+
 """
 
 import logging
@@ -17,7 +18,9 @@ logger = logging.getLogger("astrbot")
 
 
 class BangumiRepository:
-    """番剧数据访问层"""
+    """
+    番剧数据访问层
+    """
 
     def __init__(self, db_path: str | None = None):
         """
@@ -42,7 +45,9 @@ class BangumiRepository:
         self._init_db()
 
     def _init_db(self):
-        """初始化数据库连接和表结构"""
+        """
+        初始化数据库连接和表结构
+        """
         try:
             # 使用 sqlite
             engine = create_engine(f"sqlite:///{self.db_path}")
@@ -63,6 +68,7 @@ class BangumiRepository:
 
         Returns:
             操作是否成功
+
         """
         session = self.Session()
         try:
@@ -100,6 +106,7 @@ class BangumiRepository:
 
         Returns:
             操作是否成功
+
         """
         session = self.Session()
         try:
@@ -144,6 +151,7 @@ class BangumiRepository:
 
         Returns:
             操作是否成功
+
         """
         session = self.Session()
         try:
@@ -173,6 +181,7 @@ class BangumiRepository:
 
         Returns:
             订阅的番剧 ID 列表
+
         """
         session = self.Session()
         try:
@@ -190,6 +199,7 @@ class BangumiRepository:
 
         Returns:
             番剧对象列表
+
         """
         session = self.Session()
         try:
@@ -216,6 +226,7 @@ class BangumiRepository:
 
         Returns:
             操作是否成功
+
         """
         return self.update_subject(subject_id, current_episode=new_episode)
 
@@ -228,6 +239,7 @@ class BangumiRepository:
 
         Returns:
             群组 ID 列表
+
         """
         session = self.Session()
         try:
@@ -247,6 +259,7 @@ class BangumiRepository:
 
         Returns:
             群组 ID 列表
+
         """
         session = self.Session()
         try:

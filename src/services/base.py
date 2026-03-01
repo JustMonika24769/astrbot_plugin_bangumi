@@ -41,6 +41,7 @@ class BaseBangumiService:
     ) -> Any:
         """
         通用API请求函数，带限流和重试处理
+
         """
         last_exception = None
 
@@ -84,9 +85,12 @@ class BaseBangumiService:
 
         raise BangumiApiError(f"网络连接异常，请稍后再试: {last_exception}")
 
-    async def _handle_response(self, response: aiohttp.ClientResponse, is_json: bool = True) -> Any:
+    async def _handle_response(
+        self, response: aiohttp.ClientResponse, is_json: bool = True
+    ) -> Any:
         """
         处理api响应
+
         """
         if response.status == 200:
             if is_json:
