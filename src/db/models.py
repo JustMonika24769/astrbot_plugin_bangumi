@@ -2,6 +2,7 @@
 数据库 ORM 模型定义
 
 此模块包含所有 SQLAlchemy ORM 模型，用于定义数据库表结构和关系。
+
 """
 
 from sqlalchemy import Column, DateTime, ForeignKey, Integer, String, func
@@ -11,7 +12,9 @@ Base = declarative_base()
 
 
 class BangumiSubject(Base):
-    """番剧条目模型"""
+    """
+    番剧条目模型
+    """
 
     __tablename__ = "bangumi_subjects"
 
@@ -35,7 +38,9 @@ class BangumiSubject(Base):
 
 
 class Subscription(Base):
-    """订阅关系模型"""
+    """
+    订阅关系模型
+    """
 
     __tablename__ = "subscriptions"
 

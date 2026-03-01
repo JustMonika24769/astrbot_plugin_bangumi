@@ -18,6 +18,7 @@ class BangumiService(SubjectsService, CalendarService):
         流程：搜索 -> 获取详情 -> 检查每日放送列表
         返回: (错误信息, 番剧详情字典)
         如果是成功的，错误信息为 None，详情字典包含 id, name, air_date, total_episodes 等。
+
         """
         # 1. 搜索
         search_res = await self.search_subjects(
