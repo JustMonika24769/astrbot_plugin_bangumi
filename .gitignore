@@ -1,8 +1,14 @@
 __pycache__/
-.DS_STORE
+tests/
+.DS_Store
+.idea/
+.pytest_cache/
+.ruff_cache
+.vscode/
 settings.json
 data/
 *.xml
 *.iml
 .env
 .png
+test*

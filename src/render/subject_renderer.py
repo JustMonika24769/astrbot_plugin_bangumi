@@ -142,13 +142,13 @@ class SubjectRenderer(BaseRenderer):
         headless: bool = True,
         wait_time: int = 0,
         max_retries: int = 3,
-    ) -> Optional[str]:
+        timeout: int = 30000,
+    ) -> Optional[str]|None:
         """
         渲染条目卡片并返回 Base64 字符串
         """
         render_data = preprocess_data(data)
-
-        return await self.render(
+        response_data = await self.render(
             template_path="subject/subject.html",
             render_data=render_data,
             selector="#card",
@@ -157,7 +157,10 @@ class SubjectRenderer(BaseRenderer):
             headless=headless,
             max_retries=max_retries,
             wait_time=wait_time,
+            timeout=timeout,
         )
+        return response_data
+
 
     async def render_batch_subject_cards(
         self,
