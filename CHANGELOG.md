@@ -1,6 +1,20 @@
 # Changelog
 
-## v1.4.0
+## v1.1.1 (Planned)
+
+### 🏗️ 架构重构路线图 (TODO)
+- [ ] **[Critical] 实现事务原子性 (Unit of Work)**: 重构 `BangumiRepository` 以支持注入 `Session`，确保订阅操作在 Service 层具备完整的 `commit/rollback` 能力。
+- [ ] **[High] 弃坑逻辑本地化**: 优化 `SubscriptionService.unsubscribe`，优先在本地数据库进行模糊匹配，彻底移除取消订阅时的冗余 API 调用。
+- [ ] **[Medium] 引入日历数据缓存**: 实现 `get_calendar` 的 `LRU Cache`（缓存时间 12-24h），避免每次订阅操作都拉取全量放送表。
+- [ ] **[Medium] 搜索歧义处理机制**: 新增候选列表确认流程。当搜索结果存在多个高匹配项时，返回列表供用户选择，而非盲目订阅首项。
+- [ ] **[Low] 领域异常精细化**: 替换宽泛的 `except Exception`，定义专门的 `SubscriptionError` 和 `DatabaseError`，提供更精准的错误反馈。
+
+### 核心架构审计建议
+- **数据一致性**: 当前订阅流程中 `update_subject` 与 `add_subscription` 相互独立，存在脏数据风险。重构后将强制要求在单一事务内完成。
+- **性能优化**: 针对 API 密集型操作（如 `_match_subscribable_subject`）进行瘦身，减少 60% 以上的不必要网络请求。
+- **用户交互**: 强化“追番”指令的确定性，防止由于关键词模糊导致的误订阅。
+
+## v1.1.0
 
 ### 新增功能
 - **取消订阅**: 新增 `/弃坑` 命令，支持群组移除已订阅的番剧更新提醒。
@@ -14,7 +28,7 @@
 - **类型系统增强**: 引入完整的 `SubjectType`、`ImageSize` 等枚举类型，提升代码可维护性。
 - **代码重构**: 优化 `SubjectsService` 的数据解析流，通过 Pydantic 严格过滤异常 API 返回。
 
-## v1.3.0
+## v1.0.0
 
 ### 新增功能
 - **分类搜索**: 新增 `/bgm番剧`、`/bgm剧场版`、`/bgm漫画` 命令，支持更精准的类型过滤。

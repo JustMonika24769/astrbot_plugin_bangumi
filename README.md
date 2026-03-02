@@ -1,10 +1,10 @@
 <div align="center">
 
 # Bangumi 搜索插件使用指南
-[![repo](https://img.shields.io/badge/repo-v1.3-blue.svg)](https://github.com/united-pooh/astrbot_plugin_bangumi)
+[![repo](https://img.shields.io/badge/repo-v1.1.0-blue.svg)](https://github.com/united-pooh/astrbot_plugin_bangumi)
 [![License](https://img.shields.io/badge/license-Apacha2.0-green.svg)](LICENSE-2.0)
 [![AstrBot](https://img.shields.io/badge/AstrBot-%3E%3D4.0.0-orange.svg)](https://github.com/Soulter/AstrBot)
-[![Python](https://img.shields.io/badge/python-3.8%2B-blue.svg)](https://www.python.org/)
+[![Python](https://img.shields.io/badge/python-3.10%2B-blue.svg)](https://www.python.org/)
 
 **和 AI 一起追番**
 
@@ -18,10 +18,10 @@
 ### 1. 基础搜索 (图文卡片)
 | 命令 | 功能 | 参数 | 示例 |
 |------|------|------|------|
-| `/bgm搜索` | 全类别搜索 | `<关键词\|ID> [top_k]` | `/bgm搜索 进击的巨人 3` |
-| `/bgm番剧` | 仅搜索 TV 动画 | `<关键词\|ID> [top_k]` | `/bgm番剧 命运石之门` |
-| `/bgm剧场版` | 仅搜索剧场版动画 | `<关键词\|ID> [top_k]` | `/bgm剧场版 凉宫春日的消失` |
-| `/bgm漫画` | 仅搜索漫画条目 | `<关键词\|ID> [top_k]` | `/bgm漫画 迷宫饭` |
+| `/bgm` | 全类别搜索 | `<关键词|ID> [top_k]` | `/bgm 进击的巨人 3` |
+| `/bgm番剧` | 仅搜索 TV 动画 | `<关键词|ID> [top_k]` | `/bgm番剧 命运石之门` |
+| `/bgm剧场版` | 仅搜索剧场版动画 | `<关键词|ID> [top_k]` | `/bgm剧场版 凉宫春日的消失` |
+| `/bgm漫画` | 仅搜索漫画条目 | `<关键词|ID> [top_k]` | `/bgm漫画 迷宫饭` |
 
 - `top_k` (可选): 返回结果的数量，默认为 1。
 
@@ -29,7 +29,8 @@
 | 命令 | 功能 | 参数 | 示例 |
 |------|------|------|------|
 | `/today` | 获取今日番剧放送表 | 无 | `/today` |
-| `/追番` | 订阅番剧，更新时自动通知 | `<关键词\|ID>` | `/追番 进击的巨人` |
+| `/追番` | 订阅番剧，更新时自动通知 | `<关键词|ID>` | `/追番 进击的巨人` |
+| `/弃坑` | 取消订阅番剧 | `<关键词|ID>` | `/弃坑 进击的巨人` |
 
 **功能亮点**：
 - **精美卡片**: 自动生成包含封面、评分、排名、简介及剧集进度的图文卡片。
@@ -42,10 +43,13 @@
 
 | 参数名 | 类型 | 默认值 | 说明 |
 |--------|------|--------|------|
-| `access_token` | string | 无 | Bangumi API 令牌（建议配置以获得更高配额） |
-| `user_agent` | string | 自动生成 | API 请求头 User-Agent，无需手动配置 |
-| `proxy_http` | string | 无 | HTTP 代理地址 (例如 `127.0.0.1`) |
-| `port` | int | 无 | HTTP 代理端口 (例如 `7890`) |
+| `access_token` | string | 无 | Bangumi API访问令牌（部分接口需授权）。在 https://next.bgm.tv/demo/access-token 生成 |
+| `user_agent` | string | 无 | 请求头User-Agent标识。如果为空，则使用插件默认值 |
+| `max_fuzzy_results` | int | 5 | 模糊搜索返回的最大结果数量（取值范围 1-200） |
+| `proxy_http` | string | 无 | 代理地址 (IP，例如 `192.168.0.x`) |
+| `port` | string | 无 | 代理端口 (例如 `7890`) |
+| `max_retries` | int | 3 | 网络错误时最大的重试次数 (1-10) |
+| `render_server_url` | string | `https://api.unitedpooh.top/rpc` | 用于远程渲染图片的 RPC 服务器地址 |
 
 ### Access Token 获取
 虽然不强制，但建议配置 Access Token 以避免 API 限流。
