@@ -84,7 +84,7 @@ class BaseRenderer:
         selector: str,
         timeout: int = 30000,
         wait_time: float = 0,
-    ) -> Optional[str]:
+    ) -> Optional[str]|None:
         """
         通过 RPC-JSON 服务器渲染并返回 Base64 字符串。
         """
@@ -117,8 +117,10 @@ class BaseRenderer:
                     if "error" in result:
                         logger.error(f"[-] RPC 渲染失败: {result['error']}")
                         return None
-
-                    return result.get("result")
+                    result = result.get("result")
+                    if "image" in result:
+                        return result["image"]
+                    return None
         except Exception as e:
             logger.error(f"[-] RPC 渲染请求发生异常: {e}")
             return None
@@ -189,11 +191,11 @@ class BaseRenderer:
             logger.warning(f"[-] RPC 渲染失败 ({template_path})，正在回退到本地渲染...")
             logger.error(f"[-] 错误信息({result})")
 
-        # return await self._render_locally(
-        #     html_content=html_content,
-        #     template_path=template_path,
-        #     selector=selector,
-        #     timeout=timeout,
-        #     wait_time=wait_time,
-        #     **kwargs,
-        # )
+        return await self._render_locally(
+            html_content=html_content,
+            template_path=template_path,
+            selector=selector,
+            timeout=timeout,
+            wait_time=wait_time,
+            **kwargs,
+        )
