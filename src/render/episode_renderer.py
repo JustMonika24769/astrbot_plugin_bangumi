@@ -24,7 +24,7 @@ class EpisodeRenderer(BaseRenderer):
         )
 
         return await self.render(
-            template_path="update/episode2.html",
+            template_path="update/episode.html",
             render_data=render_data,
             selector="#card-container",
             rpc_url=rpc_url,
