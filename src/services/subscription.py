@@ -5,7 +5,7 @@ from astrbot.api.star import StarTools
 from astrbot.core.message.message_event_result import MessageChain
 
 from ..db.repository import BangumiRepository
-from .base import BangumiService
+from ..services import BangumiService
 from .schemas import Episode
 from .types import ImageSize
 from ..config.config_manager import ConfigManager
