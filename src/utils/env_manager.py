@@ -3,6 +3,7 @@ import os
 import sys
 from astrbot.api import logger
 
+
 class EnvManager:
     def __init__(self, data_dir: str):
         self.data_dir = data_dir
@@ -65,7 +66,9 @@ class EnvManager:
                         f"系统依赖安装返回状态码: {process.returncode} (可能由于非 root 权限)"
                     )
             else:
-                logger.info(f"当前系统为 {sys.platform}，跳过系统依赖安装 (install-deps)。")
+                logger.info(
+                    f"当前系统为 {sys.platform}，跳过系统依赖安装 (install-deps)。"
+                )
 
             # 2. 安装 Playwright Chromium
             logger.info("正在安装 Playwright Chromium...")
@@ -92,9 +95,13 @@ class EnvManager:
                     with open(self.flag_file, "w") as f:
                         f.write("installed")
                 else:
-                    logger.error("Playwright 安装后验证依然失败，请检查网络或手动安装依赖。")
+                    logger.error(
+                        "Playwright 安装后验证依然失败，请检查网络或手动安装依赖。"
+                    )
             else:
-                logger.warning(f"Playwright Chromium 安装返回错误码: {process.returncode}")
+                logger.warning(
+                    f"Playwright Chromium 安装返回错误码: {process.returncode}"
+                )
 
         except Exception as e:
             logger.error(f"依赖安装流程失败: {e}")

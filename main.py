@@ -73,7 +73,7 @@ class BangumiPlugin(Star):
             self.subscription_service = SubscriptionService(
                 repository=self.storage,
                 service=self.service,
-                config_manager=self.config_manager
+                config_manager=self.config_manager,
             )
 
     async def initialize(self):
@@ -89,13 +89,17 @@ class BangumiPlugin(Star):
 
         # 检查本地渲染环境，但不强制安装（因为 RPC 是首选）
         if not self.env_manager.is_installed():
-            logger.info("本地 Playwright 环境未就绪，将优先使用 RPC 渲染（如果已配置）。")
+            logger.info(
+                "本地 Playwright 环境未就绪，将优先使用 RPC 渲染（如果已配置）。"
+            )
 
         # 添加定时任务
         if self.subscription_service:
             try:
                 self.scheduler_manager.add_job(
-                    func=self.subscription_service.check_updates, trigger="cron", minute=0
+                    func=self.subscription_service.check_updates,
+                    trigger="cron",
+                    minute=0,
                 )
                 logger.info("Bangumi 插件定时更新任务已启动")
             except Exception as e:
@@ -146,7 +150,7 @@ class BangumiPlugin(Star):
         # 创建渲染器实例
         renderer = SubjectRenderer()
         await renderer.render_batch_subject_cards(
-            data_list=data_list, 
+            data_list=data_list,
             output_paths=temp_files,
             rpc_url=self.config_manager.get_render_server_url(),
             max_retries=self.config_manager.get_max_retries(),
@@ -320,11 +324,14 @@ class BangumiPlugin(Star):
 
         msg = [f"DB Path: {self.storage.db_path}"]
         if os.path.exists(self.storage.db_path):
-            msg.append(f"File exists, size: {os.path.getsize(self.storage.db_path)} bytes")
+            msg.append(
+                f"File exists, size: {os.path.getsize(self.storage.db_path)} bytes"
+            )
 
         # 查询数据
         try:
             from .src.db import BangumiSubject, Subscription
+
             session = self.storage.Session()
             subjects = session.query(BangumiSubject).all()
             msg.append(f"\nSubjects ({len(subjects)}):")

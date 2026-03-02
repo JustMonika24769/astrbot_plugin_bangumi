@@ -53,9 +53,7 @@ class BaseRenderer:
             raise RuntimeError("[-] 无法创建浏览器页面")
 
         try:
-            await page.set_content(
-                html_content, wait_until="load", timeout=timeout
-            )
+            await page.set_content(html_content, wait_until="load", timeout=timeout)
 
             if wait_time > 0:
                 await asyncio.sleep(wait_time)
@@ -84,7 +82,7 @@ class BaseRenderer:
         selector: str,
         timeout: int = 30000,
         wait_time: float = 0,
-    ) -> Optional[str]|None:
+    ) -> Optional[str] | None:
         """
         通过 RPC-JSON 服务器渲染并返回 Base64 字符串。
         """
@@ -110,7 +108,9 @@ class BaseRenderer:
                     rpc_url, json=payload, timeout=timeout
                 ) as response:
                     if response.status != 200:
-                        logger.error(f"[-] RPC 渲染服务器返回错误状态码: {response.status}")
+                        logger.error(
+                            f"[-] RPC 渲染服务器返回错误状态码: {response.status}"
+                        )
                         return None
 
                     result = await response.json()
