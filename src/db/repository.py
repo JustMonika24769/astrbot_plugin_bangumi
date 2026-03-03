@@ -5,15 +5,13 @@
 
 """
 
-import logging
 import os
 
+from astrbot.api import logger
 from sqlalchemy import create_engine
 from sqlalchemy.orm import joinedload, scoped_session, sessionmaker
 
 from .models import Base, BangumiSubject, Subscription
-
-logger = logging.getLogger("astrbot")
 
 
 class BangumiRepository:
