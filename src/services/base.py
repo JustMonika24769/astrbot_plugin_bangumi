@@ -4,6 +4,8 @@ import time
 from typing import Any, Dict, Optional
 
 import aiohttp
+
+
 from astrbot.api import logger
 
 from .exceptions import BangumiApiError, BangumiRateLimitError, NoSubjectFound
@@ -27,7 +29,11 @@ class BaseBangumiService:
             "User-Agent": user_agent,
         }
         self.proxy = proxy
-        self.last_request_time = 0
+        self.last_request_time = 0.0
+        self._rate_lock = asyncio.Lock()
+        self._timeout = aiohttp.ClientTimeout(total=30, connect=10)
+        # 兜底 session（惰性创建，避免每次新建 TCP 连接）
+        self._fallback_session: Optional[aiohttp.ClientSession] = None
         # 这里只放通用的缓存，或者具体业务的缓存放到具体类中
         self.search_cache: Dict[str, Dict] = {}
         self.max_retries = max_retries
@@ -45,13 +51,15 @@ class BaseBangumiService:
         通用API请求函数，带限流和重试处理
 
         """
-        last_exception = None
+        last_exception: Exception | None = None
 
         for attempt in range(self.max_retries):
-            current_time = time.time()
-            if current_time - self.last_request_time < 1.1:
-                await asyncio.sleep(1.1 - (current_time - self.last_request_time))
-            self.last_request_time = time.time()
+            async with self._rate_lock:
+                now = time.time()
+                gap = 1.1 - (now - self.last_request_time)
+                if gap > 0:
+                    await asyncio.sleep(gap)
+                self.last_request_time = time.time()
 
             logger.info(
                 f"Bangumi API请求 (尝试 {attempt + 1}/{self.max_retries}): {method} {url}"
@@ -59,40 +67,39 @@ class BaseBangumiService:
 
             try:
                 # 优先使用外部注入的 Session
-                if self._session and not self._session.closed:
-                    session = self._session
-                    request_context = (
-                        session.post(
-                            url, json=json_data, params=params, proxy=self.proxy, headers=self.headers
-                        )
-                        if method.upper() == "POST"
-                        else session.get(url, params=params, proxy=self.proxy, headers=self.headers)
+                session = (
+                    self._session
+                    if self._session and not self._session.closed
+                    else await self._get_fallback_session()
+                )
+                request_context = (
+                    session.post(
+                        url,
+                        json=json_data,
+                        params=params,
+                        proxy=self.proxy,
+                        headers=self.headers,
+                        timeout=self._timeout,
                     )
+                    if method.upper() == "POST"
+                    else session.get(
+                        url,
+                        params=params,
+                        proxy=self.proxy,
+                        headers=self.headers,
+                        timeout=self._timeout,
+                    )
+                )
 
-                    async with request_context as response:
-                        if response.status >= 500:
-                            logger.warning(f"服务器返回错误状态码: {response.status}")
-                            await asyncio.sleep(1.5)
-                            continue
-                        return await self._handle_response(response, is_json=is_json)
-                else:
-                    # 兜底：创建临时 Session
-                    async with aiohttp.ClientSession(headers=self.headers) as session:
-                        request_context = (
-                            session.post(
-                                url, json=json_data, params=params, proxy=self.proxy
-                            )
-                            if method.upper() == "POST"
-                            else session.get(url, params=params, proxy=self.proxy)
+                async with request_context as response:
+                    if response.status >= 500:
+                        last_exception = BangumiApiError(
+                            f"服务器错误 ({response.status})，尝试 {attempt + 1}/{self.max_retries}"
                         )
-
-                        async with request_context as response:
-                            if response.status >= 500:
-                                logger.warning(f"服务器返回错误状态码: {response.status}")
-                                await asyncio.sleep(1.5)
-                                continue
-
-                            return await self._handle_response(response, is_json=is_json)
+                        logger.warning(f"服务器返回错误状态码: {response.status}")
+                        await asyncio.sleep(1.5)
+                        continue
+                    return await self._handle_response(response, is_json=is_json)
 
             except aiohttp.ClientError as e:
                 logger.warning(f"网络请求失败: {e}")
@@ -102,7 +109,13 @@ class BaseBangumiService:
                 else:
                     logger.error("达到最大重试次数，请求失败")
 
-        raise BangumiApiError(f"网络连接异常，请稍后再试: {last_exception}")
+        raise BangumiApiError(f"请求失败，请稍后再试: {last_exception}")
+
+    async def _get_fallback_session(self) -> aiohttp.ClientSession:
+        """惰性创建并复用兜底 ClientSession。"""
+        if self._fallback_session is None or self._fallback_session.closed:
+            self._fallback_session = aiohttp.ClientSession(headers=self.headers)
+        return self._fallback_session
 
     async def _handle_response(
         self, response: aiohttp.ClientResponse, is_json: bool = True

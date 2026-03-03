@@ -144,7 +144,7 @@ class SubjectRenderer(BaseRenderer):
         wait_time: int = 0,
         max_retries: int = 3,
         timeout: int = 30000,
-    ) -> Optional[str] | None:
+    ) -> str | None:
         """
         渲染条目卡片并返回 Base64 字符串
         """
@@ -170,14 +170,19 @@ class SubjectRenderer(BaseRenderer):
         wait_time: int = 0,
         max_retries: int = 3,
         timeout: int = 30000,
+        max_concurrency: int = 3,
     ) -> List[str]:
         """
         批量渲染条目卡片并直接返回 Base64 字符串列表。
+
+        Args:
+            max_concurrency: 最大并发渲染数，防止压垮浏览器/RPC 服务
         """
-        tasks = []
-        for data in data_list:
-            tasks.append(
-                self.render_subject_card(
+        semaphore = asyncio.Semaphore(max_concurrency)
+
+        async def _limited_render(data: Dict[str, Any]) -> str | None:
+            async with semaphore:
+                return await self.render_subject_card(
                     data=data,
                     rpc_url=rpc_url,
                     headless=headless,
@@ -185,7 +190,14 @@ class SubjectRenderer(BaseRenderer):
                     max_retries=max_retries,
                     timeout=timeout,
                 )
-            )
 
-        results = await asyncio.gather(*tasks)
-        return [res for res in results if res]
+        tasks = [_limited_render(data) for data in data_list]
+        results = await asyncio.gather(*tasks, return_exceptions=True)
+
+        valid_results: List[str] = []
+        for i, res in enumerate(results):
+            if isinstance(res, Exception):
+                logger.warning(f"批量渲染第 {i + 1} 项失败: {res}")
+            elif res:
+                valid_results.append(res)
+        return valid_results
