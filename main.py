@@ -11,6 +11,7 @@ from astrbot.api.star import Context, Star, register
 from .src.config.config_manager import ConfigManager
 from .src.utils.scheduler import SchedulerManager
 from astrbot.api.star import StarTools
+
 # 导入逻辑服务
 from .src.services import BangumiService
 from .src.services.subscription import SubscriptionService
@@ -21,8 +22,8 @@ from .src.db import BangumiRepository
 @register(
     "astrbot_plugin_bangumi_enhance",
     "united_pooh",
-    "一个用于查询Bangumi条目信息的插件",
-    "1.0.0",
+    "AstrBot Bangumi 增强版：为 AstrBot 打造的一站式 Bangumi 追番助手。支持番剧/漫画图文搜索、每日放送时刻表查看及集数更新自动提醒。",
+    "v1.1.0",
     "https://github.com/united-pooh/astrbot_plugin_bangumi",
 )
 class BangumiPlugin(Star):

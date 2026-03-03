@@ -1,0 +1,43 @@
+name: Auto Format with Ruff
+
+on:
+  pull_request:
+    paths:
+      - '**.py' # 仅监听 Python 文件变化
+
+permissions:
+  contents: write # 必须赋予写权限以提交修改
+
+jobs:
+  ruff-format:
+    runs-on: ubuntu-latest
+    steps:
+      # 1. 检出代码 (必须指定 head_ref)
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.head_ref }}
+
+      # 2. 设置 Python 环境
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install Ruff
+        run: pip install ruff
+
+
+      - name: Run Ruff
+        run: |
+          # --fix 会自动修复 import 排序 (isort 功能) 和其他 lint 问题
+          ruff check --fix .
+          # format 会执行类似 Black 的代码格式化
+          ruff format .
+
+      # 5. 提交更改
+      - name: Commit changes
+        uses: stefanzweifel/git-auto-commit-action@v5
+        with:
+          commit_message: "style: auto-format with ruff"
+          file_pattern: '*.py'
