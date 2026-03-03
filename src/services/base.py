@@ -1,7 +1,7 @@
 import asyncio
 import json
 import time
-from typing import Any, Dict
+from typing import Any, Dict, Optional
 
 import aiohttp
 from astrbot.api import logger
@@ -16,6 +16,7 @@ class BaseBangumiService:
         user_agent: str,
         proxy: str | None = None,
         max_retries: int = 3,
+        session: Optional[aiohttp.ClientSession] = None,
     ):
         if not access_token:
             raise ValueError("Bangumi access_token 未设置")
@@ -30,6 +31,7 @@ class BaseBangumiService:
         # 这里只放通用的缓存，或者具体业务的缓存放到具体类中
         self.search_cache: Dict[str, Dict] = {}
         self.max_retries = max_retries
+        self._session = session
 
     async def _request(
         self,
@@ -56,24 +58,41 @@ class BaseBangumiService:
             )
 
             try:
-                async with aiohttp.ClientSession(headers=self.headers) as session:
+                # 优先使用外部注入的 Session
+                if self._session and not self._session.closed:
+                    session = self._session
                     request_context = (
                         session.post(
-                            url, json=json_data, params=params, proxy=self.proxy
+                            url, json=json_data, params=params, proxy=self.proxy, headers=self.headers
                         )
                         if method.upper() == "POST"
-                        else session.get(url, params=params, proxy=self.proxy)
+                        else session.get(url, params=params, proxy=self.proxy, headers=self.headers)
                     )
 
                     async with request_context as response:
-                        # 遇到 5xx 服务器错误，主动抛出 ClientError 以触发重试
                         if response.status >= 500:
                             logger.warning(f"服务器返回错误状态码: {response.status}")
-                            # 稍微等待一下再重试
                             await asyncio.sleep(1.5)
                             continue
-
                         return await self._handle_response(response, is_json=is_json)
+                else:
+                    # 兜底：创建临时 Session
+                    async with aiohttp.ClientSession(headers=self.headers) as session:
+                        request_context = (
+                            session.post(
+                                url, json=json_data, params=params, proxy=self.proxy
+                            )
+                            if method.upper() == "POST"
+                            else session.get(url, params=params, proxy=self.proxy)
+                        )
+
+                        async with request_context as response:
+                            if response.status >= 500:
+                                logger.warning(f"服务器返回错误状态码: {response.status}")
+                                await asyncio.sleep(1.5)
+                                continue
+
+                            return await self._handle_response(response, is_json=is_json)
 
             except aiohttp.ClientError as e:
                 logger.warning(f"网络请求失败: {e}")

@@ -12,12 +12,19 @@ from ..utils.browser import create_page
 
 
 class BaseRenderer:
-    def __init__(self) -> None:
+    def __init__(self, session: Optional[aiohttp.ClientSession] = None) -> None:
+        """
+        初始化渲染器。
+
+        Args:
+            session: 可选的 aiohttp.ClientSession，用于复用连接。
+        """
         # 统一模板目录定位
         self.template_dir = Path(__file__).resolve().parent.parent / "templates"
         self.template_env = jinja2.Environment(
             loader=jinja2.FileSystemLoader(str(self.template_dir)), autoescape=True
         )
+        self._session = session
 
     def _generate_html(
         self, template_path: str, render_data: Dict[str, Any], sub_dir: str = ""
@@ -76,6 +83,38 @@ class BaseRenderer:
             if page:
                 await page.close()
 
+    async def _handle_rpc_response(self, response: aiohttp.ClientResponse) -> Optional[str]:
+        """
+        统一处理 RPC 响应解析。
+        """
+        if response.status != 200:
+            logger.error(f"[-] RPC 渲染服务器返回错误状态码: {response.status}")
+            return None
+
+        try:
+            result = await response.json()
+        except aiohttp.ContentTypeError:
+            logger.error("[-] RPC 响应内容不是有效的 JSON")
+            return None
+        except Exception as e:
+            logger.error(f"[-] 解析 RPC JSON 响应失败: {e}")
+            return None
+
+        if not isinstance(result, dict):
+            logger.error(f"[-] RPC 响应格式错误，预期为 dict，实际为: {type(result)}")
+            return None
+
+        if "error" in result:
+            logger.error(f"[-] RPC 渲染返回业务错误: {result['error']}")
+            return None
+
+        res_obj = result.get("result")
+        if isinstance(res_obj, dict) and "image" in res_obj:
+            return res_obj["image"]
+
+        logger.error(f"[-] RPC 响应中未找到 result.image 数据: {result}")
+        return None
+
     async def _render_via_rpc(
         self,
         rpc_url: str,
@@ -107,27 +146,29 @@ class BaseRenderer:
         client_timeout = aiohttp.ClientTimeout(total=timeout / 1000.0)
 
         try:
-            async with aiohttp.ClientSession() as session:
-                async with session.post(
+            if self._session and not self._session.closed:
+                async with self._session.post(
                     rpc_url, json=payload, timeout=client_timeout
                 ) as response:
-                    if response.status != 200:
-                        logger.error(
-                            f"[-] RPC 渲染服务器返回错误状态码: {response.status}"
-                        )
-                        return None
+                    return await self._handle_rpc_response(response)
+            else:
+                # 兜底：如果没有外部 Session，则创建临时 Session
+                async with aiohttp.ClientSession() as session:
+                    async with session.post(
+                        rpc_url, json=payload, timeout=client_timeout
+                    ) as response:
+                        return await self._handle_rpc_response(response)
 
-                    result = await response.json()
-                    if "error" in result:
-                        logger.error(f"[-] RPC 渲染失败: {result['error']}")
-                        return None
-                    result = result.get("result")
-                    if "image" in result:
-                        return result["image"]
-                    return None
+        except aiohttp.ClientConnectorError as e:
+            logger.error(f"[-] RPC 渲染服务器连接失败: {e}")
+        except asyncio.TimeoutError:
+            logger.error(f"[-] RPC 渲染请求超时 ({timeout}ms)")
+        except aiohttp.ClientResponseError as e:
+            logger.error(f"[-] RPC 渲染服务器响应异常: {e.status} {e.message}")
         except Exception as e:
-            logger.error(f"[-] RPC 渲染请求发生异常: {e}")
-            return None
+            logger.error(f"[-] RPC 渲染请求发生未知异常: {e}")
+
+        return None
 
     async def _render_locally(
         self,
@@ -193,7 +234,6 @@ class BaseRenderer:
             if result:
                 return result
             logger.warning(f"[-] RPC 渲染失败 ({template_path})，正在回退到本地渲染...")
-            logger.error(f"[-] 错误信息({result})")
 
         return await self._render_locally(
             html_content=html_content,

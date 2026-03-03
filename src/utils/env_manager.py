@@ -8,7 +8,7 @@ class EnvManager:
     def __init__(self, data_dir: str):
         self.data_dir = data_dir
         self.flag_file = os.path.join(
-            data_dir, "plugin_data", "astrbot_plugin_bangumi", ".playwright_installed"
+            data_dir, ".playwright_installed"
         )
 
     async def verify_playwright(self) -> bool:

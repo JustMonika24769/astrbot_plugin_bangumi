@@ -8,7 +8,7 @@
 import logging
 import os
 
-from astrbot.core.utils.astrbot_path import get_astrbot_data_path
+from astrbot.api.star import StarTools
 from sqlalchemy import create_engine
 from sqlalchemy.orm import joinedload, scoped_session, sessionmaker
 
@@ -29,12 +29,8 @@ class BangumiRepository:
         Args:
             db_path: 数据库文件路径，如果为 None 则使用默认路径
         """
-        # 使用 AstrBot 提供的 API 获取数据目录
-        data_dir = get_astrbot_data_path()
-        # 按照需求构建路径: data/plugin_data/astrbot_plugin_bangumi
-        plugin_data_dir = os.path.join(
-            data_dir, "plugin_data", "astrbot_plugin_bangumi"
-        )
+        # 使用 AstrBot 插件级数据目录规范
+        plugin_data_dir = StarTools.get_data_dir()
 
         if not os.path.exists(plugin_data_dir):
             os.makedirs(plugin_data_dir)

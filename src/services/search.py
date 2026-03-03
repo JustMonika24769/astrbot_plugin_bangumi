@@ -1,5 +1,6 @@
 import asyncio
 import os
+import aiohttp
 from typing import List, Optional, Tuple, Any, AsyncGenerator
 
 import astrbot.api.message_components as Comp
@@ -13,11 +14,16 @@ from ..render.calendar_renderer import CalendarRenderer
 
 
 class SearchService:
-    def __init__(self, service: BangumiService, config_manager: ConfigManager):
+    def __init__(
+        self,
+        service: BangumiService,
+        config_manager: ConfigManager,
+        session: Optional[aiohttp.ClientSession] = None,
+    ):
         self.service = service
         self.config_manager = config_manager
-        self.subject_renderer = SubjectRenderer()
-        self.calendar_renderer = CalendarRenderer()
+        self.subject_renderer = SubjectRenderer(session=session)
+        self.calendar_renderer = CalendarRenderer(session=session)
 
     async def handle_subject_search(
         self,

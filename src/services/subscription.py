@@ -1,4 +1,5 @@
 import asyncio
+import aiohttp
 from typing import Optional, List, Tuple, Dict, Any
 from astrbot.api import logger
 from astrbot.api.star import StarTools
@@ -18,11 +19,12 @@ class SubscriptionService:
         repository: BangumiRepository,
         service: BangumiService,
         config_manager: ConfigManager,
+        session: Optional[aiohttp.ClientSession] = None,
     ) -> None:
         self.storage = repository
         self.service = service
         self.config_manager = config_manager
-        self.renderer = EpisodeRenderer()
+        self.renderer = EpisodeRenderer(session=session)
 
     async def _match_subscribable_subject(
         self, keyword: str

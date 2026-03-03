@@ -1,5 +1,6 @@
 import os
 import datetime
+import aiohttp
 
 from astrbot.api import logger
 from astrbot.api.all import AstrBotConfig
@@ -9,7 +10,7 @@ from astrbot.api.star import Context, Star, register
 # 导入配置与管理
 from .src.config.config_manager import ConfigManager
 from .src.utils.scheduler import SchedulerManager
-
+from astrbot.api.star import StarTools
 # 导入逻辑服务
 from .src.services import BangumiService
 from .src.services.subscription import SubscriptionService
@@ -34,14 +35,26 @@ class BangumiPlugin(Star):
         self.config_manager = ConfigManager(config)
         self.scheduler_manager = SchedulerManager()
 
-        # 1. 初始化核心依赖 (Repository & API Service)
+        self.session = None
+        self.storage = None
+        self.service = None
+        self.subscription_service = None
+        self.search_service = None
+
+    async def initialize(self) -> None:
+        """
+        插件加载时自动运行的初始化方法。
+        """
+        # 1. 初始化数据库
         try:
             self.storage = BangumiRepository()
         except Exception as e:
             logger.error(f"数据库初始化失败: {e}")
-            self.storage = None
 
-        self.service = None
+        # 2. 初始化网络会话 (Shared Session)
+        self.session = aiohttp.ClientSession()
+
+        # 3. 初始化核心 API 服务
         try:
             proxy_url = None
             proxy_host = self.config_manager.get_proxy_http()
@@ -53,18 +66,18 @@ class BangumiPlugin(Star):
                 access_token=self.config_manager.get_access_token(),
                 user_agent=self.config_manager.get_user_agent(),
                 proxy=proxy_url,
+                session=self.session,
             )
         except Exception as e:
             logger.error(f"服务初始化失败: {e}")
 
-        # 2. 初始化业务逻辑服务 (Dependency Injection)
-        self.subscription_service = None
-        self.search_service = None
-
+        # 4. 初始化业务逻辑服务 (Dependency Injection)
         if self.service:
             # 搜索服务
             self.search_service = SearchService(
-                service=self.service, config_manager=self.config_manager
+                service=self.service,
+                config_manager=self.config_manager,
+                session=self.session
             )
 
             # 订阅服务
@@ -73,20 +86,17 @@ class BangumiPlugin(Star):
                     repository=self.storage,
                     service=self.service,
                     config_manager=self.config_manager,
+                    session=self.session
                 )
 
-    async def initialize(self) -> None:
-        """
-        插件加载时自动运行的初始化方法。
-        """
-        # 获取环境管理器
-        from astrbot.core.utils.astrbot_path import get_astrbot_data_path
+        # 5. 其他初始化流程
+        from astrbot.api.star import StarTools
         from .src.utils.env_manager import EnvManager
 
-        data_dir = get_astrbot_data_path()
-        self.env_manager = EnvManager(data_dir)
+        plugin_data_dir = StarTools.get_data_dir()
+        self.env_manager = EnvManager(plugin_data_dir)
 
-        # 检查本地渲染环境，但不强制安装（因为 RPC 是首选）
+        # 检查本地渲染环境
         if not self.env_manager.is_installed():
             logger.info(
                 "本地 Playwright 环境未就绪，将优先使用 RPC 渲染（如果已配置）。"
@@ -156,49 +166,6 @@ class BangumiPlugin(Star):
         async for result in self.search_service.handle_calendar(event):
             yield result
 
-    @filter.command("bgm_debug")
-    async def bgm_debug(self, event: AstrMessageEvent):
-        """
-        调试指令：查看数据库状态。
-        """
-        if not self.storage:
-            yield event.plain_result("Storage not initialized")
-            return
-
-        # 测试用：重置番剧 525565 的 current_episode 为 0
-        self.storage.update_subject_episode("525565", 0)
-
-        msg = [f"DB Path: {self.storage.db_path}"]
-        if os.path.exists(self.storage.db_path):
-            msg.append(
-                f"File exists, size: {os.path.getsize(self.storage.db_path)} bytes"
-            )
-
-        # 查询数据
-        try:
-            from .src.db import BangumiSubject
-
-            session = self.storage.Session()
-            subjects = session.query(BangumiSubject).all()
-            msg.append(f"\nSubjects ({len(subjects)}):")
-            for s in subjects:
-                msg.append(str(s))
-            session.close()
-        except Exception as e:
-            msg.append(f"\nError querying DB: {e}")
-
-        # 设置10秒后触发一次更新检查
-        if self.subscription_service:
-            run_time = datetime.datetime.now() + datetime.timedelta(seconds=10)
-            self.scheduler_manager.add_job(
-                func=self.subscription_service.check_updates,
-                trigger="date",
-                run_date=run_time,
-            )
-            msg.append("\n⏰ 已设置10秒后触发一次更新检查任务")
-
-        yield event.plain_result("\n".join(msg))
-
     @filter.command("追番")
     async def subscribe(self, event: AstrMessageEvent, query: str):
         if not self.subscription_service:
@@ -234,7 +201,12 @@ class BangumiPlugin(Star):
         yield event.plain_result(result)
 
     async def terminate(self):
-        logger.info("正在清理调度器...")
+        logger.info("正在清理 Bangumi 插件资源...")
         if self.scheduler_manager.scheduler.running:
             self.scheduler_manager.scheduler.shutdown(wait=False)
+
+        if self.session and not self.session.closed:
+            await self.session.close()
+            logger.info("已关闭共享网络会话")
+
         await super().terminate()
