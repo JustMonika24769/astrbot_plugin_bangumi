@@ -1,18 +1,17 @@
 import asyncio
 import base64
 from pathlib import Path
-from typing import Optional, Dict, Any
 
 import jinja2
 import aiohttp
 from astrbot.api import logger
 
-from ..utils.async_utils import retry
-from ..utils.browser import create_page
+from ..services import RenderData
+from ..utils import create_page, retry
 
 
 class BaseRenderer:
-    def __init__(self, session: Optional[aiohttp.ClientSession] = None) -> None:
+    def __init__(self, session: aiohttp.ClientSession | None = None) -> None:
         """
         初始化渲染器。
 
@@ -27,7 +26,7 @@ class BaseRenderer:
         self._session = session
 
     def _generate_html(
-        self, template_path: str, render_data: Dict[str, Any], sub_dir: str = ""
+        self, template_path: str, render_data: RenderData, sub_dir: str = ""
     ) -> str:
         """
         统一渲染模板并注入 <base> 标签。
@@ -50,7 +49,7 @@ class BaseRenderer:
         headless: bool = True,
         timeout: int = 15000,
         wait_time: float = 0,
-    ) -> Optional[str]:
+    ) -> str | None:
         """
         通用的本地浏览器截图逻辑，返回 Base64 字符串。
         """
@@ -59,9 +58,7 @@ class BaseRenderer:
             raise RuntimeError("[-] 无法创建浏览器页面")
 
         try:
-            await page.set_content(
-                html_content, wait_until="load", timeout=timeout
-            )
+            await page.set_content(html_content, wait_until="load", timeout=timeout)
 
             if wait_time > 0:
                 await asyncio.sleep(wait_time)
@@ -83,7 +80,9 @@ class BaseRenderer:
             if page:
                 await page.close()
 
-    async def _handle_rpc_response(self, response: aiohttp.ClientResponse) -> Optional[str]:
+    async def _handle_rpc_response(
+        self, response: aiohttp.ClientResponse
+    ) -> str | None:
         """
         统一处理 RPC 响应解析。
         """
@@ -96,7 +95,7 @@ class BaseRenderer:
         except aiohttp.ContentTypeError:
             logger.error("[-] RPC 响应内容不是有效的 JSON")
             return None
-        except Exception as e:
+        except (ValueError, TypeError, RuntimeError) as e:
             logger.error(f"[-] 解析 RPC JSON 响应失败: {e}")
             return None
 
@@ -110,7 +109,8 @@ class BaseRenderer:
 
         res_obj = result.get("result")
         if isinstance(res_obj, dict) and "image" in res_obj:
-            return res_obj["image"]
+            image = res_obj["image"]
+            return image if isinstance(image, str) else None
 
         logger.error(f"[-] RPC 响应中未找到 result.image 数据: {result}")
         return None
@@ -165,7 +165,7 @@ class BaseRenderer:
             logger.error(f"[-] RPC 渲染请求超时 ({timeout}ms)")
         except aiohttp.ClientResponseError as e:
             logger.error(f"[-] RPC 渲染服务器响应异常: {e.status} {e.message}")
-        except Exception as e:
+        except (RuntimeError, ValueError, TypeError) as e:
             logger.error(f"[-] RPC 渲染请求发生未知异常: {e}")
 
         return None
@@ -179,7 +179,7 @@ class BaseRenderer:
         max_retries: int = 3,
         timeout: int = 15000,
         wait_time: float = 0,
-    ) -> Optional[str]:
+    ) -> str | None:
         """
         本地渲染并返回 Base64 字符串的快捷方法。
         """
@@ -192,21 +192,22 @@ class BaseRenderer:
                 retries=max_retries,
                 label=label,
             )
-        except Exception as e:
+        except (RuntimeError, ValueError, TypeError) as e:
             logger.error(f"[-] {label} 最终失败: {e}")
             return None
 
     async def render(
         self,
         template_path: str,
-        render_data: Dict[str, Any],
+        render_data: RenderData,
         selector: str,
-        rpc_url: Optional[str] = None,
+        rpc_url: str | None = None,
         sub_dir: str = "",
         timeout: int = 30000,
         wait_time: float = 0,
-        **kwargs,
-    ) -> Optional[str]:
+        headless: bool = True,
+        max_retries: int = 3,
+    ) -> str | None:
         """
         通用渲染方法：优先尝试 RPC 渲染，若失败或未配置则回退到本地渲染。
 
@@ -218,7 +219,6 @@ class BaseRenderer:
             sub_dir: 模板子目录（用于 base 标签注入）
             timeout: 超时时间（毫秒）
             wait_time: 截图前的等待时间（秒）
-            **kwargs: 传递给 _render_locally 的额外参数（如 headless, max_retries）
         """
         html_content = self._generate_html(template_path, render_data, sub_dir)
 
@@ -241,5 +241,6 @@ class BaseRenderer:
             selector=selector,
             timeout=timeout,
             wait_time=wait_time,
-            **kwargs,
+            headless=headless,
+            max_retries=max_retries,
         )

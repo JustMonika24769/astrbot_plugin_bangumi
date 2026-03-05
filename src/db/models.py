@@ -30,10 +30,10 @@ class BangumiSubject(Base):
         "Subscription", back_populates="subject", cascade="all, delete-orphan"
     )
 
-    def __repr__(self):
+    def __repr__(self) -> str:
         return f"<BangumiSubject(id={self.subject_id}, name={self.name})>"
 
-    def __str__(self):
+    def __str__(self) -> str:
         return f"{self.name} ({self.subject_id}) [{self.current_episode}/{self.total_episodes}]"
 
 
@@ -53,8 +53,8 @@ class Subscription(Base):
     # 建立与 BangumiSubject 的多对一关系
     subject = relationship("BangumiSubject", back_populates="subscriptions")
 
-    def __repr__(self):
+    def __repr__(self) -> str:
         return f"<Subscription(id={self.subject_id}, group_id={self.group_id}, created_at={self.created_at})>"
 
-    def __str__(self):
+    def __str__(self) -> str:
         return f"- 群 {self.group_id} 订阅了 {self.subject.name} ({self.subject.subject_id})"

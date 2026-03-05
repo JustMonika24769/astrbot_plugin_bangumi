@@ -1,25 +1,31 @@
-import asyncio
-import os
 import aiohttp
-from typing import List, Optional, Tuple, Any, AsyncGenerator
+from typing import TYPE_CHECKING, AsyncGenerator, cast
 
 import astrbot.api.message_components as Comp
 from astrbot.api import logger
 from astrbot.api.event import AstrMessageEvent
 
-from ..services import BangumiService
-from ..config.config_manager import ConfigManager
-from ..render.subject_renderer import SubjectRenderer
-from ..render.calendar_renderer import CalendarRenderer
+from ..config import ConfigManager
+from ..render import CalendarRenderer, SubjectRenderer
+from .contracts import (
+    MessageResult,
+    RenderData,
+    SearchSubjectItem,
+    SubjectDetailsResponse,
+)
+from .exceptions import BangumiApiError
+
+if TYPE_CHECKING:
+    from . import BangumiService
 
 
 class SearchService:
     def __init__(
         self,
-        service: BangumiService,
+        service: "BangumiService",
         config_manager: ConfigManager,
-        session: Optional[aiohttp.ClientSession] = None,
-    ):
+        session: aiohttp.ClientSession | None = None,
+    ) -> None:
         self.service = service
         self.config_manager = config_manager
         self.subject_renderer = SubjectRenderer(session=session)
@@ -30,9 +36,9 @@ class SearchService:
         event: AstrMessageEvent,
         query: str,
         top_k: int = 1,
-        subject_type: Optional[List[int]] = None,
-        subject_tags: Optional[List[str]] = None,
-    ) -> AsyncGenerator[Any, None]:
+        subject_type: list[int] | None = None,
+        subject_tags: list[str] | None = None,
+    ) -> AsyncGenerator[MessageResult, None]:
         """
         处理条目搜索的核心流程：搜索 -> 渲染 (Base64) -> 发送。
         """
@@ -62,13 +68,13 @@ class SearchService:
             else:
                 yield event.plain_result("❌ 未能生成渲染图片")
 
-        except Exception as e:
+        except (BangumiApiError, RuntimeError, ValueError) as e:
             logger.error(f"SearchService.handle_subject_search 失败: {e}")
             yield event.plain_result(f"❌ 处理失败: {e}")
 
     async def handle_calendar(
         self, event: AstrMessageEvent
-    ) -> AsyncGenerator[Any, None]:
+    ) -> AsyncGenerator[MessageResult, None]:
         """
         处理每日放送逻辑。
         """
@@ -88,35 +94,35 @@ class SearchService:
                 yield event.chain_result([Comp.Image.fromBase64(base64_image)])
             else:
                 yield event.plain_result("❌ 图片生成失败")
-        except Exception as e:
+        except (BangumiApiError, RuntimeError, ValueError) as e:
             logger.error(f"SearchService.handle_calendar 失败: {e}")
             yield event.plain_result(f"❌ 处理失败: {e}")
 
     async def _prepare_subject_images_base64(
-        self, subjects: list, top_k: int
-    ) -> List[Comp.Image]:
+        self, subjects: list[SearchSubjectItem], top_k: int
+    ) -> list[Comp.Image]:
         """
         内部逻辑：准备渲染数据并生成 Base64 图片组件。
         """
-        data_list = []
+        data_list: list[SubjectDetailsResponse] = []
 
         for item in subjects[:top_k]:
-            subject_id = item.get("id") if isinstance(item, dict) else None
+            subject_id = item.get("id")
             if not subject_id:
                 continue
 
             # 获取详情
-            subject_data = await self.service.get_subject_details(subject_id)
+            subject_data = await self.service.get_subject_details(str(subject_id))
             if not subject_data:
                 continue
 
             # 补充剧集进度信息
             try:
-                episodes_data = await self.service.get_subject_episodes(subject_id)
+                episodes_data = await self.service.get_subject_episodes(int(subject_id))
                 if episodes_data and "data" in episodes_data:
                     subject_data["episodes"] = episodes_data["data"]
-            except Exception:
-                pass
+            except (BangumiApiError, ValueError, TypeError) as e:
+                logger.warning(f"获取剧集信息失败 (subject_id={subject_id}): {e}")
 
             data_list.append(subject_data)
 
@@ -125,7 +131,7 @@ class SearchService:
 
         # 批量渲染为 Base64
         base64_list = await self.subject_renderer.render_batch_subject_cards_to_base64(
-            data_list=data_list,
+            data_list=cast(list[RenderData], data_list),
             rpc_url=self.config_manager.get_render_server_url(),
             max_retries=self.config_manager.get_max_retries(),
         )

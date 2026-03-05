@@ -1,10 +1,12 @@
 import datetime
-from typing import Any, Dict, List, Optional
+from typing import cast
+
 from astrbot.api import logger
 from .base_renderer import BaseRenderer
+from ..services import CalendarDay, CalendarWeekday, RenderData
 
 
-def reorder_days(calendar_data: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+def reorder_days(calendar_data: list[CalendarDay]) -> list[CalendarDay]:
     """
     重新排序天数，使今天排在第一位。
     """
@@ -12,7 +14,8 @@ def reorder_days(calendar_data: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
 
     today_index = 0
     for i, day in enumerate(calendar_data):
-        if day.get("weekday", {}).get("id") == today_id:
+        weekday: CalendarWeekday = day.get("weekday", {})
+        if weekday.get("id") == today_id:
             today_index = i
             day["is_today"] = True
             break
@@ -24,23 +27,23 @@ def reorder_days(calendar_data: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
 class CalendarRenderer(BaseRenderer):
     async def render_calendar(
         self,
-        calendar_data: List[Dict[str, Any]],
-        rpc_url: Optional[str] = None,
+        calendar_data: list[CalendarDay],
+        rpc_url: str | None = None,
         headless: bool = True,
         max_retries: int = 3,
-    ) -> Optional[str]:
+    ) -> str | None:
         """
         渲染放送表图片并返回 Base64 字符串。
         """
         try:
             reordered_days = reorder_days(calendar_data)
-        except Exception as e:
+        except (ValueError, TypeError, RuntimeError) as e:
             logger.error(f"[-] 处理日历数据失败: {e}")
             return None
 
         return await self.render(
             template_path="calendar/calendar.html",
-            render_data={"days": reordered_days},
+            render_data=cast(RenderData, {"days": reordered_days}),
             selector=".container",
             sub_dir="calendar",
             rpc_url=rpc_url,

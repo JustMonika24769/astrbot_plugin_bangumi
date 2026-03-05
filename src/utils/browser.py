@@ -1,5 +1,5 @@
 from astrbot.api import logger
-from playwright.async_api import ViewportSize, async_playwright
+from playwright.async_api import Page, ViewportSize, async_playwright
 
 
 async def create_page(
@@ -7,7 +7,7 @@ async def create_page(
     width: int = 1024,
     height: int = 768,
     scale_factor: int = 3,
-):
+) -> Page | None:
     try:
         # 启动 Playwright
         playwright = await async_playwright().start()
@@ -38,16 +38,16 @@ async def create_page(
         page = await context.new_page()
         __original_close = page.close
 
-        async def close_all(*args, **kwargs):
+        async def close_all(*args: object, **kwargs: object) -> None:
             page.close = __original_close
             try:
                 await browser.close()
                 await playwright.stop()
-            except Exception as e:
+            except Exception as e:  # noqa: BLE001 - 关闭资源需兜底
                 logger.error(f"唔…关闭页面的时候出错了{e}")
 
         page.close = close_all
         return page
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001 - 浏览器初始化需兜底
         logger.error(f"初始化浏览器失败:{e}")
         return None

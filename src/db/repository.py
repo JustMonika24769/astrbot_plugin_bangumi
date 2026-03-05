@@ -6,13 +6,14 @@
 """
 
 import os
+from difflib import SequenceMatcher
 
 from astrbot.api import logger
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, or_
 from sqlalchemy.orm import joinedload, scoped_session, sessionmaker
 
 from .models import Base, BangumiSubject, Subscription
-from ..services.exceptions import DatabaseError
+from ..services import DatabaseError
 
 
 class BangumiRepository:
@@ -20,7 +21,7 @@ class BangumiRepository:
     番剧数据访问层
     """
 
-    def __init__(self, db_path: str):
+    def __init__(self, db_path: str) -> None:
         """
         初始化数据访问层
 
@@ -31,7 +32,7 @@ class BangumiRepository:
         self.db_path = db_path
         self._init_db()
 
-    def _init_db(self):
+    def _init_db(self) -> None:
         """
         初始化数据库连接和表结构
         """
@@ -323,5 +324,69 @@ class BangumiRepository:
         except Exception as e:
             logger.error(f"获取所有订阅群组失败: {e}")
             raise DatabaseError(f"获取所有订阅群组失败: {e}") from e
+        finally:
+            session.close()
+
+    def find_group_subscription_candidates(
+        self, group_id: str, keyword: str, limit: int = 5
+    ) -> list[BangumiSubject]:
+        """
+        在指定群组的订阅中查找与关键词匹配的番剧候选。
+
+        匹配优先级：
+        1. subject_id 精确匹配
+        2. subject_id 前缀匹配
+        3. name 包含匹配（忽略大小写）
+        4. name 相似度（SequenceMatcher）
+        """
+        session = self.Session()
+        try:
+            normalized_keyword = str(keyword).strip()
+            if not normalized_keyword:
+                return []
+
+            keyword_lower = normalized_keyword.lower()
+            search_pattern = f"%{normalized_keyword}%"
+
+            candidates = (
+                session.query(BangumiSubject)
+                .join(
+                    Subscription, Subscription.subject_id == BangumiSubject.subject_id
+                )
+                .filter(Subscription.group_id == str(group_id))
+                .filter(
+                    or_(
+                        BangumiSubject.subject_id == normalized_keyword,
+                        BangumiSubject.subject_id.like(f"{normalized_keyword}%"),
+                        BangumiSubject.name.ilike(search_pattern),
+                    )
+                )
+                .all()
+            )
+
+            def score(subject: BangumiSubject) -> tuple[int, int, int, float, str]:
+                subject_id = str(subject.subject_id or "")
+                name = str(subject.name or "")
+                name_lower = name.lower()
+                exact_id = int(subject_id == normalized_keyword)
+                prefix_id = int(subject_id.startswith(normalized_keyword))
+                name_contains = int(keyword_lower in name_lower)
+                similarity = SequenceMatcher(None, keyword_lower, name_lower).ratio()
+                return (exact_id, prefix_id, name_contains, similarity, subject_id)
+
+            sorted_candidates = sorted(
+                candidates,
+                key=lambda subject: (
+                    -score(subject)[0],
+                    -score(subject)[1],
+                    -score(subject)[2],
+                    -score(subject)[3],
+                    score(subject)[4],
+                ),
+            )
+            return sorted_candidates[:limit]
+        except Exception as e:
+            logger.error(f"查询群组订阅候选失败: {e}")
+            raise DatabaseError(f"查询群组订阅候选失败: {e}") from e
         finally:
             session.close()

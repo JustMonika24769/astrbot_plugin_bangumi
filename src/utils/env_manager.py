@@ -5,11 +5,9 @@ from astrbot.api import logger
 
 
 class EnvManager:
-    def __init__(self, data_dir: str):
+    def __init__(self, data_dir: str) -> None:
         self.data_dir = data_dir
-        self.flag_file = os.path.join(
-            data_dir, ".playwright_installed"
-        )
+        self.flag_file = os.path.join(data_dir, ".playwright_installed")
 
     async def verify_playwright(self) -> bool:
         """
@@ -29,11 +27,11 @@ class EnvManager:
                 )
                 await browser.close()
             return True
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001 - 三方运行时异常不可穷举
             logger.debug(f"Playwright 环境验证失败: {e}")
             return False
 
-    async def install_dependencies(self):
+    async def install_dependencies(self) -> None:
         """
         安装 Playwright 及其 Chromium 浏览器。
         """
@@ -92,7 +90,7 @@ class EnvManager:
                 if await self.verify_playwright():
                     logger.info("Playwright Chromium 安装并验证成功")
                     os.makedirs(os.path.dirname(self.flag_file), exist_ok=True)
-                    with open(self.flag_file, "w") as f:
+                    with open(self.flag_file, "w", encoding="utf-8") as f:
                         f.write("installed")
                 else:
                     logger.error(
@@ -103,7 +101,7 @@ class EnvManager:
                     f"Playwright Chromium 安装返回错误码: {process.returncode}"
                 )
 
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001 - 安装流程需兜底记录
             logger.error(f"依赖安装流程失败: {e}")
 
     def is_installed(self) -> bool:

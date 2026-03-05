@@ -1,15 +1,16 @@
 import datetime
-from collections import Counter
 import asyncio
-from typing import Any, Dict, List, Optional, Tuple
+from collections import Counter
+from typing import cast
+
 from astrbot.api import logger
 from .base_renderer import BaseRenderer
-from ..services.types import SubjectType
+from ..services import EpisodeItem, RenderData, SubjectType
 
 # --- 数据处理工具函数 (高度解耦模块) ---
 
 
-def _process_images(data: Dict[str, Any]) -> None:
+def _process_images(data: RenderData) -> None:
     """
     处理图片 URL 的提取
     """
@@ -17,15 +18,16 @@ def _process_images(data: Dict[str, Any]) -> None:
         return
 
     images = data.get("images")
-    if not images:
+    if not isinstance(images, dict):
         return
 
+    images = cast(dict[str, object], images)
     data["image_url"] = (
         images.get("large") or images.get("common") or images.get("medium") or ""
     )
 
 
-def _process_dates(data: Dict[str, Any]) -> None:
+def _process_dates(data: RenderData) -> None:
     """
     处理日期字段
     """
@@ -36,7 +38,7 @@ def _process_dates(data: Dict[str, Any]) -> None:
         data["date"] = data["air_date"]
 
 
-def _process_platform(data: Dict[str, Any]) -> None:
+def _process_platform(data: RenderData) -> None:
     """
     处理平台/类型映射
     """
@@ -53,7 +55,7 @@ def _process_platform(data: Dict[str, Any]) -> None:
         data["platform"] = "未知"
 
 
-def _infer_air_weekday(aired_weekdays: List[int]) -> str:
+def _infer_air_weekday(aired_weekdays: list[int]) -> str:
     """
     从已播出的剧集中推断主要放送星期
     """
@@ -68,13 +70,13 @@ def _infer_air_weekday(aired_weekdays: List[int]) -> str:
 
 
 def _parse_episode_list(
-    episodes: List[Dict[str, Any]], today: datetime.date
-) -> Tuple[List[Dict[str, Any]], List[int]]:
+    episodes: list[EpisodeItem], today: datetime.date
+) -> tuple[list[dict[str, int | bool | None]], list[int]]:
     """
     解析剧集列表，返回 (渲染用列表, 已播出星期列表)
     """
-    episode_list = []
-    aired_weekdays = []
+    episode_list: list[dict[str, int | bool | None]] = []
+    aired_weekdays: list[int] = []
 
     for ep in episodes:
         if ep.get("type", 0) != 0 or ep.get("ep", 0) == 0:
@@ -101,18 +103,22 @@ def _parse_episode_list(
     return episode_list, aired_weekdays
 
 
-def _process_episodes(data: Dict[str, Any]) -> None:
+def _process_episodes(data: RenderData) -> None:
     """
     处理剧集状态和更新日推算的主流程
     """
     episodes = data.get("episodes")
-    if not episodes:
+    if not isinstance(episodes, list):
         return
 
     today = datetime.date.today()
 
     # 1. 解析剧集数据
-    episode_list, aired_weekdays = _parse_episode_list(episodes, today)
+    normalized_episodes: list[EpisodeItem] = []
+    for episode in episodes:
+        if isinstance(episode, dict):
+            normalized_episodes.append(cast(EpisodeItem, episode))
+    episode_list, aired_weekdays = _parse_episode_list(normalized_episodes, today)
     data["episode_list"] = episode_list
 
     # 2. 推算放送星期
@@ -121,7 +127,7 @@ def _process_episodes(data: Dict[str, Any]) -> None:
         data["air_weekday"] = air_weekday
 
 
-def preprocess_data(data: Dict[str, Any]) -> Dict[str, Any]:
+def preprocess_data(data: RenderData) -> RenderData:
     """
     预处理数据以适配模板
     """
@@ -138,8 +144,8 @@ def preprocess_data(data: Dict[str, Any]) -> Dict[str, Any]:
 class SubjectRenderer(BaseRenderer):
     async def render_subject_card(
         self,
-        data: Dict[str, Any],
-        rpc_url: Optional[str] = None,
+        data: RenderData,
+        rpc_url: str | None = None,
         headless: bool = True,
         wait_time: int = 0,
         max_retries: int = 3,
@@ -164,14 +170,14 @@ class SubjectRenderer(BaseRenderer):
 
     async def render_batch_subject_cards_to_base64(
         self,
-        data_list: List[Dict[str, Any]],
-        rpc_url: Optional[str] = None,
+        data_list: list[RenderData],
+        rpc_url: str | None = None,
         headless: bool = True,
         wait_time: int = 0,
         max_retries: int = 3,
         timeout: int = 30000,
         max_concurrency: int = 3,
-    ) -> List[str]:
+    ) -> list[str]:
         """
         批量渲染条目卡片并直接返回 Base64 字符串列表。
 
@@ -180,7 +186,7 @@ class SubjectRenderer(BaseRenderer):
         """
         semaphore = asyncio.Semaphore(max_concurrency)
 
-        async def _limited_render(data: Dict[str, Any]) -> str | None:
+        async def _limited_render(data: RenderData) -> str | None:
             async with semaphore:
                 return await self.render_subject_card(
                     data=data,
@@ -194,7 +200,7 @@ class SubjectRenderer(BaseRenderer):
         tasks = [_limited_render(data) for data in data_list]
         results = await asyncio.gather(*tasks, return_exceptions=True)
 
-        valid_results: List[str] = []
+        valid_results: list[str] = []
         for i, res in enumerate(results):
             if isinstance(res, Exception):
                 logger.warning(f"批量渲染第 {i + 1} 项失败: {res}")

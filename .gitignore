@@ -1,5 +1,4 @@
 __pycache__/
-tests/
 .DS_Store
 .idea/
 .pytest_cache/
@@ -12,4 +11,3 @@ data/
 *.iml
 .env
 .png
-test*

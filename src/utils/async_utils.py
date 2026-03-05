@@ -1,6 +1,5 @@
 import asyncio
-import functools
-from typing import TypeVar, Callable, Any, Awaitable
+from typing import Awaitable, Callable, TypeVar
 from astrbot.api import logger
 
 T = TypeVar("T")
@@ -11,8 +10,8 @@ async def retry(
     retries: int = 3,
     delay: float = 1.0,
     label: str = "任务",
-    *args: Any,
-    **kwargs: Any,
+    *args: object,
+    **kwargs: object,
 ) -> T:
     """
     通用异步重试方法
@@ -25,15 +24,17 @@ async def retry(
     :return: 异步函数的返回结果
 
     """
-    last_exception = None
+    last_exception: Exception | None = None
     for i in range(retries):
         try:
             return await func(*args, **kwargs)
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001 - 重试器需要兜底捕获
             last_exception = e
             logger.warning(f"{label} 执行失败 (尝试 {i + 1}/{retries}): {e}")
             if i < retries - 1:
                 await asyncio.sleep(delay)
 
     logger.error(f"{label} 在 {retries} 次尝试后最终失败")
+    if last_exception is None:
+        raise RuntimeError(f"{label} 在 {retries} 次尝试后最终失败")
     raise last_exception

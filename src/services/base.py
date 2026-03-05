@@ -1,7 +1,7 @@
 import asyncio
 import json
 import time
-from typing import Any, Dict, Optional
+from typing import Literal, cast, overload
 
 import aiohttp
 
@@ -9,6 +9,8 @@ import aiohttp
 from astrbot.api import logger
 
 from .exceptions import BangumiApiError, BangumiRateLimitError, NoSubjectFound
+from .contracts import SearchSubjectsResponse
+from ..types import JsonArray, JsonObject
 
 
 class BaseBangumiService:
@@ -18,8 +20,8 @@ class BaseBangumiService:
         user_agent: str,
         proxy: str | None = None,
         max_retries: int = 3,
-        session: Optional[aiohttp.ClientSession] = None,
-    ):
+        session: aiohttp.ClientSession | None = None,
+    ) -> None:
         if not access_token:
             raise ValueError("Bangumi access_token 未设置")
         self.base_url = "https://api.bgm.tv"
@@ -33,23 +35,42 @@ class BaseBangumiService:
         self._rate_lock = asyncio.Lock()
         self._timeout = aiohttp.ClientTimeout(total=30, connect=10)
         # 兜底 session（惰性创建，避免每次新建 TCP 连接）
-        self._fallback_session: Optional[aiohttp.ClientSession] = None
+        self._fallback_session: aiohttp.ClientSession | None = None
         # 这里只放通用的缓存，或者具体业务的缓存放到具体类中
-        self.search_cache: Dict[str, Dict] = {}
+        self.search_cache: dict[str, SearchSubjectsResponse] = {}
         self.max_retries = max_retries
         self._session = session
+
+    @overload
+    async def _request(
+        self,
+        url: str,
+        method: str = "GET",
+        params: JsonObject | None = None,
+        json_data: JsonObject | None = None,
+        is_json: Literal[True] = True,
+    ) -> JsonObject | JsonArray: ...
+
+    @overload
+    async def _request(
+        self,
+        url: str,
+        method: str = "GET",
+        params: JsonObject | None = None,
+        json_data: JsonObject | None = None,
+        is_json: Literal[False] = False,
+    ) -> bytes: ...
 
     async def _request(
         self,
         url: str,
         method: str = "GET",
-        params: Dict[str, Any] | None = None,
-        json_data: Dict[str, Any] | None = None,
+        params: JsonObject | None = None,
+        json_data: JsonObject | None = None,
         is_json: bool = True,
-    ) -> Any:
+    ) -> JsonObject | JsonArray | bytes:
         """
-        通用API请求函数，带限流和重试处理
-
+        通用API请求函数, 带限流和重试处理
         """
         last_exception: Exception | None = None
 
@@ -117,27 +138,39 @@ class BaseBangumiService:
             self._fallback_session = aiohttp.ClientSession(headers=self.headers)
         return self._fallback_session
 
+    @overload
+    async def _handle_response(
+        self, response: aiohttp.ClientResponse, is_json: Literal[True] = True
+    ) -> JsonObject | JsonArray: ...
+
+    @overload
+    async def _handle_response(
+        self, response: aiohttp.ClientResponse, is_json: Literal[False]
+    ) -> bytes: ...
+
     async def _handle_response(
         self, response: aiohttp.ClientResponse, is_json: bool = True
-    ) -> Any:
+    ) -> JsonObject | JsonArray | bytes:
         """
         处理api响应
 
         """
         if response.status == 200:
             if is_json:
-                return await response.json()
-            else:
-                return await response.read()
-        elif response.status == 404:
+                raw = await response.json()
+                if isinstance(raw, (dict, list)):
+                    return cast(JsonObject | JsonArray, raw)
+                raise BangumiApiError("API 返回了非 JSON 对象/数组类型")
+            return await response.read()
+        if response.status == 404:
             raise NoSubjectFound("未找到相关条目")
-        elif response.status == 429:
+        if response.status == 429:
             raise BangumiRateLimitError("API请求过于频繁")
-        else:
-            try:
-                error_data = await response.json()
-                error_text = json.dumps(error_data, ensure_ascii=False)
-            except Exception as _:
-                error_text = await response.text()
-            logger.error(f"API错误: {response.status} - {error_text}")
-            raise BangumiApiError(f"API服务异常 ({response.status})")
+
+        try:
+            error_data = await response.json()
+            error_text = json.dumps(error_data, ensure_ascii=False)
+        except (aiohttp.ContentTypeError, ValueError, TypeError):
+            error_text = await response.text()
+        logger.error(f"API错误: {response.status} - {error_text}")
+        raise BangumiApiError(f"API服务异常 ({response.status})")

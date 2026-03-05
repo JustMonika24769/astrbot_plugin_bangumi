@@ -1,16 +1,24 @@
 import datetime
 import base64
-from typing import Any, Dict, List, Optional
+from typing import cast
 from pydantic import ValidationError
 from astrbot.api import logger
 
 from .base import BaseBangumiService
+from .contracts import (
+    EpisodeItem,
+    EpisodeListResponse,
+    SearchSubjectItem,
+    SearchSubjectsResponse,
+    SubjectDetailsResponse,
+)
 from .schemas import Episode
 from .types import ImageSize
+from ..types import JsonObject
 
 
 class SubjectsService(BaseBangumiService):
-    def __init__(self, *args, **kwargs):
+    def __init__(self, *args: object, **kwargs: object) -> None:
         super().__init__(*args, **kwargs)
 
     async def search_subjects(
@@ -18,49 +26,63 @@ class SubjectsService(BaseBangumiService):
         keyword: str,
         limit: int = 5,
         offset: int = 0,
-        subject_type: List[int] | None = None,
-        subject_tags: List[str] | None = None,
-    ) -> Dict[str, Any]:
+        subject_type: list[int] | None = None,
+        subject_tags: list[str] | None = None,
+    ) -> SearchSubjectsResponse:
         cache_key = f"search:{keyword}:{limit}"
         if cache_key in self.search_cache:
             return self.search_cache[cache_key]
 
         url = f"{self.base_url}/v0/search/subjects"
-        json_data: dict[str, Any] = {
+        filters: dict[str, object] = {}
+        json_data: JsonObject = {
             "keyword": keyword,
             "limit": limit,
             "offset": offset,
-            "filter": {},
+            "filter": filters,
         }
         if subject_type is not None:
-            json_data["filter"]["type"] = subject_type
+            filters["type"] = subject_type
         if subject_tags is not None:
-            json_data["filter"]["tag"] = subject_tags
+            filters["tag"] = subject_tags
         data = await self._request(
             url,
             method="POST",
             json_data=json_data,
         )
-        return data
+        if isinstance(data, dict):
+            raw_items = data.get("data")
+            if isinstance(raw_items, list):
+                normalized: SearchSubjectsResponse = {"data": []}
+                for item in raw_items:
+                    if isinstance(item, dict):
+                        normalized["data"].append(cast(SearchSubjectItem, item))
+                self.search_cache[cache_key] = cast(SearchSubjectsResponse, normalized)
+                return normalized
 
-    async def get_subject_details(self, subject_id: str) -> Dict[str, Any]:
+        fallback: SearchSubjectsResponse = {"data": []}
+        self.search_cache[cache_key] = fallback
+        return fallback
+
+    async def get_subject_details(self, subject_id: str) -> SubjectDetailsResponse:
         """
         获取条目的信息
         """
         url = f"{self.base_url}/v0/subjects/{subject_id}"
-        return await self._request(url)
+        data = await self._request(url)
+        return cast(SubjectDetailsResponse, data if isinstance(data, dict) else {})
 
     async def get_subject_image(self, subject_id: str, size: ImageSize) -> bytes:
         """
         获取条目的图片原始二进制数据
         """
         url = f"{self.base_url}/v0/subjects/{subject_id}/image"
-        params = {"type": size.value}
+        params: JsonObject = {"type": size.value}
         return await self._request(url, params=params, is_json=False)
 
     async def get_subject_base64image(
         self, subject_id: str, size: ImageSize
-    ) -> Optional[str]:
+    ) -> str | None:
         """
         获取条目的图片并转换为 Base64 编码的字符串
         """
@@ -68,11 +90,11 @@ class SubjectsService(BaseBangumiService):
             image_bytes = await self.get_subject_image(subject_id, size)
             if image_bytes:
                 return base64.b64encode(image_bytes).decode("utf-8")
-        except Exception as e:
+        except (ValueError, TypeError, RuntimeError) as e:
             logger.error(f"获取条目 {subject_id} 的 Base64 图片失败: {e}")
         return None
 
-    async def get_subject_episodes(self, subject_id: int) -> Dict[str, Any]:
+    async def get_subject_episodes(self, subject_id: int) -> EpisodeListResponse:
         """
         获取条目的剧集信息
 
@@ -83,8 +105,17 @@ class SubjectsService(BaseBangumiService):
             total: 总集数
         """
         url = f"{self.base_url}/v0/episodes"
-        params = {"subject_id": subject_id}
-        return await self._request(url, params=params)
+        params: JsonObject = {"subject_id": subject_id}
+        data = await self._request(url, params=params)
+        if isinstance(data, dict):
+            raw_items = data.get("data")
+            if isinstance(raw_items, list):
+                normalized: EpisodeListResponse = {"data": []}
+                for item in raw_items:
+                    if isinstance(item, dict):
+                        normalized["data"].append(cast(EpisodeItem, item))
+                return normalized
+        return {"data": []}
 
     async def get_latest_episode(self, subject_id: int) -> Episode | None:
         """
@@ -126,11 +157,11 @@ class SubjectsService(BaseBangumiService):
         return None
 
     @staticmethod
-    def _parse_episodes(raw_data: List[Dict[str, Any]]) -> List[Episode]:
+    def _parse_episodes(raw_data: list[EpisodeItem]) -> list[Episode]:
         """
         辅助函数：将原始字典列表解析为 Episode 模型列表，自动过滤校验失败的数据。
         """
-        parsed_episodes = []
+        parsed_episodes: list[Episode] = []
         for item in raw_data:
             try:
                 parsed_episodes.append(Episode(**item))

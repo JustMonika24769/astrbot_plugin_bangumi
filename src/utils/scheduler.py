@@ -5,7 +5,7 @@ APScheduler 管理器
 """
 
 import asyncio
-from typing import Callable, Any
+from typing import Callable
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.jobstores.base import JobLookupError
 import pytz
@@ -21,13 +21,13 @@ class SchedulerManager:
     _instance = None
     _lock = asyncio.Lock()
 
-    def __new__(cls, *args, **kwargs):
+    def __new__(cls, *args: object, **kwargs: object) -> "SchedulerManager":
         # 伪单例实现，确保只存在一个调度器实例。
         if cls._instance is None:
-            cls._instance = super(SchedulerManager, cls).__new__(cls)
+            cls._instance = super().__new__(cls)
         return cls._instance
 
-    def __init__(self):
+    def __init__(self) -> None:
         """
         初始化 SchedulerManager。
         每次调用 SchedulerManager() 时都会调用此方法，但调度器本身只创建一次。
@@ -37,7 +37,9 @@ class SchedulerManager:
             self.scheduler.start()
             logger.info("调度器已初始化并在 Asia/Shanghai 时区启动.")
 
-    def add_job(self, func: Callable, trigger: str, **kwargs: Any) -> str | None:
+    def add_job(
+        self, func: Callable[..., object], trigger: str, **kwargs: object
+    ) -> str | None:
         """
         向调度器添加一个任务。
 
@@ -52,11 +54,11 @@ class SchedulerManager:
         try:
             job = self.scheduler.add_job(func, trigger, **kwargs)
             return job.id
-        except Exception as e:
+        except (RuntimeError, ValueError, TypeError) as e:
             logger.error(f"Error adding job: {e}")
             return None
 
-    def cancel_job(self, job_id: str):
+    def cancel_job(self, job_id: str) -> None:
         """
         根据任务ID取消任务。
 
@@ -68,10 +70,10 @@ class SchedulerManager:
             logger.info(f"定时任务{job_id}已取消.")
         except JobLookupError:
             logger.warning(f"未找到定时任务{job_id}")
-        except Exception as e:
+        except (RuntimeError, ValueError, TypeError) as e:
             logger.error(f"取消任务失败{job_id}: {e}")
 
-    def shutdown(self):
+    def shutdown(self) -> None:
         """
         关闭调度器。
         """

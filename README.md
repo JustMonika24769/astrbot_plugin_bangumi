@@ -1,10 +1,10 @@
 <div align="center">
 
 # Bangumi 搜索插件使用指南
-[![repo](https://img.shields.io/badge/repo-v1.1.0-blue.svg)](https://github.com/united-pooh/astrbot_plugin_bangumi)
+[![repo](https://img.shields.io/badge/repo-v1.1.1-blue.svg)](https://github.com/united-pooh/astrbot_plugin_bangumi)
 [![License](https://img.shields.io/badge/license-Apache%202.0-green.svg)](LICENSE-2.0)
 [![AstrBot](https://img.shields.io/badge/AstrBot-%3E%3D4.0.0-orange.svg)](https://github.com/Soulter/AstrBot)
-[![Python](https://img.shields.io/badge/python-3.10%2B-blue.svg)](https://www.python.org/)
+[![Python](https://img.shields.io/badge/python-3.12%2B-blue.svg)](https://www.python.org/)
 
 **和群友一起追番**
 </div>
@@ -74,3 +74,25 @@
 pip install -r requirements.txt
 playwright install chromium
 ```
+
+## ✅ 强类型与本地检查
+
+本项目已切换为 Python 3.12 风格类型写法，并在 CI 中启用阻断式质量门禁（`ruff + mypy + pytest`）。
+
+### 本地执行命令
+
+```bash
+ruff check .
+ruff format --check .
+mypy src main.py
+PYTHONPATH=. pytest tests/test_search_service.py tests/test_subscription_service.py
+```
+
+### 强类型编码规则
+
+1. 禁止 `Optional[T]`，统一使用 `T | None`。
+2. 禁止 `typing.List/Dict/Tuple/Set`，统一使用 `list/dict/tuple/set`。
+3. 禁止新增 `Any`；优先使用 `TypedDict`、Pydantic 模型或明确类型别名。
+4. 公共方法必须显式标注参数和返回类型。
+5. 业务接口层禁止使用 `dict[str, Any]` 作为输入/输出类型。
+6. 需要可空时必须在类型中明确体现，禁止隐式可空。
