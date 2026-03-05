@@ -59,9 +59,7 @@ class BaseRenderer:
             raise RuntimeError("[-] 无法创建浏览器页面")
 
         try:
-            await page.set_content(
-                html_content, wait_until="load", timeout=timeout
-            )
+            await page.set_content(html_content, wait_until="load", timeout=timeout)
 
             if wait_time > 0:
                 await asyncio.sleep(wait_time)
@@ -83,7 +81,9 @@ class BaseRenderer:
             if page:
                 await page.close()
 
-    async def _handle_rpc_response(self, response: aiohttp.ClientResponse) -> str | None:
+    async def _handle_rpc_response(
+        self, response: aiohttp.ClientResponse
+    ) -> str | None:
         """
         统一处理 RPC 响应解析。
         """

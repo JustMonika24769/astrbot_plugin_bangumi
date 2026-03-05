@@ -97,6 +97,11 @@ class SubscribeMatch(TypedDict):
     total_episodes: int
 
 
+class SubscribeCandidate(TypedDict):
+    subject_id: str
+    name: str
+
+
 class UnsubscribeMatch(TypedDict):
     subject_id: str
     name: str

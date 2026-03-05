@@ -7,9 +7,7 @@ from astrbot.api import logger
 class EnvManager:
     def __init__(self, data_dir: str) -> None:
         self.data_dir = data_dir
-        self.flag_file = os.path.join(
-            data_dir, ".playwright_installed"
-        )
+        self.flag_file = os.path.join(data_dir, ".playwright_installed")
 
     async def verify_playwright(self) -> bool:
         """

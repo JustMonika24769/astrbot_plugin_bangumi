@@ -350,7 +350,9 @@ class BangumiRepository:
 
             candidates = (
                 session.query(BangumiSubject)
-                .join(Subscription, Subscription.subject_id == BangumiSubject.subject_id)
+                .join(
+                    Subscription, Subscription.subject_id == BangumiSubject.subject_id
+                )
                 .filter(Subscription.group_id == str(group_id))
                 .filter(
                     or_(

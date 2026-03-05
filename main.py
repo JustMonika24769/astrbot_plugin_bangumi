@@ -1,11 +1,19 @@
 import os
+import copy
+import re
 import aiohttp
 from collections.abc import AsyncGenerator
 
+import astrbot.api.message_components as Comp
 from astrbot.api import logger
 from astrbot.api.all import AstrBotConfig
-from astrbot.api.event import AstrMessageEvent, filter
+from astrbot.api.event import AstrMessageEvent, MessageChain, filter
 from astrbot.api.star import Context, Star, register
+from astrbot.core.utils.session_waiter import (
+    SessionController,
+    SessionFilter,
+    session_waiter,
+)
 
 # 导入配置与管理
 from astrbot.api.star import StarTools
@@ -121,6 +129,23 @@ class BangumiPlugin(Star):
 
     # --- 命令处理区 ---
 
+    @staticmethod
+    def _resolve_session_key(event: AstrMessageEvent) -> str | None:
+        session_key: str | None = getattr(event, "session_id", None)
+        if hasattr(event, "message_obj") and hasattr(event.message_obj, "group_id"):
+            session_key = event.message_obj.group_id
+        return session_key
+
+    @staticmethod
+    def _parse_subscribe_selection(raw_text: str) -> int | None:
+        match = re.match(r"^/?追番\s+(\d+)\s*$", raw_text.strip())
+        if not match:
+            return None
+        try:
+            return int(match.group(1))
+        except ValueError:
+            return None
+
     @filter.command("bgm")
     async def search(
         self, event: AstrMessageEvent, query: str, top_k: int = 1
@@ -185,16 +210,106 @@ class BangumiPlugin(Star):
             yield event.plain_result("❌ 订阅服务未就绪")
             return
 
-        group_id: str | None = getattr(event, "session_id", None)
-        if hasattr(event, "message_obj") and hasattr(event.message_obj, "group_id"):
-            group_id = event.message_obj.group_id
-
+        group_id = self._resolve_session_key(event)
         if not group_id:
             yield event.plain_result("❌ 无法获取群组ID")
             return
 
-        result = await self.subscription_service.subscribe(group_id, query)
-        yield event.plain_result(result)
+        error_msg, candidates = await self.subscription_service.get_subscribe_candidates(
+            query=query,
+            limit=self.config_manager.get_max_fuzzy_results(),
+        )
+        if error_msg:
+            yield event.plain_result(error_msg)
+            return
+        if not candidates:
+            yield event.plain_result("🔍 未找到相关番剧")
+            return
+
+        if len(candidates) == 1:
+            result = await self.subscription_service.subscribe_by_subject_id(
+                group_id=group_id,
+                subject_id=candidates[0]["subject_id"],
+            )
+            yield event.plain_result(result)
+            return
+
+        candidate_lines = ["⚠️ 匹配到多个候选，请使用 `/追番 序号` 确认："]
+        for index, candidate in enumerate(candidates, start=1):
+            candidate_lines.append(
+                f"{index}. {candidate['name']} (ID: {candidate['subject_id']})"
+            )
+        candidate_lines.append("5分钟内有效；若发送其他命令将自动取消本次确认。")
+        yield event.plain_result("\n".join(candidate_lines))
+
+        cancel_commands = {
+            "bgm",
+            "bgm番剧",
+            "bgm剧场版",
+            "bgm漫画",
+            "today",
+            "弃坑",
+        }
+        session_key = group_id
+
+        class GroupSessionFilter(SessionFilter):
+            def filter(self, wait_event: AstrMessageEvent) -> str:
+                wait_session_key = BangumiPlugin._resolve_session_key(wait_event)
+                return wait_session_key or wait_event.unified_msg_origin
+
+        @session_waiter(timeout=300)
+        async def subscribe_confirm_waiter(
+            controller: SessionController,
+            wait_event: AstrMessageEvent,
+        ) -> None:
+            incoming_text = wait_event.get_message_str().strip()
+
+            first_token = incoming_text.split(maxsplit=1)[0] if incoming_text else ""
+            normalized_token = (
+                first_token[1:] if first_token.startswith("/") else first_token
+            )
+            if normalized_token in cancel_commands:
+                new_event = copy.copy(wait_event)
+                self.context.get_event_queue().put_nowait(new_event)
+                wait_event.stop_event()
+                controller.stop()
+                return
+
+            selected_index = self._parse_subscribe_selection(incoming_text)
+            if selected_index is None:
+                if normalized_token == "追番":
+                    new_event = copy.copy(wait_event)
+                    self.context.get_event_queue().put_nowait(new_event)
+                    wait_event.stop_event()
+                    controller.stop()
+                    return
+                controller.keep(timeout=0)
+                return
+            if selected_index < 1 or selected_index > len(candidates):
+                await wait_event.send(
+                    MessageChain(
+                        [Comp.Plain(f"❌ 序号超出范围，请输入 1-{len(candidates)}。")]
+                    )
+                )
+                controller.keep(timeout=0)
+                return
+
+            selected = candidates[selected_index - 1]
+            result = await self.subscription_service.subscribe_by_subject_id(
+                group_id=session_key,
+                subject_id=selected["subject_id"],
+            )
+            await wait_event.send(MessageChain([Comp.Plain(result)]))
+            wait_event.stop_event()
+            controller.stop()
+
+        try:
+            await subscribe_confirm_waiter(
+                event,
+                session_filter=GroupSessionFilter(),
+            )
+        except TimeoutError:
+            yield event.plain_result("⏰ 候选确认已过期，请重新使用 `/追番 关键词`。")
 
     @filter.command("弃坑")
     async def unsubscribe(

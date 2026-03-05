@@ -5,8 +5,8 @@
 ### 🏗️ 架构重构路线图 (TODO)
 - [x] **[Critical] 实现事务原子性 (Unit of Work)**: 重构 `BangumiRepository` 以支持注入 `Session`，确保订阅操作在 Service 层具备完整的 `commit/rollback` 能力。
 - [x] **[High] 弃坑逻辑本地化**: 优化 `SubscriptionService.unsubscribe`，优先在本地数据库进行模糊匹配，彻底移除取消订阅时的冗余 API 调用。
-- [ ] **[Medium] 引入日历数据缓存**: 实现 `get_calendar` 的 `LRU Cache`（缓存时间 12-24h），避免每次订阅操作都拉取全量放送表。
-- [ ] **[Medium] 搜索歧义处理机制**: 新增候选列表确认流程。当搜索结果存在多个高匹配项时，返回列表供用户选择，而非盲目订阅首项。
+- [x] **[Medium] 引入日历数据缓存**: 实现 `get_calendar` 的 `LRU Cache`（缓存时间 12-24h），避免每次订阅操作都拉取全量放送表。
+- [x] **[Medium] 搜索歧义处理机制**: 新增候选列表确认流程。当搜索结果存在多个高匹配项时，返回列表供用户选择，而非盲目订阅首项。
 - [x] **[Low] 领域异常精细化**: 替换宽泛的 `except Exception`，定义专门的 `SubscriptionError` 和 `DatabaseError`，提供更精准的错误反馈。
 
 ## v1.1.0

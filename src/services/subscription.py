@@ -6,7 +6,7 @@ from astrbot.core.message.message_event_result import MessageChain
 
 from ..db.repository import BangumiRepository
 from . import BangumiService
-from .contracts import SubscribeMatch, UnsubscribeMatch
+from .contracts import SubscribeCandidate, SubscribeMatch, UnsubscribeMatch
 from .exceptions import BangumiApiError, DatabaseError, SubscriptionError
 from .schemas import Episode
 from .types import ImageSize
@@ -27,23 +27,50 @@ class SubscriptionService:
         self.config_manager = config_manager
         self.renderer = EpisodeRenderer(session=session)
 
-    async def _match_subscribable_subject(
-        self, keyword: str
+    async def get_subscribe_candidates(
+        self, keyword: str, limit: int
+    ) -> tuple[str | None, list[SubscribeCandidate]]:
+        """
+        查询订阅候选，命中多条时由上层进行二次确认。
+        """
+        normalized_keyword = keyword.strip()
+        if not normalized_keyword:
+            return "❌ 请提供要订阅的番剧关键词或ID。", []
+
+        effective_limit = max(1, min(limit, 10))
+        search_res = await self.service.search_subjects(
+            keyword=normalized_keyword,
+            limit=effective_limit,
+            subject_type=[2],
+            subject_tags=None,
+        )
+        raw_items = search_res.get("data", [])
+        if not raw_items:
+            return "🔍 未找到相关番剧", []
+
+        candidates: list[SubscribeCandidate] = []
+        seen: set[str] = set()
+        for item in raw_items:
+            subject_id_raw = item.get("id")
+            if subject_id_raw is None:
+                continue
+            subject_id = str(subject_id_raw)
+            if subject_id in seen:
+                continue
+            seen.add(subject_id)
+            raw_name = item.get("name_cn") or item.get("name") or f"ID:{subject_id}"
+            candidates.append({"subject_id": subject_id, "name": str(raw_name)})
+
+        if not candidates:
+            return "🔍 未找到相关番剧", []
+        return None, candidates
+
+    async def _build_subscribable_subject(
+        self, subject_id: str
     ) -> tuple[str | None, SubscribeMatch | None]:
         """
-        查找可订阅的番剧逻辑（从 API 层迁移至此）。
+        根据 subject_id 构建可订阅条目（详情 + 放送表校验）。
         """
-        # 1. 搜索
-        search_res = await self.service.search_subjects(
-            keyword=keyword, subject_type=[2], subject_tags=None
-        )
-        if not search_res or "data" not in search_res or not search_res["data"]:
-            return "🔍 未找到相关番剧", None
-
-        target_subject = search_res["data"][0]
-        subject_id = str(target_subject.get("id"))
-
-        # 2. 详情
         details = await self.service.get_subject_details(subject_id)
         if not details:
             return "❌ 获取番剧详情失败", None
@@ -51,7 +78,6 @@ class SubscriptionService:
         raw_name = details.get("name_cn") or details.get("name")
         name = str(raw_name) if raw_name else "未知番剧"
 
-        # 3. 检查放送列表
         calendar_res = await self.service.get_calendar()
         is_in_calendar = False
         if calendar_res:
@@ -69,7 +95,6 @@ class SubscriptionService:
                 None,
             )
 
-        # 构造返回数据
         total_episodes_raw = details.get("eps", 0)
         total_episodes = (
             int(total_episodes_raw) if isinstance(total_episodes_raw, (int, str)) else 0
@@ -82,6 +107,44 @@ class SubscriptionService:
             "total_episodes": total_episodes,
         }
         return None, cast(SubscribeMatch, result_data)
+
+    async def _match_subscribable_subject(
+        self, keyword: str
+    ) -> tuple[str | None, SubscribeMatch | None]:
+        """
+        查找可订阅的番剧逻辑（从 API 层迁移至此）。
+        """
+        error_msg, candidates = await self.get_subscribe_candidates(keyword=keyword, limit=1)
+        if error_msg:
+            return error_msg, None
+        if not candidates:
+            return "🔍 未找到相关番剧", None
+        return await self._build_subscribable_subject(candidates[0]["subject_id"])
+
+    async def subscribe_by_subject_id(self, group_id: str, subject_id: str) -> str:
+        """
+        基于明确 subject_id 完成订阅。
+        """
+        try:
+            error_msg, subject_info = await self._build_subscribable_subject(subject_id)
+            if error_msg:
+                return error_msg
+            if not subject_info:
+                return "❌ 未知错误：未能获取番剧信息"
+
+            success = self.storage.subscribe_subject(
+                group_id=group_id,
+                subject_id=subject_info["subject_id"],
+                name=subject_info["name"],
+                air_date=subject_info["air_date"],
+                total_episodes=subject_info["total_episodes"],
+            )
+            if success:
+                return f"✅ 成功订阅《{subject_info['name']}》！\n如有更新将推送到本群。"
+            return "❌ 订阅失败，数据库错误。"
+        except (BangumiApiError, DatabaseError, SubscriptionError) as e:
+            logger.error(f"SubscriptionService.subscribe_by_subject_id 失败: {e}")
+            return f"❌ 处理失败: {e}"
 
     async def subscribe(self, group_id: str, query: str) -> str:
         """
@@ -158,7 +221,10 @@ class SubscriptionService:
 
         if len(candidates) == 1:
             subject = candidates[0]
-            return None, {"subject_id": str(subject.subject_id), "name": str(subject.name)}
+            return None, {
+                "subject_id": str(subject.subject_id),
+                "name": str(subject.name),
+            }
 
         display_limit = 5
         display_candidates = candidates[:display_limit]
