@@ -5,7 +5,7 @@
 
 """
 
-from .models import Base, BangumiSubject, Subscription
+from .models import BangumiSubject, Base, Subscription
 from .repository import BangumiRepository
 
-__all__ = ["Base", "BangumiSubject", "Subscription", "BangumiRepository"]
+__all__ = ["BangumiRepository", "BangumiSubject", "Base", "Subscription"]

@@ -1,6 +1,7 @@
 import pytest
-from src.render import SubjectRenderer
 from loguru import logger
+
+from src.render import SubjectRenderer
 
 
 @pytest.mark.asyncio

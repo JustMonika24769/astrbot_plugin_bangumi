@@ -1,9 +1,11 @@
-import datetime
 import base64
+import datetime
 from typing import cast
-from pydantic import ValidationError
-from astrbot.api import logger
 
+from astrbot.api import logger
+from pydantic import ValidationError
+
+from ..types import JsonObject
 from .base import BaseBangumiService
 from .contracts import (
     EpisodeItem,
@@ -14,7 +16,6 @@ from .contracts import (
 )
 from .schemas import Episode
 from .types import ImageSize
-from ..types import JsonObject
 
 
 class SubjectsService(BaseBangumiService):

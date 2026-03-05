@@ -2,8 +2,8 @@ import asyncio
 import base64
 from pathlib import Path
 
-import jinja2
 import aiohttp
+import jinja2
 from astrbot.api import logger
 
 from ..services import RenderData
@@ -161,7 +161,7 @@ class BaseRenderer:
 
         except aiohttp.ClientConnectorError as e:
             logger.error(f"[-] RPC 渲染服务器连接失败: {e}")
-        except asyncio.TimeoutError:
+        except TimeoutError:
             logger.error(f"[-] RPC 渲染请求超时 ({timeout}ms)")
         except aiohttp.ClientResponseError as e:
             logger.error(f"[-] RPC 渲染服务器响应异常: {e.status} {e.message}")

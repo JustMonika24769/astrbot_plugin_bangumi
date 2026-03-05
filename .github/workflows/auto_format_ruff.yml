@@ -30,9 +30,7 @@ jobs:
 
       - name: Run Ruff
         run: |
-          # --fix 会自动修复 import 排序 (isort 功能) 和其他 lint 问题
-          ruff check --fix .
-          # format 会执行类似 Black 的代码格式化
+          ruff check --fix . --ignore RUF001,RUF002,RUF003 
           ruff format .
 
       # 5. 提交更改

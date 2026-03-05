@@ -1,5 +1,6 @@
-import aiohttp
 from typing import TYPE_CHECKING, cast
+
+import aiohttp
 from astrbot.api import logger
 from astrbot.api.star import StarTools
 from astrbot.core.message.message_event_result import MessageChain
@@ -231,7 +232,7 @@ class SubscriptionService:
         display_limit = 5
         display_candidates = candidates[:display_limit]
         lines = [
-            f"⚠️ 匹配到多个已订阅番剧，请提供更精确名称或直接使用 ID：",
+            "⚠️ 匹配到多个已订阅番剧，请提供更精确名称或直接使用 ID：",
         ]
         for idx, subject in enumerate(display_candidates, start=1):
             lines.append(f"{idx}. {subject.name} (ID: {subject.subject_id})")
@@ -319,7 +320,7 @@ class SubscriptionService:
                     type="GroupMessage", id=group_id, message_chain=chain
                 )
                 logger.info(f"向群组 {group_id} 发送《{subject_name}》更新通知成功。")
-            except Exception as e:  # noqa: BLE001 — StarTools 可能抛出任意平台异常
+            except Exception as e:
                 logger.error(
                     f"向群组 {group_id} 发送《{subject_name}》更新通知失败: {e}"
                 )

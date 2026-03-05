@@ -43,11 +43,11 @@ async def create_page(
             try:
                 await browser.close()
                 await playwright.stop()
-            except Exception as e:  # noqa: BLE001 - 关闭资源需兜底
+            except Exception as e:
                 logger.error(f"唔…关闭页面的时候出错了{e}")
 
         page.close = close_all
         return page
-    except Exception as e:  # noqa: BLE001 - 浏览器初始化需兜底
+    except Exception as e:
         logger.error(f"初始化浏览器失败:{e}")
         return None

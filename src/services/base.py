@@ -4,13 +4,11 @@ import time
 from typing import Literal, cast, overload
 
 import aiohttp
-
-
 from astrbot.api import logger
 
-from .exceptions import BangumiApiError, BangumiRateLimitError, NoSubjectFound
-from .contracts import SearchSubjectsResponse
 from ..types import JsonArray, JsonObject
+from .contracts import SearchSubjectsResponse
+from .exceptions import BangumiApiError, BangumiRateLimitError, NoSubjectFound
 
 
 class BaseBangumiService:

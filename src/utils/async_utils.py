@@ -1,11 +1,13 @@
 import asyncio
-from typing import Awaitable, Callable, TypeVar
+from collections.abc import Awaitable, Callable
+from typing import TypeVar
+
 from astrbot.api import logger
 
 T = TypeVar("T")
 
 
-async def retry(
+async def retry[T](
     func: Callable[..., Awaitable[T]],
     retries: int = 3,
     delay: float = 1.0,
@@ -28,7 +30,7 @@ async def retry(
     for i in range(retries):
         try:
             return await func(*args, **kwargs)
-        except Exception as e:  # noqa: BLE001 - 重试器需要兜底捕获
+        except Exception as e:
             last_exception = e
             logger.warning(f"{label} 执行失败 (尝试 {i + 1}/{retries}): {e}")
             if i < retries - 1:

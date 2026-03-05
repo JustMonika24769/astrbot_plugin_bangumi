@@ -2,8 +2,9 @@ import datetime
 from typing import cast
 
 from astrbot.api import logger
-from .base_renderer import BaseRenderer
+
 from ..services import CalendarDay, CalendarWeekday, RenderData
+from .base_renderer import BaseRenderer
 
 
 def reorder_days(calendar_data: list[CalendarDay]) -> list[CalendarDay]:
