@@ -35,7 +35,7 @@ async def test_handle_calendar_success(
         service=mock_service, config_manager=mock_config_manager
     )
 
-    # Mock 渲染器，避免进入模板渲染逻辑
+    # Mock 渲染器,避免进入模板渲染逻辑
     search_service.calendar_renderer.render_calendar = AsyncMock(
         return_value="fake_base64"
     )

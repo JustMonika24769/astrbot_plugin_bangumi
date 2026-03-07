@@ -120,8 +120,8 @@ class SubjectsService(BaseBangumiService):
 
     async def get_latest_episode(self, subject_id: int) -> Episode | None:
         """
-        从 episodes 数据中提取最新一集的信息。
-        最新一集的定义：已播出且有互动（评论）的普通剧集。
+        从 episodes 数据中提取最新一集的信息
+        最新一集的定义:已播出且有互动(评论)的普通剧集
         """
         episodes_data = await self.get_subject_episodes(subject_id)
         raw_list = episodes_data.get("data", [])
@@ -134,7 +134,7 @@ class SubjectsService(BaseBangumiService):
         # 获取今天的日期用于比较
         today = datetime.date.today()
 
-        # 逆序查找：从最后一集向前找第一个符合条件的
+        # 逆序查找:从最后一集向前找第一个符合条件的
         for episode in reversed(episodes):
             if episode.ep == 0:
                 continue
@@ -148,10 +148,10 @@ class SubjectsService(BaseBangumiService):
                     ).date()
                     is_aired = episode_date <= today
                 except ValueError:
-                    # 日期格式异常时，不因为日期判定为未播出
+                    # 日期格式异常时,不因为日期判定为未播出
                     pass
 
-            # 核心业务逻辑：已播出且有评论互动
+            # 核心业务逻辑:已播出且有评论互动
             if is_aired and episode.comment > 0:
                 return episode
 
@@ -160,12 +160,12 @@ class SubjectsService(BaseBangumiService):
     @staticmethod
     def _parse_episodes(raw_data: list[EpisodeItem]) -> list[Episode]:
         """
-        辅助函数：将原始字典列表解析为 Episode 模型列表，自动过滤校验失败的数据。
+        辅助函数:将原始字典列表解析为 Episode 模型列表,自动过滤校验失败的数据
         """
         parsed_episodes: list[Episode] = []
         for item in raw_data:
             try:
                 parsed_episodes.append(Episode(**item))
             except ValidationError as e:
-                logger.warning(f"解析剧集数据失败，已跳过: {e}, 原始数据: {item}")
+                logger.warning(f"解析剧集数据失败,已跳过: {e}, 原始数据: {item}")
         return parsed_episodes

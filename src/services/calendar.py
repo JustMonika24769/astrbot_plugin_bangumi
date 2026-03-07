@@ -31,7 +31,7 @@ class CalendarService(BaseBangumiService):
         if self._is_calendar_cache_valid(now):
             return copy.deepcopy(self._calendar_cache)
 
-        # 双重检查 + 锁，避免并发下重复请求远端 API
+        # 双重检查 + 锁,避免并发下重复请求远端 API
         async with self._calendar_cache_lock:
             now = time.time()
             if self._is_calendar_cache_valid(now):

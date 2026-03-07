@@ -26,7 +26,7 @@ if TYPE_CHECKING:
     from .subscription import SubscriptionService
 
 
-# 聚合类：继承所有子Service的功能
+# 聚合类:继承所有子Service的功能
 class BangumiService(SubjectsService, CalendarService):
     def __init__(
         self,
@@ -36,7 +36,7 @@ class BangumiService(SubjectsService, CalendarService):
         session: aiohttp.ClientSession | None = None,
     ) -> None:
         # 初始化最基础的父类 (BaseBangumiService)
-        # 因为所有Service都继承自BaseBangumiService，super会自动处理MRO链
+        # 因为所有Service都继承自BaseBangumiService,super会自动处理MRO链
         super().__init__(access_token, user_agent, proxy, session=session)
 
 

@@ -1,7 +1,7 @@
 """
-数据访问层（Repository 模式）
+数据访问层(Repository 模式)
 
-此模块封装所有数据库操作，为业务层提供数据访问接口。
+此模块封装所有数据库操作,为业务层提供数据访问接口
 
 """
 
@@ -120,7 +120,7 @@ class BangumiRepository:
                 )
                 session.add(new_sub)
 
-            session.commit()  # 单次 commit，保证原子性
+            session.commit()  # 单次 commit,保证原子性
             return True
         except Exception as e:
             logger.error(f"添加订阅失败: {e}")
@@ -183,7 +183,7 @@ class BangumiRepository:
 
     def get_monitored_subjects(self) -> list[BangumiSubject]:
         """
-        获取所有已订阅的番剧列表，用于轮询更新
+        获取所有已订阅的番剧列表,用于轮询更新
 
         Returns:
             番剧对象列表
@@ -206,7 +206,7 @@ class BangumiRepository:
 
     def update_subject_episode(self, subject_id: str, new_episode: int) -> bool:
         """
-        更新番剧最新集数（快捷方法）
+        更新番剧最新集数(快捷方法)
 
         Args:
             subject_id: 番剧 ID
@@ -227,10 +227,10 @@ class BangumiRepository:
         total_episodes: int = 0,
     ) -> bool:
         """
-        原子性地 upsert 番剧信息并建立订阅关系。
+        原子性地 upsert 番剧信息并建立订阅关系
 
-        将 update_subject + add_subscription 合并到单一事务中，
-        避免两次独立调用之间发生异常导致脏数据。
+        将 update_subject + add_subscription 合并到单一事务中,
+        避免两次独立调用之间发生异常导致脏数据
 
         Args:
             group_id: 群组 ID
@@ -265,7 +265,7 @@ class BangumiRepository:
                 if total_episodes:
                     subject.total_episodes = total_episodes
 
-            # 2. 添加订阅关系（若不存在）
+            # 2. 添加订阅关系(若不存在)
             existing = (
                 session.query(Subscription)
                 .filter_by(group_id=str(group_id), subject_id=str(subject_id))
@@ -276,7 +276,7 @@ class BangumiRepository:
                     Subscription(group_id=str(group_id), subject_id=str(subject_id))
                 )
 
-            # 3. 单次 commit，保证 subject 与 subscription 同时成功或同时回滚
+            # 3. 单次 commit,保证 subject 与 subscription 同时成功或同时回滚
             session.commit()
             return True
         except Exception as e:
@@ -331,13 +331,13 @@ class BangumiRepository:
         self, group_id: str, keyword: str, limit: int = 5
     ) -> list[BangumiSubject]:
         """
-        在指定群组的订阅中查找与关键词匹配的番剧候选。
+        在指定群组的订阅中查找与关键词匹配的番剧候选
 
-        匹配优先级：
+        匹配优先级:
         1. subject_id 精确匹配
         2. subject_id 前缀匹配
-        3. name 包含匹配（忽略大小写）
-        4. name 相似度（SequenceMatcher）
+        3. name 包含匹配(忽略大小写)
+        4. name 相似度(SequenceMatcher)
         """
         session = self.Session()
         try:

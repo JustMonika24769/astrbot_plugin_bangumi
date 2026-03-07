@@ -6,7 +6,7 @@ from typing import Literal, cast, overload
 import aiohttp
 from astrbot.api import logger
 
-from ..types import JsonArray, JsonObject
+from ..bangumi_types import JsonArray, JsonObject
 from .contracts import SearchSubjectsResponse
 from .exceptions import BangumiApiError, BangumiRateLimitError, NoSubjectFound
 
@@ -32,9 +32,9 @@ class BaseBangumiService:
         self.last_request_time = 0.0
         self._rate_lock = asyncio.Lock()
         self._timeout = aiohttp.ClientTimeout(total=30, connect=10)
-        # 兜底 session（惰性创建，避免每次新建 TCP 连接）
+        # 兜底 session(惰性创建,避免每次新建 TCP 连接)
         self._fallback_session: aiohttp.ClientSession | None = None
-        # 这里只放通用的缓存，或者具体业务的缓存放到具体类中
+        # 这里只放通用的缓存,或者具体业务的缓存放到具体类中
         self.search_cache: dict[str, SearchSubjectsResponse] = {}
         self.max_retries = max_retries
         self._session = session
@@ -72,66 +72,57 @@ class BaseBangumiService:
         """
         last_exception: Exception | None = None
 
-        for attempt in range(self.max_retries):
-            async with self._rate_lock:
-                now = time.time()
-                gap = 1.1 - (now - self.last_request_time)
-                if gap > 0:
-                    await asyncio.sleep(gap)
-                self.last_request_time = time.time()
-
+        for attempt in range(1, self.max_retries + 1):
+            await self._apply_rate_limit()
             logger.info(
-                f"Bangumi API请求 (尝试 {attempt + 1}/{self.max_retries}): {method} {url}"
+                f"Bangumi API请求 (尝试 {attempt}/{self.max_retries}): {method} {url}"
             )
 
             try:
-                # 优先使用外部注入的 Session
-                session = (
-                    self._session
-                    if self._session and not self._session.closed
-                    else await self._get_fallback_session()
-                )
-                request_context = (
-                    session.post(
-                        url,
-                        json=json_data,
-                        params=params,
-                        proxy=self.proxy,
-                        headers=self.headers,
-                        timeout=self._timeout,
-                    )
-                    if method.upper() == "POST"
-                    else session.get(
-                        url,
-                        params=params,
-                        proxy=self.proxy,
-                        headers=self.headers,
-                        timeout=self._timeout,
-                    )
-                )
-
-                async with request_context as response:
+                session = await self._get_active_session()
+                async with session.request(
+                    method=method.upper(),
+                    url=url,
+                    params=params,
+                    json=json_data,
+                    proxy=self.proxy,
+                    headers=self.headers,
+                    timeout=self._timeout,
+                ) as response:
                     if response.status >= 500:
                         last_exception = BangumiApiError(
-                            f"服务器错误 ({response.status})，尝试 {attempt + 1}/{self.max_retries}"
+                            f"服务器错误 ({response.status})"
                         )
-                        logger.warning(f"服务器返回错误状态码: {response.status}")
-                        await asyncio.sleep(1.5)
-                        continue
+                        if attempt < self.max_retries:
+                            await asyncio.sleep(1.5)
+                            continue
                     return await self._handle_response(response, is_json=is_json)
 
             except aiohttp.ClientError as e:
-                logger.warning(f"网络请求失败: {e}")
+                logger.warning(f"网络请求失败 (第 {attempt} 次): {e}")
                 last_exception = e
-                if attempt < self.max_retries - 1:
+                if attempt < self.max_retries:
                     await asyncio.sleep(1.5)
-                else:
-                    logger.error("达到最大重试次数，请求失败")
 
-        raise BangumiApiError(f"请求失败，请稍后再试: {last_exception}")
+        raise BangumiApiError(f"请求失败,已达最大重试次数: {last_exception}")
+
+    async def _get_active_session(self) -> aiohttp.ClientSession:
+        """获取当前可用的 Session"""
+        if self._session and not self._session.closed:
+            return self._session
+        return await self._get_fallback_session()
+
+    async def _apply_rate_limit(self) -> None:
+        """执行限流等待"""
+        async with self._rate_lock:
+            now = time.time()
+            gap = 1.1 - (now - self.last_request_time)
+            if gap > 0:
+                await asyncio.sleep(gap)
+            self.last_request_time = time.time()
 
     async def _get_fallback_session(self) -> aiohttp.ClientSession:
-        """惰性创建并复用兜底 ClientSession。"""
+        """惰性创建并复用兜底 ClientSession"""
         if self._fallback_session is None or self._fallback_session.closed:
             self._fallback_session = aiohttp.ClientSession(headers=self.headers)
         return self._fallback_session

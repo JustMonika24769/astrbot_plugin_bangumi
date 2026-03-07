@@ -96,7 +96,7 @@ async def test_unsubscribe_local_multi_match_returns_candidates(
 ) -> None:
     mock_repo.find_group_subscription_candidates.return_value = [
         SimpleNamespace(subject_id="1", name="进击的巨人"),
-        SimpleNamespace(subject_id="2", name="进击！巨人中学"),
+        SimpleNamespace(subject_id="2", name="进击!巨人中学"),
         SimpleNamespace(subject_id="3", name="巨人族的新娘"),
     ]
 
@@ -107,7 +107,7 @@ async def test_unsubscribe_local_multi_match_returns_candidates(
 
     assert "匹配到多个已订阅番剧" in result
     assert "1. 进击的巨人 (ID: 1)" in result
-    assert "2. 进击！巨人中学 (ID: 2)" in result
+    assert "2. 进击!巨人中学 (ID: 2)" in result
     assert "3. 巨人族的新娘 (ID: 3)" in result
     mock_repo.remove_subscription.assert_not_called()
     mock_service.search_subjects.assert_not_called()
@@ -127,7 +127,7 @@ async def test_unsubscribe_local_remove_failed(mock_repo, mock_service) -> None:
     )
     result = await sub_service.unsubscribe("group_1", "测")
 
-    assert "取消订阅失败：你可能并没有订阅《测试番剧》" in result
+    assert "取消订阅失败:你可能并没有订阅《测试番剧》" in result
     mock_repo.remove_subscription.assert_called_once_with("group_1", "123")
 
 
@@ -136,7 +136,7 @@ async def test_get_subscribe_candidates_multi_match(mock_repo, mock_service) -> 
     mock_service.search_subjects.return_value = {
         "data": [
             {"id": 1, "name_cn": "进击的巨人"},
-            {"id": 2, "name": "进击！巨人中学"},
+            {"id": 2, "name": "进击!巨人中学"},
             {"id": 1, "name_cn": "进击的巨人"},
             {"name_cn": "无ID条目"},
         ]
@@ -150,7 +150,7 @@ async def test_get_subscribe_candidates_multi_match(mock_repo, mock_service) -> 
     assert error_msg is None
     assert candidates == [
         {"subject_id": "1", "name": "进击的巨人"},
-        {"subject_id": "2", "name": "进击！巨人中学"},
+        {"subject_id": "2", "name": "进击!巨人中学"},
     ]
     mock_service.search_subjects.assert_awaited_once_with(
         keyword="巨人",

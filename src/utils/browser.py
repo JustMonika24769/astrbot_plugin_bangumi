@@ -12,7 +12,7 @@ async def create_page(
         # 启动 Playwright
         playwright = await async_playwright().start()
 
-        # 浏览器启动参数，适配 Docker 环境
+        # 浏览器启动参数,适配 Docker 环境
         chrome_args = [
             "--no-sandbox",
             "--disable-setuid-sandbox",

@@ -1,7 +1,7 @@
 """
 APScheduler 管理器
 
-此模块提供了一个为 asyncio 和特定时区配置的 APScheduler 单例管理器。
+此模块提供了一个为 asyncio 和特定时区配置的 APScheduler 单例管理器
 """
 
 import asyncio
@@ -15,23 +15,23 @@ from astrbot.api import logger
 
 class SchedulerManager:
     """
-    APScheduler 的管理器类。
-    它使用 Asia/Shanghai 时区初始化调度器，并提供添加、删除和管理任务的方法。
+    APScheduler 的管理器类
+    它使用 Asia/Shanghai 时区初始化调度器,并提供添加、删除和管理任务的方法
     """
 
     _instance = None
     _lock = asyncio.Lock()
 
     def __new__(cls, *args: object, **kwargs: object) -> "SchedulerManager":
-        # 伪单例实现，确保只存在一个调度器实例。
+        # 伪单例实现,确保只存在一个调度器实例
         if cls._instance is None:
             cls._instance = super().__new__(cls)
         return cls._instance
 
     def __init__(self) -> None:
         """
-        初始化 SchedulerManager。
-        每次调用 SchedulerManager() 时都会调用此方法，但调度器本身只创建一次。
+        初始化 SchedulerManager
+        每次调用 SchedulerManager() 时都会调用此方法,但调度器本身只创建一次
         """
         if not hasattr(self, "scheduler"):
             self.scheduler = AsyncIOScheduler(timezone=pytz.timezone("Asia/Shanghai"))
@@ -42,15 +42,15 @@ class SchedulerManager:
         self, func: Callable[..., object], trigger: str, **kwargs: object
     ) -> str | None:
         """
-        向调度器添加一个任务。
+        向调度器添加一个任务
 
         Args:
-            func (Callable): 要执行的异步函数。
-            trigger (str): 触发器类型（例如：'interval'、'cron'、'date'）。
-            **kwargs: 触发器的参数（例如：seconds=30, hour=8, minute=0）。
+            func (Callable): 要执行的异步函数
+            trigger (str): 触发器类型(例如:'interval'、'cron'、'date')
+            **kwargs: 触发器的参数(例如:seconds=30, hour=8, minute=0)
 
         Returns:
-            str | None: 添加的任务ID，如果失败则返回 None。
+            str | None: 添加的任务ID,如果失败则返回 None
         """
         try:
             job = self.scheduler.add_job(func, trigger, **kwargs)
@@ -61,10 +61,10 @@ class SchedulerManager:
 
     def cancel_job(self, job_id: str) -> None:
         """
-        根据任务ID取消任务。
+        根据任务ID取消任务
 
         Args:
-            job_id (str): 要取消的任务的ID。
+            job_id (str): 要取消的任务的ID
         """
         try:
             self.scheduler.remove_job(job_id)
@@ -76,7 +76,7 @@ class SchedulerManager:
 
     def shutdown(self) -> None:
         """
-        关闭调度器。
+        关闭调度器
         """
         if self.scheduler.running:
             self.scheduler.shutdown()

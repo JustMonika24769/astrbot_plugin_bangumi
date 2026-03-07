@@ -64,7 +64,7 @@ def _infer_air_weekday(aired_weekdays: list[int]) -> str:
         return ""
 
     weekday_names = {1: "月", 2: "火", 3: "水", 4: "木", 5: "金", 6: "土", 7: "日"}
-    # 取最近 4 集的星期，避免早期特殊排期干扰
+    # 取最近 4 集的星期,避免早期特殊排期干扰
     recent = aired_weekdays[-4:]
     most_common = Counter(recent).most_common(1)[0][0]
     return weekday_names.get(most_common, "")
@@ -74,7 +74,7 @@ def _parse_episode_list(
     episodes: list[EpisodeItem], today: datetime.date
 ) -> tuple[list[dict[str, int | bool | None]], list[int]]:
     """
-    解析剧集列表，返回 (渲染用列表, 已播出星期列表)
+    解析剧集列表,返回 (渲染用列表, 已播出星期列表)
     """
     episode_list: list[dict[str, int | bool | None]] = []
     aired_weekdays: list[int] = []
@@ -95,7 +95,7 @@ def _parse_episode_list(
             except ValueError:
                 pass
 
-        # 补充逻辑：有评论也视为已播出
+        # 补充逻辑:有评论也视为已播出
         if ep.get("comment", 0) > 0:
             aired = True
 
@@ -180,10 +180,10 @@ class SubjectRenderer(BaseRenderer):
         max_concurrency: int = 3,
     ) -> list[str]:
         """
-        批量渲染条目卡片并直接返回 Base64 字符串列表。
+        批量渲染条目卡片并直接返回 Base64 字符串列表
 
         Args:
-            max_concurrency: 最大并发渲染数，防止压垮浏览器/RPC 服务
+            max_concurrency: 最大并发渲染数,防止压垮浏览器/RPC 服务
         """
         semaphore = asyncio.Semaphore(max_concurrency)
 

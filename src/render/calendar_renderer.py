@@ -9,7 +9,7 @@ from .base_renderer import BaseRenderer
 
 def reorder_days(calendar_data: list[CalendarDay]) -> list[CalendarDay]:
     """
-    重新排序天数，使今天排在第一位。
+    重新排序天数,使今天排在第一位
     """
     today_id = datetime.datetime.now().isoweekday()
 
@@ -34,7 +34,7 @@ class CalendarRenderer(BaseRenderer):
         max_retries: int = 3,
     ) -> str | None:
         """
-        渲染放送表图片并返回 Base64 字符串。
+        渲染放送表图片并返回 Base64 字符串
         """
         try:
             reordered_days = reorder_days(calendar_data)

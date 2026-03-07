@@ -12,7 +12,7 @@ class EnvManager:
 
     async def verify_playwright(self) -> bool:
         """
-        验证 Playwright 是否安装成功并可运行。
+        验证 Playwright 是否安装成功并可运行
         """
         try:
             from playwright.async_api import async_playwright
@@ -34,7 +34,7 @@ class EnvManager:
 
     async def install_dependencies(self) -> None:
         """
-        安装 Playwright 及其 Chromium 浏览器。
+        安装 Playwright 及其 Chromium 浏览器
         """
         logger.info("正在初始化插件依赖 (Playwright)...")
         try:
@@ -66,7 +66,7 @@ class EnvManager:
                     )
             else:
                 logger.info(
-                    f"当前系统为 {sys.platform}，跳过系统依赖安装 (install-deps)。"
+                    f"当前系统为 {sys.platform},跳过系统依赖安装 (install-deps)"
                 )
 
             # 2. 安装 Playwright Chromium
@@ -95,7 +95,7 @@ class EnvManager:
                         f.write("installed")
                 else:
                     logger.error(
-                        "Playwright 安装后验证依然失败，请检查网络或手动安装依赖。"
+                        "Playwright 安装后验证依然失败,请检查网络或手动安装依赖"
                     )
             else:
                 logger.warning(

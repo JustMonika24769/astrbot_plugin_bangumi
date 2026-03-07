@@ -28,14 +28,14 @@ from .src.utils import EnvManager, SchedulerManager
 @register(
     "astrbot_plugin_bangumi_enhance",
     "united_pooh",
-    "AstrBot Bangumi 增强版：为 AstrBot 打造的一站式 Bangumi 追番助手。支持番剧/漫画图文搜索、每日放送时刻表查看及集数更新自动提醒。",
+    "AstrBot Bangumi 增强版:为 AstrBot 打造的一站式 Bangumi 追番助手支持番剧/漫画图文搜索、每日放送时刻表查看及集数更新自动提醒",
     "v1.1.1",
     "https://github.com/united-pooh/astrbot_plugin_bangumi",
 )
 class BangumiPlugin(Star):
     def __init__(self, context: Context, config: AstrBotConfig) -> None:
         """
-        初始化 BangumiPlugin 插件。
+        初始化 BangumiPlugin 插件
         """
         super().__init__(context)
         self.config = config
@@ -51,9 +51,9 @@ class BangumiPlugin(Star):
 
     async def initialize(self) -> None:
         """
-        插件加载时自动运行的初始化方法。
+        插件加载时自动运行的初始化方法
         """
-        # 0. 提前获取插件数据目录（必须先于所有依赖 StarTools 的操作）
+        # 0. 提前获取插件数据目录(必须先于所有依赖 StarTools 的操作)
         plugin_data_dir = StarTools.get_data_dir()
 
         # 1. 初始化数据库
@@ -106,9 +106,7 @@ class BangumiPlugin(Star):
 
         # 检查本地渲染环境
         if not self.env_manager.is_installed():
-            logger.info(
-                "本地 Playwright 环境未就绪，将优先使用 RPC 渲染（如果已配置）。"
-            )
+            logger.info("本地 Playwright 环境未就绪,将优先使用 RPC 渲染(如果已配置)")
 
         # 添加定时更新任务
         if self.subscription_service:
@@ -191,12 +189,20 @@ class BangumiPlugin(Star):
         ):
             yield result
 
-    @filter.command("today")
+    @filter.command("calendar")
     async def calendar(self, event: AstrMessageEvent) -> AsyncGenerator[object, None]:
         if not self.search_service:
             yield event.plain_result("❌ 搜索服务未就绪")
             return
         async for result in self.search_service.handle_calendar(event):
+            yield result
+
+    @filter.command("today")
+    async def calendar(self, event: AstrMessageEvent) -> AsyncGenerator[object, None]:
+        if not self.search_service:
+            yield event.plain_result("❌ 搜索服务未就绪")
+            return
+        async for result in self.search_service.handle_today(event):
             yield result
 
     @filter.command("追番")
@@ -234,12 +240,12 @@ class BangumiPlugin(Star):
             yield event.plain_result(result)
             return
 
-        candidate_lines = ["⚠️ 匹配到多个候选，请使用 `/追番 序号` 确认："]
+        candidate_lines = ["⚠️ 匹配到多个候选,请使用 `/追番 序号` 确认:"]
         for index, candidate in enumerate(candidates, start=1):
             candidate_lines.append(
                 f"{index}. {candidate['name']} (ID: {candidate['subject_id']})"
             )
-        candidate_lines.append("5分钟内有效；若发送其他命令将自动取消本次确认。")
+        candidate_lines.append("5分钟内有效；若发送其他命令将自动取消本次确认")
         yield event.plain_result("\n".join(candidate_lines))
 
         cancel_commands = {
@@ -247,7 +253,7 @@ class BangumiPlugin(Star):
             "bgm番剧",
             "bgm剧场版",
             "bgm漫画",
-            "today",
+            "calendar",
             "弃坑",
         }
         session_key = group_id
@@ -288,7 +294,7 @@ class BangumiPlugin(Star):
             if selected_index < 1 or selected_index > len(candidates):
                 await wait_event.send(
                     MessageChain(
-                        [Comp.Plain(f"❌ 序号超出范围，请输入 1-{len(candidates)}。")]
+                        [Comp.Plain(f"❌ 序号超出范围,请输入 1-{len(candidates)}")]
                     )
                 )
                 controller.keep(timeout=0)
@@ -309,7 +315,7 @@ class BangumiPlugin(Star):
                 session_filter=GroupSessionFilter(),
             )
         except TimeoutError:
-            yield event.plain_result("⏰ 候选确认已过期，请重新使用 `/追番 关键词`。")
+            yield event.plain_result("⏰ 候选确认已过期,请重新使用 `/追番 关键词`")
 
     @filter.command("弃坑")
     async def unsubscribe(

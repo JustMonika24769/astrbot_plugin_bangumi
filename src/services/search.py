@@ -41,7 +41,7 @@ class SearchService:
         subject_tags: list[str] | None = None,
     ) -> AsyncGenerator[MessageResult, None]:
         """
-        处理条目搜索的核心流程：搜索 -> 渲染 (Base64) -> 发送。
+        处理条目搜索的核心流程:搜索 -> 渲染 (Base64) -> 发送
         """
         if not query:
             yield event.plain_result("❌ 请提供搜索关键词")
@@ -77,7 +77,7 @@ class SearchService:
         self, event: AstrMessageEvent
     ) -> AsyncGenerator[MessageResult, None]:
         """
-        处理每日放送逻辑。
+        处理每日放送逻辑
         """
         try:
             calendar_res = await self.service.get_calendar()
@@ -103,7 +103,7 @@ class SearchService:
         self, subjects: list[SearchSubjectItem], top_k: int
     ) -> list[Comp.Image]:
         """
-        内部逻辑：准备渲染数据并生成 Base64 图片组件。
+        内部逻辑:准备渲染数据并生成 Base64 图片组件
         """
         data_list: list[SubjectDetailsResponse] = []
 

@@ -11,7 +11,7 @@ class EpisodeRenderer(BaseRenderer):
         max_retries: int = 3,
     ) -> str | None:
         """
-        渲染单集信息卡片并返回 Base64 编码的图片字符串。
+        渲染单集信息卡片并返回 Base64 编码的图片字符串
 
         """
         # 数据转换
