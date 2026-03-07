@@ -1,6 +1,7 @@
 import pytest
-from src.render import SubjectRenderer
 from loguru import logger
+
+from src.render import SubjectRenderer
 
 
 @pytest.mark.asyncio
@@ -47,9 +48,9 @@ async def test_render_subject_card_success() -> None:
                 "7": 753,
                 "8": 1234,
                 "9": 194,
-                "10": 100
+                "10": 100,
             },
-        "score": 7.6
+            "score": 7.6,
         },
     }
 
@@ -58,14 +59,14 @@ async def test_render_subject_card_success() -> None:
     # 运行渲染器
     base64_image = await renderer.render_subject_card(
         rpc_url="https://api.unitedpooh.top/rpc",
-        data=subject_data, 
+        data=subject_data,
         headless=True,
-        timeout=60000
+        timeout=60000,
     )
 
     # 验证结果
     assert base64_image is not None, "[-] 渲染失败，未返回 Base64 字符串"
     assert isinstance(base64_image, str), "返回值应为 Base64 字符串"
     assert len(base64_image) > 100, "Base64 字符串过短"
-    
+
     logger.info(f"[+] 渲染成功！图片长度: {len(base64_image)} 字符")

@@ -25,7 +25,9 @@ async def test_calendar_cache_hit(service: CalendarService) -> None:
 
 
 @pytest.mark.asyncio
-async def test_calendar_cache_expired_refresh(service: CalendarService, monkeypatch: pytest.MonkeyPatch) -> None:
+async def test_calendar_cache_expired_refresh(
+    service: CalendarService, monkeypatch: pytest.MonkeyPatch
+) -> None:
     now = 1_000_000.0
 
     def fake_time() -> float:
@@ -62,7 +64,9 @@ async def test_calendar_cache_returns_deepcopy(service: CalendarService) -> None
 
 
 @pytest.mark.asyncio
-async def test_calendar_cache_refresh_failed_fallback_stale(service: CalendarService, monkeypatch: pytest.MonkeyPatch) -> None:
+async def test_calendar_cache_refresh_failed_fallback_stale(
+    service: CalendarService, monkeypatch: pytest.MonkeyPatch
+) -> None:
     now = 2_000_000.0
 
     def fake_time() -> float:
@@ -86,7 +90,9 @@ async def test_calendar_cache_refresh_failed_fallback_stale(service: CalendarSer
 
 
 @pytest.mark.asyncio
-async def test_calendar_cache_concurrent_single_refresh(service: CalendarService) -> None:
+async def test_calendar_cache_concurrent_single_refresh(
+    service: CalendarService,
+) -> None:
     payload = [{"weekday": {"id": 3}, "items": []}]
 
     async def slow_fetch(*args: object, **kwargs: object) -> list[dict[str, object]]:

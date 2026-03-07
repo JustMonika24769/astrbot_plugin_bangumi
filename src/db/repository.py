@@ -12,8 +12,8 @@ from astrbot.api import logger
 from sqlalchemy import create_engine, or_
 from sqlalchemy.orm import joinedload, scoped_session, sessionmaker
 
-from .models import Base, BangumiSubject, Subscription
 from ..services import DatabaseError
+from .models import BangumiSubject, Base, Subscription
 
 
 class BangumiRepository:

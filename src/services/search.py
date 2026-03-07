@@ -1,6 +1,7 @@
-import aiohttp
-from typing import TYPE_CHECKING, AsyncGenerator, cast
+from collections.abc import AsyncGenerator
+from typing import TYPE_CHECKING, cast
 
+import aiohttp
 import astrbot.api.message_components as Comp
 from astrbot.api import logger
 from astrbot.api.event import AstrMessageEvent

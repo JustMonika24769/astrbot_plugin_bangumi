@@ -1,8 +1,9 @@
-import pytest
 from unittest.mock import AsyncMock, MagicMock
 
-from src.services import SearchService
+import pytest
 from astrbot.api.event import AstrMessageEvent
+
+from src.services import SearchService
 
 
 @pytest.fixture
@@ -13,6 +14,7 @@ def mock_service() -> MagicMock:
     service.get_subject_episodes = AsyncMock()
     service.get_calendar = AsyncMock()
     return service
+
 
 @pytest.fixture
 def mock_config_manager() -> MagicMock:
@@ -34,7 +36,9 @@ async def test_handle_calendar_success(
     )
 
     # Mock 渲染器，避免进入模板渲染逻辑
-    search_service.calendar_renderer.render_calendar = AsyncMock(return_value="fake_base64")
+    search_service.calendar_renderer.render_calendar = AsyncMock(
+        return_value="fake_base64"
+    )
 
     event = MagicMock(spec=AstrMessageEvent)
     event.chain_result = MagicMock(side_effect=lambda x: x)

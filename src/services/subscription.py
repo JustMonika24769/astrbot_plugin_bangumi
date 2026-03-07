@@ -1,5 +1,6 @@
-import aiohttp
 from typing import TYPE_CHECKING, cast
+
+import aiohttp
 from astrbot.api import logger
 from astrbot.api.star import StarTools
 from astrbot.core.message.message_event_result import MessageChain
@@ -116,7 +117,9 @@ class SubscriptionService:
         """
         查找可订阅的番剧逻辑（从 API 层迁移至此）。
         """
-        error_msg, candidates = await self.get_subscribe_candidates(keyword=keyword, limit=1)
+        error_msg, candidates = await self.get_subscribe_candidates(
+            keyword=keyword, limit=1
+        )
         if error_msg:
             return error_msg, None
         if not candidates:
@@ -142,7 +145,9 @@ class SubscriptionService:
                 total_episodes=subject_info["total_episodes"],
             )
             if success:
-                return f"✅ 成功订阅《{subject_info['name']}》！\n如有更新将推送到本群。"
+                return (
+                    f"✅ 成功订阅《{subject_info['name']}》！\n如有更新将推送到本群。"
+                )
             return "❌ 订阅失败，数据库错误。"
         except (BangumiApiError, DatabaseError, SubscriptionError) as e:
             logger.error(f"SubscriptionService.subscribe_by_subject_id 失败: {e}")
@@ -231,7 +236,7 @@ class SubscriptionService:
         display_limit = 5
         display_candidates = candidates[:display_limit]
         lines = [
-            f"⚠️ 匹配到多个已订阅番剧，请提供更精确名称或直接使用 ID：",
+            "⚠️ 匹配到多个已订阅番剧，请提供更精确名称或直接使用 ID：",
         ]
         for idx, subject in enumerate(display_candidates, start=1):
             lines.append(f"{idx}. {subject.name} (ID: {subject.subject_id})")
@@ -319,7 +324,7 @@ class SubscriptionService:
                     type="GroupMessage", id=group_id, message_chain=chain
                 )
                 logger.info(f"向群组 {group_id} 发送《{subject_name}》更新通知成功。")
-            except Exception as e:  # noqa: BLE001 — StarTools 可能抛出任意平台异常
+            except Exception as e:
                 logger.error(
                     f"向群组 {group_id} 发送《{subject_name}》更新通知失败: {e}"
                 )

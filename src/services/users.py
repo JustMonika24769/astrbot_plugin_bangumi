@@ -1,5 +1,5 @@
-from urllib.parse import quote
 from typing import cast
+from urllib.parse import quote
 
 from .base import BaseBangumiService
 from .contracts import UserDetailsResponse

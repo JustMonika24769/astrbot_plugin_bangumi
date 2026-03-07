@@ -39,6 +39,7 @@ class BangumiService(SubjectsService, CalendarService):
         # 因为所有Service都继承自BaseBangumiService，super会自动处理MRO链
         super().__init__(access_token, user_agent, proxy, session=session)
 
+
 def __getattr__(name: str) -> Any:
     if name == "SearchService":
         from .search import SearchService
@@ -50,13 +51,14 @@ def __getattr__(name: str) -> Any:
         return SubscriptionService
     raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
 
+
 __all__ = [
-    "BangumiService",
     "BangumiApiError",
     "BangumiRateLimitError",
+    "BangumiService",
     "CalendarDay",
-    "CalendarWeekday",
     "CalendarService",
+    "CalendarWeekday",
     "DatabaseError",
     "Episode",
     "EpisodeItem",

@@ -19,7 +19,6 @@ class ConfigManager:
         if user_agent == "":
             with open(
                 f"{Path(__file__).resolve().parent.parent.parent}/metadata.yaml",
-                "r",
                 encoding="utf-8",
             ) as f:
                 metadata = yaml.safe_load(f)

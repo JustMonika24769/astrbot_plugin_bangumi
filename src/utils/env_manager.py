@@ -1,6 +1,7 @@
 import asyncio
 import os
 import sys
+
 from astrbot.api import logger
 
 
@@ -27,7 +28,7 @@ class EnvManager:
                 )
                 await browser.close()
             return True
-        except Exception as e:  # noqa: BLE001 - 三方运行时异常不可穷举
+        except Exception as e:
             logger.debug(f"Playwright 环境验证失败: {e}")
             return False
 
@@ -101,7 +102,7 @@ class EnvManager:
                     f"Playwright Chromium 安装返回错误码: {process.returncode}"
                 )
 
-        except Exception as e:  # noqa: BLE001 - 安装流程需兜底记录
+        except Exception as e:
             logger.error(f"依赖安装流程失败: {e}")
 
     def is_installed(self) -> bool:

@@ -1,28 +1,28 @@
-import os
 import copy
+import os
 import re
-import aiohttp
 from collections.abc import AsyncGenerator
 
+import aiohttp
 import astrbot.api.message_components as Comp
 from astrbot.api import logger
 from astrbot.api.all import AstrBotConfig
 from astrbot.api.event import AstrMessageEvent, MessageChain, filter
-from astrbot.api.star import Context, Star, register
+
+# 导入配置与管理
+from astrbot.api.star import Context, Star, StarTools, register
 from astrbot.core.utils.session_waiter import (
     SessionController,
     SessionFilter,
     session_waiter,
 )
 
-# 导入配置与管理
-from astrbot.api.star import StarTools
 from .src.config import ConfigManager
-from .src.utils import EnvManager, SchedulerManager
+from .src.db import BangumiRepository
 
 # 导入逻辑服务
 from .src.services import BangumiService, SearchService, SubscriptionService
-from .src.db import BangumiRepository
+from .src.utils import EnvManager, SchedulerManager
 
 
 @register(
@@ -212,7 +212,10 @@ class BangumiPlugin(Star):
             yield event.plain_result("❌ 无法获取群组ID")
             return
 
-        error_msg, candidates = await self.subscription_service.get_subscribe_candidates(
+        (
+            error_msg,
+            candidates,
+        ) = await self.subscription_service.get_subscribe_candidates(
             keyword=query,
             limit=self.config_manager.get_max_fuzzy_results(),
         )
