@@ -28,7 +28,9 @@ class SubscriptionService:
         self.storage = repository
         self.service = service
         self.config_manager = config_manager
-        self.renderer = EpisodeRenderer(session=session)
+        self.renderer = EpisodeRenderer(
+            session=session, render_mode=self.config_manager.get_render_mode()
+        )
 
     async def get_subscribe_candidates(
         self, keyword: str, limit: int
@@ -264,8 +266,10 @@ class SubscriptionService:
                         subject.subject_id, size=ImageSize.LARGE
                     )
                     if image_base64:
-                        latest_episode.image_url = (
-                            f"data:image/png;base64,{image_base64}"
+                        latest_episode = latest_episode.model_copy(
+                            update={
+                                "image_url": f"data:image/png;base64,{image_base64}"
+                            }
                         )
                 except BangumiApiError as e:
                     logger.error(f"获取条目 {subject.name} 图片失败: {e}")

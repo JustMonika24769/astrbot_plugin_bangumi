@@ -1,6 +1,6 @@
-from typing import TypeAlias, TypedDict
+from typing import TypedDict
 
-from ..types import JsonValue
+from ..bangumi_types import JsonValue
 
 
 class SearchSubjectItem(TypedDict, total=False):
@@ -107,5 +107,5 @@ class UnsubscribeMatch(TypedDict):
     name: str
 
 
-RenderData: TypeAlias = dict[str, JsonValue]
-MessageResult: TypeAlias = object
+type RenderData = dict[str, JsonValue]
+type MessageResult = object

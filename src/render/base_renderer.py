@@ -8,10 +8,15 @@ from astrbot.api import logger
 
 from ..services import RenderData
 from ..utils import create_page, retry
+from .render_mode import RenderMode, normalize_render_mode
 
 
 class BaseRenderer:
-    def __init__(self, session: aiohttp.ClientSession | None = None) -> None:
+    def __init__(
+        self,
+        session: aiohttp.ClientSession | None = None,
+        render_mode: RenderMode = "html",
+    ) -> None:
         """
         初始化渲染器
 
@@ -24,6 +29,7 @@ class BaseRenderer:
             loader=jinja2.FileSystemLoader(str(self.template_dir)), autoescape=True
         )
         self._session = session
+        self.render_mode = normalize_render_mode(render_mode)
 
     def _generate_html(
         self, template_path: str, render_data: RenderData, sub_dir: str = ""
@@ -153,11 +159,13 @@ class BaseRenderer:
                     return await self._handle_rpc_response(response)
             else:
                 # 兜底:如果没有外部 Session,则创建临时 Session
-                async with aiohttp.ClientSession() as session:
-                    async with session.post(
+                async with (
+                    aiohttp.ClientSession() as session,
+                    session.post(
                         rpc_url, json=payload, timeout=client_timeout
-                    ) as response:
-                        return await self._handle_rpc_response(response)
+                    ) as response,
+                ):
+                    return await self._handle_rpc_response(response)
 
         except aiohttp.ClientConnectorError as e:
             logger.error(f"[-] RPC 渲染服务器连接失败: {e}")

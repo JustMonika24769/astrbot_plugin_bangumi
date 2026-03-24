@@ -29,8 +29,13 @@ class SearchService:
     ) -> None:
         self.service = service
         self.config_manager = config_manager
-        self.subject_renderer = SubjectRenderer(session=session)
-        self.calendar_renderer = CalendarRenderer(session=session)
+        render_mode = self.config_manager.get_render_mode()
+        self.subject_renderer = SubjectRenderer(
+            session=session, render_mode=render_mode
+        )
+        self.calendar_renderer = CalendarRenderer(
+            session=session, render_mode=render_mode
+        )
 
     async def handle_subject_search(
         self,

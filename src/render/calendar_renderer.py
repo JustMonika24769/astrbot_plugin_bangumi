@@ -42,6 +42,9 @@ class CalendarRenderer(BaseRenderer):
             logger.error(f"[-] 处理日历数据失败: {e}")
             return None
 
+        if self.render_mode == "pillow":
+            logger.debug("[+] CalendarRenderer 暂未实现 Pillow 绘制,继续使用 HTML 渲染")
+
         return await self.render(
             template_path="calendar/calendar.html",
             render_data=cast(RenderData, {"days": reordered_days}),

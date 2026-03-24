@@ -5,7 +5,7 @@ from typing import cast
 from astrbot.api import logger
 from pydantic import ValidationError
 
-from ..types import JsonObject
+from ..bangumi_types import JsonObject
 from .base import BaseBangumiService
 from .contracts import (
     EpisodeItem,

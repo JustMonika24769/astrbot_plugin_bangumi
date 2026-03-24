@@ -198,7 +198,7 @@ class BangumiPlugin(Star):
             yield result
 
     @filter.command("today")
-    async def calendar(self, event: AstrMessageEvent) -> AsyncGenerator[object, None]:
+    async def today(self, event: AstrMessageEvent) -> AsyncGenerator[object, None]:
         if not self.search_service:
             yield event.plain_result("❌ 搜索服务未就绪")
             return
@@ -245,7 +245,7 @@ class BangumiPlugin(Star):
             candidate_lines.append(
                 f"{index}. {candidate['name']} (ID: {candidate['subject_id']})"
             )
-        candidate_lines.append("5分钟内有效；若发送其他命令将自动取消本次确认")
+        candidate_lines.append("5分钟内有效;若发送其他命令将自动取消本次确认")
         yield event.plain_result("\n".join(candidate_lines))
 
         cancel_commands = {
