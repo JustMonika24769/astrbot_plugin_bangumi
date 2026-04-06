@@ -63,9 +63,7 @@ class ConfigManager:
         return self._get_int("max_retries", 3)
 
     def get_render_server_url(self) -> str:
-        return self._get_str(
-            "render_server_url", "https://api.unitedpooh.top/rpc"
-        )
+        return self._get_str("render_server_url", "https://api.unitedpooh.top/rpc")
 
     def get_render_mode(self) -> RenderMode:
         return normalize_render_mode(self.config.get("render_mode", "html"))

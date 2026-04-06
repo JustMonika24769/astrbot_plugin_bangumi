@@ -199,7 +199,9 @@ def _extract_total_episodes(data: RenderData) -> int | None:
 
 
 def _extract_subject_titles(data: RenderData) -> tuple[str, str]:
-    primary = _stringify_value(data.get("name_cn")) or _stringify_value(data.get("name"))
+    primary = _stringify_value(data.get("name_cn")) or _stringify_value(
+        data.get("name")
+    )
     secondary = _stringify_value(data.get("name"))
     if not primary:
         primary = "未知条目"
@@ -258,7 +260,9 @@ def _extract_rating_metrics(data: RenderData) -> tuple[str, str, str]:
 def _build_subject_meta(data: RenderData) -> list[str]:
     meta_items: list[str] = []
 
-    date_text = _stringify_value(data.get("date")) or _get_infobox_value(data, "放送开始")
+    date_text = _stringify_value(data.get("date")) or _get_infobox_value(
+        data, "放送开始"
+    )
     if date_text:
         meta_items.append(f"首播 {date_text}")
 

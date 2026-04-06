@@ -57,7 +57,9 @@ def image_to_base64(image: Image.Image) -> str:
     return base64.b64encode(buffer.getvalue()).decode("utf-8")
 
 
-def measure_text(draw: ImageDraw.ImageDraw, text: str, font: FontType) -> tuple[int, int]:
+def measure_text(
+    draw: ImageDraw.ImageDraw, text: str, font: FontType
+) -> tuple[int, int]:
     left, top, right, bottom = draw.textbbox((0, 0), text, font=font)
     return int(right - left), int(bottom - top)
 
@@ -164,7 +166,9 @@ def draw_pill(
     radius = pill_height // 2
     rect = (xy[0], xy[1], xy[0] + pill_width, xy[1] + pill_height)
     draw.rounded_rectangle(rect, radius=radius, fill=fill, outline=outline, width=1)
-    draw.text((xy[0] + padding_x, xy[1] + padding_y - 1), text, font=font, fill=text_fill)
+    draw.text(
+        (xy[0] + padding_x, xy[1] + padding_y - 1), text, font=font, fill=text_fill
+    )
     return pill_width
 
 
@@ -270,7 +274,9 @@ def round_image(image: Image.Image, radius: int) -> Image.Image:
     rounded = image.convert("RGBA")
     mask = Image.new("L", rounded.size, 0)
     draw = ImageDraw.Draw(mask)
-    draw.rounded_rectangle((0, 0, rounded.width, rounded.height), radius=radius, fill=255)
+    draw.rounded_rectangle(
+        (0, 0, rounded.width, rounded.height), radius=radius, fill=255
+    )
     rounded.putalpha(mask)
     return rounded
 

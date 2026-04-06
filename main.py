@@ -272,7 +272,9 @@ class BangumiPlugin(Star):
             candidate_lines.append(
                 f"{index}. {candidate['name']} (ID: {candidate['subject_id']})"
             )
-        candidate_lines.append("5分钟内有效;若发送新的斜杠命令或重新输入 `追番` 将自动取消本次确认")
+        candidate_lines.append(
+            "5分钟内有效;若发送新的斜杠命令或重新输入 `追番` 将自动取消本次确认"
+        )
         yield event.plain_result("\n".join(candidate_lines))
         session_key = group_id
 

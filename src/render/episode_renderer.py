@@ -30,7 +30,9 @@ def _stringify_value(value: object) -> str:
 
 
 def _extract_episode_titles(data: RenderData) -> tuple[str, str]:
-    primary = _stringify_value(data.get("name_cn")) or _stringify_value(data.get("name"))
+    primary = _stringify_value(data.get("name_cn")) or _stringify_value(
+        data.get("name")
+    )
     secondary = _stringify_value(data.get("name"))
     if not primary:
         primary = "更新内容待补充"
@@ -111,25 +113,31 @@ def _draw_episode_card_image(
     comment = render_data.get("comment")
     meta_x = 462
     if airdate:
-        meta_x += draw_pill(
-            draw,
-            (meta_x, 74),
-            f"播出 {airdate}",
-            meta_font,
-            fill=(241, 245, 248, 255),
-            text_fill=(73, 83, 93),
-            outline=(223, 228, 235, 255),
-        ) + 10
+        meta_x += (
+            draw_pill(
+                draw,
+                (meta_x, 74),
+                f"播出 {airdate}",
+                meta_font,
+                fill=(241, 245, 248, 255),
+                text_fill=(73, 83, 93),
+                outline=(223, 228, 235, 255),
+            )
+            + 10
+        )
     if duration:
-        meta_x += draw_pill(
-            draw,
-            (meta_x, 74),
-            duration,
-            meta_font,
-            fill=(241, 245, 248, 255),
-            text_fill=(73, 83, 93),
-            outline=(223, 228, 235, 255),
-        ) + 10
+        meta_x += (
+            draw_pill(
+                draw,
+                (meta_x, 74),
+                duration,
+                meta_font,
+                fill=(241, 245, 248, 255),
+                text_fill=(73, 83, 93),
+                outline=(223, 228, 235, 255),
+            )
+            + 10
+        )
     if isinstance(comment, int) and comment > 0:
         draw_pill(
             draw,
@@ -194,7 +202,9 @@ class EpisodeRenderer(BaseRenderer):
     async def _render_episode_pillow(self, render_data: RenderData) -> str:
         image_url = _stringify_value(render_data.get("image_url"))
         cover_image = await load_image_source(image_url, self._session)
-        return await asyncio.to_thread(_draw_episode_card_image, render_data, cover_image)
+        return await asyncio.to_thread(
+            _draw_episode_card_image, render_data, cover_image
+        )
 
     async def render_episode(
         self,

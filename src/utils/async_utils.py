@@ -6,6 +6,7 @@ from astrbot.api import logger
 
 T = TypeVar("T")
 
+
 async def retry(
     func: Callable[..., Awaitable[T]],
     retries: int = 3,
