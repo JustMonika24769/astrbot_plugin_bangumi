@@ -6,6 +6,7 @@
 """
 
 import os
+from dataclasses import dataclass
 from difflib import SequenceMatcher
 
 from astrbot.api import logger
@@ -14,6 +15,15 @@ from sqlalchemy.orm import joinedload, scoped_session, sessionmaker
 
 from ..services import DatabaseError
 from .models import BangumiSubject, Base, Subscription
+
+
+@dataclass(frozen=True)
+class _CandidateScore:
+    exact_id: int
+    prefix_id: int
+    name_contains: int
+    similarity: float
+    subject_id: str
 
 
 class BangumiRepository:
@@ -347,46 +357,76 @@ class BangumiRepository:
 
             keyword_lower = normalized_keyword.lower()
             search_pattern = f"%{normalized_keyword}%"
-
-            candidates = (
-                session.query(BangumiSubject)
-                .join(
-                    Subscription, Subscription.subject_id == BangumiSubject.subject_id
-                )
-                .filter(Subscription.group_id == str(group_id))
-                .filter(
-                    or_(
-                        BangumiSubject.subject_id == normalized_keyword,
-                        BangumiSubject.subject_id.like(f"{normalized_keyword}%"),
-                        BangumiSubject.name.ilike(search_pattern),
-                    )
-                )
-                .all()
+            base_query = session.query(BangumiSubject).join(
+                Subscription, Subscription.subject_id == BangumiSubject.subject_id
             )
+            base_query = base_query.filter(Subscription.group_id == str(group_id))
 
-            def score(subject: BangumiSubject) -> tuple[int, int, int, float, str]:
-                subject_id = str(subject.subject_id or "")
-                name = str(subject.name or "")
-                name_lower = name.lower()
-                exact_id = int(subject_id == normalized_keyword)
-                prefix_id = int(subject_id.startswith(normalized_keyword))
-                name_contains = int(keyword_lower in name_lower)
-                similarity = SequenceMatcher(None, keyword_lower, name_lower).ratio()
-                return (exact_id, prefix_id, name_contains, similarity, subject_id)
+            direct_candidates = base_query.filter(
+                or_(
+                    BangumiSubject.subject_id == normalized_keyword,
+                    BangumiSubject.subject_id.like(f"{normalized_keyword}%"),
+                    BangumiSubject.name.ilike(search_pattern),
+                )
+            ).all()
+            if direct_candidates:
+                return self._rank_candidates(
+                    direct_candidates,
+                    normalized_keyword,
+                    keyword_lower,
+                    limit=limit,
+                )
 
-            sorted_candidates = sorted(
-                candidates,
-                key=lambda subject: (
-                    -score(subject)[0],
-                    -score(subject)[1],
-                    -score(subject)[2],
-                    -score(subject)[3],
-                    score(subject)[4],
-                ),
+            all_candidates = base_query.all()
+            return self._rank_candidates(
+                all_candidates,
+                normalized_keyword,
+                keyword_lower,
+                limit=limit,
+                min_similarity=0.35,
             )
-            return sorted_candidates[:limit]
         except Exception as e:
             logger.error(f"查询群组订阅候选失败: {e}")
             raise DatabaseError(f"查询群组订阅候选失败: {e}") from e
         finally:
             session.close()
+
+    @staticmethod
+    def _rank_candidates(
+        candidates: list[BangumiSubject],
+        normalized_keyword: str,
+        keyword_lower: str,
+        limit: int,
+        min_similarity: float = 0.0,
+    ) -> list[BangumiSubject]:
+        scored_candidates: list[tuple[_CandidateScore, BangumiSubject]] = []
+        for subject in candidates:
+            subject_id = str(subject.subject_id or "")
+            name = str(subject.name or "")
+            name_lower = name.lower()
+            score = _CandidateScore(
+                exact_id=int(subject_id == normalized_keyword),
+                prefix_id=int(subject_id.startswith(normalized_keyword)),
+                name_contains=int(keyword_lower in name_lower),
+                similarity=SequenceMatcher(None, keyword_lower, name_lower).ratio(),
+                subject_id=subject_id,
+            )
+            if (
+                score.exact_id == 0
+                and score.prefix_id == 0
+                and score.name_contains == 0
+                and score.similarity < min_similarity
+            ):
+                continue
+            scored_candidates.append((score, subject))
+
+        scored_candidates.sort(
+            key=lambda item: (
+                -item[0].exact_id,
+                -item[0].prefix_id,
+                -item[0].name_contains,
+                -item[0].similarity,
+                item[0].subject_id,
+            )
+        )
+        return [subject for _, subject in scored_candidates[:limit]]

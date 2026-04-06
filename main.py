@@ -29,7 +29,7 @@ from .src.utils import EnvManager, SchedulerManager
     "astrbot_plugin_bangumi_enhance",
     "united_pooh",
     "AstrBot Bangumi 增强版:为 AstrBot 打造的一站式 Bangumi 追番助手支持番剧/漫画图文搜索、每日放送时刻表查看及集数更新自动提醒",
-    "v1.1.1",
+    "v1.1.2",
     "https://github.com/united-pooh/astrbot_plugin_bangumi",
 )
 class BangumiPlugin(Star):
@@ -141,6 +141,27 @@ class BangumiPlugin(Star):
         except ValueError:
             return None
 
+    @staticmethod
+    def _normalize_command_token(raw_text: str) -> str:
+        stripped = raw_text.strip()
+        if not stripped:
+            return ""
+        first_token = stripped.split(maxsplit=1)[0]
+        return first_token[1:] if first_token.startswith("/") else first_token
+
+    @classmethod
+    def _should_requeue_subscribe_command(cls, raw_text: str) -> bool:
+        stripped = raw_text.strip()
+        if not stripped:
+            return False
+        if cls._parse_subscribe_selection(stripped) is not None:
+            return False
+
+        normalized_token = cls._normalize_command_token(stripped)
+        return bool(normalized_token) and (
+            stripped.startswith("/") or normalized_token == "追番"
+        )
+
     @filter.command("bgm")
     async def search(
         self, event: AstrMessageEvent, query: str, top_k: int = 1
@@ -245,17 +266,8 @@ class BangumiPlugin(Star):
             candidate_lines.append(
                 f"{index}. {candidate['name']} (ID: {candidate['subject_id']})"
             )
-        candidate_lines.append("5分钟内有效;若发送其他命令将自动取消本次确认")
+        candidate_lines.append("5分钟内有效;若发送新的斜杠命令或重新输入 `追番` 将自动取消本次确认")
         yield event.plain_result("\n".join(candidate_lines))
-
-        cancel_commands = {
-            "bgm",
-            "bgm番剧",
-            "bgm剧场版",
-            "bgm漫画",
-            "calendar",
-            "弃坑",
-        }
         session_key = group_id
 
         class GroupSessionFilter(SessionFilter):
@@ -269,12 +281,7 @@ class BangumiPlugin(Star):
             wait_event: AstrMessageEvent,
         ) -> None:
             incoming_text = wait_event.get_message_str().strip()
-
-            first_token = incoming_text.split(maxsplit=1)[0] if incoming_text else ""
-            normalized_token = (
-                first_token[1:] if first_token.startswith("/") else first_token
-            )
-            if normalized_token in cancel_commands:
+            if self._should_requeue_subscribe_command(incoming_text):
                 new_event = copy.copy(wait_event)
                 self.context.get_event_queue().put_nowait(new_event)
                 wait_event.stop_event()
@@ -283,12 +290,6 @@ class BangumiPlugin(Star):
 
             selected_index = self._parse_subscribe_selection(incoming_text)
             if selected_index is None:
-                if normalized_token == "追番":
-                    new_event = copy.copy(wait_event)
-                    self.context.get_event_queue().put_nowait(new_event)
-                    wait_event.stop_event()
-                    controller.stop()
-                    return
                 controller.keep(timeout=0)
                 return
             if selected_index < 1 or selected_index > len(candidates):
@@ -325,10 +326,7 @@ class BangumiPlugin(Star):
             yield event.plain_result("❌ 订阅服务未就绪")
             return
 
-        group_id: str | None = getattr(event, "session_id", None)
-        if hasattr(event, "message_obj") and hasattr(event.message_obj, "group_id"):
-            group_id = event.message_obj.group_id
-
+        group_id = self._resolve_session_key(event)
         if not group_id:
             yield event.plain_result("❌ 无法获取群组ID")
             return

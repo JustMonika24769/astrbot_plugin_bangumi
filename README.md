@@ -1,7 +1,7 @@
 <div align="center">
 
 # Bangumi 搜索插件使用指南
-[![repo](https://img.shields.io/badge/repo-v1.1.1-blue.svg)](https://github.com/united-pooh/astrbot_plugin_bangumi)
+[![repo](https://img.shields.io/badge/repo-v1.1.2-blue.svg)](https://github.com/united-pooh/astrbot_plugin_bangumi)
 [![License](https://img.shields.io/badge/license-Apache%202.0-green.svg)](LICENSE-2.0)
 [![AstrBot](https://img.shields.io/badge/AstrBot-%3E%3D4.0.0-orange.svg)](https://github.com/Soulter/AstrBot)
 [![Python](https://img.shields.io/badge/python-3.12%2B-blue.svg)](https://www.python.org/)

@@ -138,17 +138,7 @@ class SubscriptionService:
                 return error_msg
             if not subject_info:
                 return "❌ 未知错误:未能获取番剧信息"
-
-            success = self.storage.subscribe_subject(
-                group_id=group_id,
-                subject_id=subject_info["subject_id"],
-                name=subject_info["name"],
-                air_date=subject_info["air_date"],
-                total_episodes=subject_info["total_episodes"],
-            )
-            if success:
-                return f"✅ 成功订阅《{subject_info['name']}》!\n如有更新将推送到本群"
-            return "❌ 订阅失败,数据库错误"
+            return self._save_subscription(group_id, subject_info)
         except (BangumiApiError, DatabaseError, SubscriptionError) as e:
             logger.error(f"SubscriptionService.subscribe_by_subject_id 失败: {e}")
             return f"❌ 处理失败: {e}"
@@ -165,25 +155,22 @@ class SubscriptionService:
                 return error_msg
             if not subject_info:
                 return "❌ 未知错误:未能获取番剧信息"
-
-            subject_id = subject_info["subject_id"]
-            name = subject_info["name"]
-
-            # 2 & 3. 原子性地写入条目信息并建立订阅关系
-            success = self.storage.subscribe_subject(
-                group_id=group_id,
-                subject_id=subject_id,
-                name=name,
-                air_date=subject_info["air_date"],
-                total_episodes=subject_info["total_episodes"],
-            )
-            if success:
-                return f"✅ 成功订阅《{name}》!\n如有更新将推送到本群"
-            else:
-                return "❌ 订阅失败,数据库错误"
+            return self._save_subscription(group_id, subject_info)
         except (BangumiApiError, DatabaseError, SubscriptionError) as e:
             logger.error(f"SubscriptionService.subscribe 失败: {e}")
             return f"❌ 处理失败: {e}"
+
+    def _save_subscription(self, group_id: str, subject_info: SubscribeMatch) -> str:
+        success = self.storage.subscribe_subject(
+            group_id=group_id,
+            subject_id=subject_info["subject_id"],
+            name=subject_info["name"],
+            air_date=subject_info["air_date"],
+            total_episodes=subject_info["total_episodes"],
+        )
+        if success:
+            return f"✅ 成功订阅《{subject_info['name']}》!\n如有更新将推送到本群"
+        return "❌ 订阅失败,数据库错误"
 
     async def unsubscribe(self, group_id: str, query: str) -> str:
         """
