@@ -1,10 +1,12 @@
 import asyncio
 from collections.abc import Awaitable, Callable
+from typing import TypeVar
 
 from astrbot.api import logger
 
+T = TypeVar("T")
 
-async def retry[T](
+async def retry(
     func: Callable[..., Awaitable[T]],
     retries: int = 3,
     delay: float = 1.0,

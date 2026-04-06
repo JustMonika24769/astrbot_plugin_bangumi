@@ -1,6 +1,6 @@
 from typing import Literal
 
-type RenderMode = Literal["html", "pillow"]
+RenderMode = Literal["html", "pillow"]
 
 
 def normalize_render_mode(value: object) -> RenderMode:

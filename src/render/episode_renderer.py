@@ -205,9 +205,7 @@ class EpisodeRenderer(BaseRenderer):
     ) -> str | None:
         """
         渲染单集信息卡片并返回 Base64 编码的图片字符串
-
         """
-        # 数据转换
         render_data = cast(RenderData, episode_data.model_dump())
 
         if self.render_mode == "pillow":

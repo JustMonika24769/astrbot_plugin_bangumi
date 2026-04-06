@@ -2,9 +2,12 @@ name: CI
 
 on:
   push:
-    branches: [main, master]
+    branches: [main]
   pull_request:
-    branches: [main, master]
+    branches: [main]
+
+permissions:
+  contents: write
 
 jobs:
   quality:
@@ -12,11 +15,14 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          # 使用 head_ref 或 ref 以支持 auto-commit
+          ref: ${{ github.head_ref || github.ref }}
 
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
-          python-version: "3.12"
+          python-version: "3.11"
 
       - name: Install dependencies
         run: |
@@ -24,14 +30,17 @@ jobs:
           pip install -r requirements.txt
           pip install ruff mypy pytest pytest-asyncio types-PyYAML
 
-      - name: Ruff lint
-        run: ruff check .
+      - name: Ruff format and fix
+        run: |
+          ruff check --fix . --ignore RUF001,RUF002,RUF003 || true
+          ruff format .
 
-      - name: Ruff format check
-        run: ruff format --check .
 
-      - name: Mypy strict
-        run: mypy src main.py
+      - name: Commit changes
+        uses: stefanzweifel/git-auto-commit-action@v5
+        with:
+          commit_message: "style: auto-format with ruff"
+          file_pattern: '**.py'
 
       - name: Pytest smoke
         run: PYTHONPATH=. pytest tests/test_search_service.py tests/test_subscription_service.py

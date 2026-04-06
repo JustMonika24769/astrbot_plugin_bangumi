@@ -166,6 +166,7 @@ class BangumiPlugin(Star):
     async def search(
         self, event: AstrMessageEvent, query: str, top_k: int = 1
     ) -> AsyncGenerator[object, None]:
+        """全类别搜索 Bangumi 条目。"""
         if not self.search_service:
             yield event.plain_result("❌ 搜索服务未就绪")
             return
@@ -178,6 +179,7 @@ class BangumiPlugin(Star):
     async def search_anime(
         self, event: AstrMessageEvent, query: str, top_k: int = 1
     ) -> AsyncGenerator[object, None]:
+        """仅搜索 TV 动画条目。"""
         if not self.search_service:
             yield event.plain_result("❌ 搜索服务未就绪")
             return
@@ -190,6 +192,7 @@ class BangumiPlugin(Star):
     async def search_movie(
         self, event: AstrMessageEvent, query: str, top_k: int = 1
     ) -> AsyncGenerator[object, None]:
+        """仅搜索剧场版动画条目。"""
         if not self.search_service:
             yield event.plain_result("❌ 搜索服务未就绪")
             return
@@ -202,6 +205,7 @@ class BangumiPlugin(Star):
     async def search_manga(
         self, event: AstrMessageEvent, query: str, top_k: int = 1
     ) -> AsyncGenerator[object, None]:
+        """仅搜索漫画条目。"""
         if not self.search_service:
             yield event.plain_result("❌ 搜索服务未就绪")
             return
@@ -212,6 +216,7 @@ class BangumiPlugin(Star):
 
     @filter.command("calendar")
     async def calendar(self, event: AstrMessageEvent) -> AsyncGenerator[object, None]:
+        """获取今日番剧放送表。"""
         if not self.search_service:
             yield event.plain_result("❌ 搜索服务未就绪")
             return
@@ -230,6 +235,7 @@ class BangumiPlugin(Star):
     async def subscribe(
         self, event: AstrMessageEvent, query: str
     ) -> AsyncGenerator[object, None]:
+        """订阅番剧，更新时自动通知。"""
         if not self.subscription_service:
             yield event.plain_result("❌ 订阅服务未就绪")
             return
@@ -322,6 +328,7 @@ class BangumiPlugin(Star):
     async def unsubscribe(
         self, event: AstrMessageEvent, query: str
     ) -> AsyncGenerator[object, None]:
+        """取消订阅番剧。"""
         if not self.subscription_service:
             yield event.plain_result("❌ 订阅服务未就绪")
             return

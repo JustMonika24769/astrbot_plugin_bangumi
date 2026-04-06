@@ -27,13 +27,8 @@ from .pillow_utils import (
     measure_text,
 )
 
-# --- 数据处理工具函数 (高度解耦模块) ---
-
 
 def _process_images(data: RenderData) -> None:
-    """
-    处理图片 URL 的提取
-    """
     if "image_url" in data:
         return
 
@@ -51,23 +46,15 @@ def _process_images(data: RenderData) -> None:
 
 
 def _process_dates(data: RenderData) -> None:
-    """
-    处理日期字段
-    """
     if "date" in data:
         return
-
     if "air_date" in data:
         data["date"] = data["air_date"]
 
 
 def _process_platform(data: RenderData) -> None:
-    """
-    处理平台/类型映射
-    """
     if "platform" in data:
         return
-
     if "type" not in data:
         return
 
@@ -91,14 +78,10 @@ def _process_platform(data: RenderData) -> None:
 
 
 def _infer_air_weekday(aired_weekdays: list[int]) -> str:
-    """
-    从已播出的剧集中推断主要放送星期
-    """
     if not aired_weekdays:
         return ""
 
     weekday_names = {1: "月", 2: "火", 3: "水", 4: "木", 5: "金", 6: "土", 7: "日"}
-    # 取最近 4 集的星期,避免早期特殊排期干扰
     recent = aired_weekdays[-4:]
     most_common = Counter(recent).most_common(1)[0][0]
     return weekday_names.get(most_common, "")
@@ -107,9 +90,6 @@ def _infer_air_weekday(aired_weekdays: list[int]) -> str:
 def _parse_episode_list(
     episodes: list[EpisodeItem], today: datetime.date
 ) -> tuple[list[dict[str, int | bool | None]], list[int]]:
-    """
-    解析剧集列表,返回 (渲染用列表, 已播出星期列表)
-    """
     episode_list: list[dict[str, int | bool | None]] = []
     aired_weekdays: list[int] = []
 
@@ -119,7 +99,6 @@ def _parse_episode_list(
 
         aired = False
         airdate_str = ep.get("airdate")
-
         if airdate_str:
             try:
                 airdate = datetime.datetime.strptime(airdate_str, "%Y-%m-%d").date()
@@ -129,7 +108,6 @@ def _parse_episode_list(
             except ValueError:
                 pass
 
-        # 补充逻辑:有评论也视为已播出
         if ep.get("comment", 0) > 0:
             aired = True
 
@@ -139,16 +117,11 @@ def _parse_episode_list(
 
 
 def _process_episodes(data: RenderData) -> None:
-    """
-    处理剧集状态和更新日推算的主流程
-    """
     episodes = data.get("episodes")
     if not isinstance(episodes, list):
         return
 
     today = datetime.date.today()
-
-    # 1. 解析剧集数据
     normalized_episodes: list[EpisodeItem] = []
     for episode in episodes:
         if isinstance(episode, dict):
@@ -156,23 +129,17 @@ def _process_episodes(data: RenderData) -> None:
     episode_list, aired_weekdays = _parse_episode_list(normalized_episodes, today)
     data["episode_list"] = cast(JsonValue, episode_list)
 
-    # 2. 推算放送星期
     air_weekday = _infer_air_weekday(aired_weekdays)
     if air_weekday:
         data["air_weekday"] = air_weekday
 
 
 def preprocess_data(data: RenderData) -> RenderData:
-    """
-    预处理数据以适配模板
-    """
     processed = data.copy()
-
     _process_images(processed)
     _process_dates(processed)
     _process_platform(processed)
     _process_episodes(processed)
-
     return processed
 
 
@@ -528,9 +495,6 @@ class SubjectRenderer(BaseRenderer):
         max_retries: int = 3,
         timeout: int = 30000,
     ) -> str | None:
-        """
-        渲染条目卡片并返回 Base64 字符串
-        """
         render_data = preprocess_data(data)
         if self.render_mode == "pillow":
             try:
@@ -538,7 +502,7 @@ class SubjectRenderer(BaseRenderer):
             except Exception as e:
                 logger.warning(f"[+] Pillow 条目卡片渲染失败,回退 HTML 渲染: {e}")
 
-        response_data = await self.render(
+        return await self.render(
             template_path="subject/subject.html",
             render_data=render_data,
             selector="#card",
@@ -549,7 +513,6 @@ class SubjectRenderer(BaseRenderer):
             wait_time=wait_time,
             timeout=timeout,
         )
-        return response_data
 
     async def render_batch_subject_cards_to_base64(
         self,
@@ -561,12 +524,6 @@ class SubjectRenderer(BaseRenderer):
         timeout: int = 30000,
         max_concurrency: int = 3,
     ) -> list[str]:
-        """
-        批量渲染条目卡片并直接返回 Base64 字符串列表
-
-        Args:
-            max_concurrency: 最大并发渲染数,防止压垮浏览器/RPC 服务
-        """
         semaphore = asyncio.Semaphore(max_concurrency)
 
         async def _limited_render(data: RenderData) -> str | None:

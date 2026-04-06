@@ -1,4 +1,4 @@
-from enum import Enum, IntEnum
+from enum import Enum, IntEnum, StrEnum
 
 
 class SubjectType(IntEnum):
@@ -49,7 +49,7 @@ class ImageSize(Enum):
     COMMON = "common"
 
 
-class CommonTag(str, Enum):
+class CommonTag(StrEnum):
     """常用标签常量"""
 
     TV = "TV"
