@@ -11,4 +11,16 @@ data/
 *.xml
 *.iml
 .env
-.png
+rendered_images/
+
+# Agent/Codex artifacts
+memory.md
+.claude/
+.codex*/
+.codex-*/
+.agents/
+.pipeline-workspace/
+.pipeline-last-run-summary.json
+.pipeline-*.json
+agent-artifacts/
+.agent-artifacts/
