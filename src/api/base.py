@@ -32,8 +32,9 @@ class BaseBangumiService:
             "Accept": "application/json",
             "User-Agent": user_agent,
         }
-        if access_token:
-            self.headers["Authorization"] = f"Bearer {access_token}"
+        normalized_token = access_token.strip()
+        if normalized_token:
+            self.headers["Authorization"] = f"Bearer {normalized_token}"
         self.proxy = proxy
         self.last_request_time = 0.0
         self._rate_lock = asyncio.Lock()

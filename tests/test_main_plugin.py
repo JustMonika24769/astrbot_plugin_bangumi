@@ -28,6 +28,35 @@ def test_should_requeue_subscribe_command() -> None:
     assert BangumiPlugin._should_requeue_subscribe_command("普通消息") is False
 
 
+def test_build_proxy_url_requires_host_and_port() -> None:
+    assert BangumiPlugin._build_proxy_url("", "7890") is None
+    assert BangumiPlugin._build_proxy_url("127.0.0.1", "") is None
+
+
+def test_build_proxy_url_adds_default_scheme() -> None:
+    assert (
+        BangumiPlugin._build_proxy_url("127.0.0.1", "7890") == "http://127.0.0.1:7890"
+    )
+
+
+def test_build_proxy_url_trims_host_and_port() -> None:
+    assert (
+        BangumiPlugin._build_proxy_url(" http://proxy.local ", " 8080 ")
+        == "http://proxy.local:8080"
+    )
+
+
+def test_build_proxy_url_preserves_scheme_and_existing_port() -> None:
+    assert (
+        BangumiPlugin._build_proxy_url("socks5://127.0.0.1:1080", "7890")
+        == "socks5://127.0.0.1:1080"
+    )
+    assert (
+        BangumiPlugin._build_proxy_url("proxy.local:1080", "7890")
+        == "http://proxy.local:1080"
+    )
+
+
 @pytest.mark.asyncio
 async def test_search_anime_dispatches_type_and_tag() -> None:
     plugin = BangumiPlugin.__new__(BangumiPlugin)

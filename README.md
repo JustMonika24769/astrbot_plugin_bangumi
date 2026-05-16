@@ -53,8 +53,8 @@
 | `access_token` | string | 无 | Bangumi API 访问令牌(部分接口需授权)[¹](#access-token-获取) |
 | `user_agent` | string | 无 | 请求头 User-Agent 标识,为空时使用插件默认值 |
 | `max_fuzzy_results` | int | `5` | 模糊搜索最大返回数量(范围:1–200) |
-| `proxy_http` | string | 无 | HTTP 代理地址(仅 IP,例如 `192.168.0.1`) |
-| `port` | string | 无 | HTTP 代理端口(例如 `7890`) |
+| `proxy_http` | string | 无 | 代理主机或地址(例如 `192.168.0.1` 或 `http://127.0.0.1`;省略协议时按 `http://` 处理) |
+| `port` | string | 无 | HTTP 代理端口(例如 `7890`;地址已带端口时仍需填写本项以启用代理) |
 | `max_retries` | int | `3` | 网络错误最大重试次数(范围:1–10) |
 | `render_server_url` | string | `https://api.unitedpooh.top/rpc` | 远程渲染图片的 RPC 服务器地址 |
 | `render_mode` | string | `html` | 渲染模式,可设为 `pillow` 使用纯 Pillow 卡片渲染 |

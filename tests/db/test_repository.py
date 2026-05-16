@@ -31,6 +31,28 @@ def test_subscribe_subject_upserts_subject_and_is_idempotent(tmp_path: Path) -> 
     assert repository.get_subscriptions("group_1") == ["1"]
 
 
+def test_remove_last_subscription_deletes_monitored_subject(tmp_path: Path) -> None:
+    repository = _build_repository(tmp_path)
+
+    assert repository.subscribe_subject("g1", "100", "Subject 100")
+
+    assert repository.remove_subscription("g1", "100") is True
+    assert repository.get_monitored_subjects() == []
+
+
+def test_remove_one_of_multiple_subscriptions_keeps_subject(tmp_path: Path) -> None:
+    repository = _build_repository(tmp_path)
+
+    assert repository.subscribe_subject("g1", "100", "Subject 100")
+    assert repository.subscribe_subject("g2", "100", "Subject 100")
+
+    assert repository.remove_subscription("g1", "100") is True
+    assert repository.get_subject_subscribers("100") == ["g2"]
+    subjects = repository.get_monitored_subjects()
+    assert len(subjects) == 1
+    assert str(subjects[0].subject_id) == "100"
+
+
 def test_update_subject_ignores_none_values(tmp_path: Path) -> None:
     repository = _build_repository(tmp_path)
 

@@ -54,10 +54,10 @@ class ConfigManager:
         return self._get_int("max_fuzzy_results", 5)
 
     def get_proxy_http(self) -> str:
-        return self._get_str("proxy_http", "127.0.0.1")
+        return self._get_str("proxy_http", "")
 
     def get_port(self) -> str:
-        return self._get_str("port", "7890")
+        return self._get_str("port", "")
 
     def get_max_retries(self) -> int:
         return self._get_int("max_retries", 3)

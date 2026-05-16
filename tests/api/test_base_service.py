@@ -20,6 +20,18 @@ def test_base_service_allows_empty_access_token() -> None:
     assert "Authorization" not in service.headers
 
 
+def test_base_service_omits_whitespace_only_access_token() -> None:
+    service = BaseBangumiService(access_token="   ", user_agent="ua")
+
+    assert "Authorization" not in service.headers
+
+
+def test_base_service_trims_access_token_before_authorization() -> None:
+    service = BaseBangumiService(access_token="  token  ", user_agent="ua")
+
+    assert service.headers["Authorization"] == "Bearer token"
+
+
 def test_base_service_builds_headers(service: BaseBangumiService) -> None:
     assert service.headers["Authorization"] == "Bearer token"
     assert service.headers["Accept"] == "application/json"

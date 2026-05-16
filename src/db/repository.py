@@ -153,13 +153,28 @@ class BangumiRepository:
         """
         session = self.Session()
         try:
+            normalized_subject_id = str(subject_id)
             sub = (
                 session.query(Subscription)
-                .filter_by(group_id=str(group_id), subject_id=str(subject_id))
+                .filter_by(group_id=str(group_id), subject_id=normalized_subject_id)
                 .first()
             )
             if sub:
                 session.delete(sub)
+                session.flush()
+                remaining_subscription = (
+                    session.query(Subscription)
+                    .filter_by(subject_id=normalized_subject_id)
+                    .first()
+                )
+                if not remaining_subscription:
+                    subject = (
+                        session.query(BangumiSubject)
+                        .filter_by(subject_id=normalized_subject_id)
+                        .first()
+                    )
+                    if subject:
+                        session.delete(subject)
                 session.commit()
                 return True
             return False  # 订阅不存在

@@ -19,11 +19,18 @@ def test_get_int_rejects_bool_and_invalid_string() -> None:
     assert _manager({"max_retries": "bad"}).get_max_retries() == 3
 
 
-def test_get_str_rejects_non_string_values() -> None:
+def test_proxy_defaults_do_not_imply_local_proxy() -> None:
+    manager = _manager({})
+
+    assert manager.get_proxy_http() == ""
+    assert manager.get_port() == ""
+
+
+def test_get_str_rejects_non_string_proxy_values() -> None:
     manager = _manager({"proxy_http": 123, "port": 7891})
 
-    assert manager.get_proxy_http() == "127.0.0.1"
-    assert manager.get_port() == "7890"
+    assert manager.get_proxy_http() == ""
+    assert manager.get_port() == ""
 
 
 def test_user_agent_uses_config_value() -> None:

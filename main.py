@@ -2,6 +2,7 @@ import copy
 import os
 import re
 from collections.abc import AsyncGenerator
+from urllib.parse import urlsplit, urlunsplit
 
 import aiohttp
 import astrbot.api.message_components as Comp
@@ -63,11 +64,10 @@ class BangumiPlugin(Star):  # type: ignore[misc]
 
         # 3. 初始化核心 API 服务
         try:
-            proxy_url = None
-            proxy_host = self.config_manager.get_proxy_http()
-            proxy_port = self.config_manager.get_port()
-            if proxy_host and proxy_port:
-                proxy_url = f"{proxy_host}:{proxy_port}"
+            proxy_url = self._build_proxy_url(
+                self.config_manager.get_proxy_http(),
+                self.config_manager.get_port(),
+            )
 
             self.service = BangumiService(
                 access_token=self.config_manager.get_access_token(),
@@ -143,6 +143,26 @@ class BangumiPlugin(Star):  # type: ignore[misc]
             return ""
         first_token = stripped.split(maxsplit=1)[0]
         return first_token[1:] if first_token.startswith("/") else first_token
+
+    @staticmethod
+    def _build_proxy_url(proxy_host: str, proxy_port: str) -> str | None:
+        host = proxy_host.strip()
+        port = proxy_port.strip()
+        if not host or not port:
+            return None
+
+        parsed = urlsplit(host if "://" in host else f"//{host}")
+        scheme = parsed.scheme or "http"
+        netloc = parsed.netloc
+        if not netloc:
+            return None
+
+        host_part = netloc.rsplit("@", maxsplit=1)[-1]
+        has_port = "]:" in host_part if host_part.startswith("[") else ":" in host_part
+        if not has_port:
+            netloc = f"{netloc}:{port}"
+
+        return urlunsplit((scheme, netloc, parsed.path, parsed.query, parsed.fragment))
 
     @classmethod
     def _should_requeue_subscribe_command(cls, raw_text: str) -> bool:
