@@ -10,29 +10,24 @@ from astrbot.api.all import AstrBotConfig
 from astrbot.api.event import AstrMessageEvent, MessageChain, filter
 
 # 导入配置与管理
-from astrbot.api.star import Context, Star, StarTools, register
+from astrbot.api.star import Context, Star, StarTools
 from astrbot.core.utils.session_waiter import (
     SessionController,
     SessionFilter,
     session_waiter,
 )
 
+from .src.api import BangumiService
+from .src.app import SearchService, SubscriptionService
 from .src.config import ConfigManager
 from .src.db import BangumiRepository
-
-# 导入逻辑服务
-from .src.services import BangumiService, SearchService, SubscriptionService
+from .src.domain import CommonTag, SubjectType
 from .src.utils import EnvManager, SchedulerManager
 
 
-@register(
-    "astrbot_plugin_bangumi_enhance",
-    "united_pooh",
-    "AstrBot Bangumi 增强版:为 AstrBot 打造的一站式 Bangumi 追番助手支持番剧/漫画图文搜索、每日放送时刻表查看及集数更新自动提醒",
-    "v1.1.2",
-    "https://github.com/united-pooh/astrbot_plugin_bangumi",
-)
-class BangumiPlugin(Star):
+class BangumiPlugin(Star):  # type: ignore[misc]
+    """AstrBot Bangumi 增强版追番助手。"""
+
     def __init__(self, context: Context, config: AstrBotConfig) -> None:
         """
         初始化 BangumiPlugin 插件
@@ -162,7 +157,7 @@ class BangumiPlugin(Star):
             stripped.startswith("/") or normalized_token == "追番"
         )
 
-    @filter.command("bgm")
+    @filter.command("bgm")  # type: ignore[untyped-decorator]
     async def search(
         self, event: AstrMessageEvent, query: str, top_k: int = 1
     ) -> AsyncGenerator[object, None]:
@@ -175,7 +170,7 @@ class BangumiPlugin(Star):
         ):
             yield result
 
-    @filter.command("bgm番剧")
+    @filter.command("bgm番剧")  # type: ignore[untyped-decorator]
     async def search_anime(
         self, event: AstrMessageEvent, query: str, top_k: int = 1
     ) -> AsyncGenerator[object, None]:
@@ -184,11 +179,15 @@ class BangumiPlugin(Star):
             yield event.plain_result("❌ 搜索服务未就绪")
             return
         async for result in self.search_service.handle_subject_search(
-            event, query, top_k, subject_type=[2], subject_tags=["TV"]
+            event,
+            query,
+            top_k,
+            subject_type=[SubjectType.ANIME.value],
+            subject_tags=[CommonTag.TV.value],
         ):
             yield result
 
-    @filter.command("bgm剧场版")
+    @filter.command("bgm剧场版")  # type: ignore[untyped-decorator]
     async def search_movie(
         self, event: AstrMessageEvent, query: str, top_k: int = 1
     ) -> AsyncGenerator[object, None]:
@@ -197,11 +196,15 @@ class BangumiPlugin(Star):
             yield event.plain_result("❌ 搜索服务未就绪")
             return
         async for result in self.search_service.handle_subject_search(
-            event, query, top_k, subject_type=[2], subject_tags=["剧场版"]
+            event,
+            query,
+            top_k,
+            subject_type=[SubjectType.ANIME.value],
+            subject_tags=[CommonTag.MOVIE.value],
         ):
             yield result
 
-    @filter.command("bgm漫画")
+    @filter.command("bgm漫画")  # type: ignore[untyped-decorator]
     async def search_manga(
         self, event: AstrMessageEvent, query: str, top_k: int = 1
     ) -> AsyncGenerator[object, None]:
@@ -210,11 +213,15 @@ class BangumiPlugin(Star):
             yield event.plain_result("❌ 搜索服务未就绪")
             return
         async for result in self.search_service.handle_subject_search(
-            event, query, top_k, subject_type=[1], subject_tags=["漫画"]
+            event,
+            query,
+            top_k,
+            subject_type=[SubjectType.BOOK.value],
+            subject_tags=[CommonTag.MANGA.value],
         ):
             yield result
 
-    @filter.command("calendar")
+    @filter.command("calendar")  # type: ignore[untyped-decorator]
     async def calendar(self, event: AstrMessageEvent) -> AsyncGenerator[object, None]:
         """获取今日番剧放送表。"""
         if not self.search_service:
@@ -223,7 +230,7 @@ class BangumiPlugin(Star):
         async for result in self.search_service.handle_calendar(event):
             yield result
 
-    @filter.command("today")
+    @filter.command("today")  # type: ignore[untyped-decorator]
     async def today(self, event: AstrMessageEvent) -> AsyncGenerator[object, None]:
         if not self.search_service:
             yield event.plain_result("❌ 搜索服务未就绪")
@@ -231,7 +238,7 @@ class BangumiPlugin(Star):
         async for result in self.search_service.handle_today(event):
             yield result
 
-    @filter.command("追番")
+    @filter.command("追番")  # type: ignore[untyped-decorator]
     async def subscribe(
         self, event: AstrMessageEvent, query: str
     ) -> AsyncGenerator[object, None]:
@@ -259,8 +266,10 @@ class BangumiPlugin(Star):
             yield event.plain_result("🔍 未找到相关番剧")
             return
 
+        subscription_service = self.subscription_service
+
         if len(candidates) == 1:
-            result = await self.subscription_service.subscribe_by_subject_id(
+            result = await subscription_service.subscribe_by_subject_id(
                 group_id=group_id,
                 subject_id=candidates[0]["subject_id"],
             )
@@ -278,12 +287,12 @@ class BangumiPlugin(Star):
         yield event.plain_result("\n".join(candidate_lines))
         session_key = group_id
 
-        class GroupSessionFilter(SessionFilter):
+        class GroupSessionFilter(SessionFilter):  # type: ignore[misc]
             def filter(self, wait_event: AstrMessageEvent) -> str:
                 wait_session_key = BangumiPlugin._resolve_session_key(wait_event)
                 return wait_session_key or wait_event.unified_msg_origin
 
-        @session_waiter(timeout=300)
+        @session_waiter(timeout=300)  # type: ignore[untyped-decorator]
         async def subscribe_confirm_waiter(
             controller: SessionController,
             wait_event: AstrMessageEvent,
@@ -310,7 +319,7 @@ class BangumiPlugin(Star):
                 return
 
             selected = candidates[selected_index - 1]
-            result = await self.subscription_service.subscribe_by_subject_id(
+            result = await subscription_service.subscribe_by_subject_id(
                 group_id=session_key,
                 subject_id=selected["subject_id"],
             )
@@ -326,7 +335,7 @@ class BangumiPlugin(Star):
         except TimeoutError:
             yield event.plain_result("⏰ 候选确认已过期,请重新使用 `/追番 关键词`")
 
-    @filter.command("弃坑")
+    @filter.command("弃坑")  # type: ignore[untyped-decorator]
     async def unsubscribe(
         self, event: AstrMessageEvent, query: str
     ) -> AsyncGenerator[object, None]:

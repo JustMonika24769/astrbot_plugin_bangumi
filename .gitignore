@@ -18,6 +18,7 @@ memory.md
 .claude/
 .codex*/
 .codex-*/
+.codex-pet-runs/
 .agents/
 .pipeline-workspace/
 .pipeline-last-run-summary.json

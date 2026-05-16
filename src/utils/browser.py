@@ -1,5 +1,48 @@
+from typing import TYPE_CHECKING
+
 from astrbot.api import logger
-from playwright.async_api import Page, ViewportSize, async_playwright
+
+if TYPE_CHECKING:
+    from types import TracebackType
+
+    from playwright.async_api import Browser, BrowserContext, Page, Playwright
+
+
+class ManagedPage:
+    def __init__(
+        self,
+        page: "Page",
+        context: "BrowserContext",
+        browser: "Browser",
+        playwright: "Playwright",
+    ) -> None:
+        self.page = page
+        self._context = context
+        self._browser = browser
+        self._playwright = playwright
+
+    async def __aenter__(self) -> "Page":
+        return self.page
+
+    async def __aexit__(
+        self,
+        exc_type: "type[BaseException] | None",
+        exc: "BaseException | None",
+        traceback: "TracebackType | None",
+    ) -> None:
+        await self.close()
+
+    async def close(self) -> None:
+        try:
+            await self.page.close()
+        finally:
+            try:
+                await self._context.close()
+            finally:
+                try:
+                    await self._browser.close()
+                finally:
+                    await self._playwright.stop()
 
 
 async def create_page(
@@ -7,8 +50,10 @@ async def create_page(
     width: int = 1024,
     height: int = 768,
     scale_factor: int = 3,
-) -> Page | None:
+) -> "ManagedPage | None":
     try:
+        from playwright.async_api import ViewportSize, async_playwright
+
         # 启动 Playwright
         playwright = await async_playwright().start()
 
@@ -36,18 +81,7 @@ async def create_page(
             has_touch=False,
         )
         page = await context.new_page()
-        __original_close = page.close
-
-        async def close_all(*args: object, **kwargs: object) -> None:
-            page.close = __original_close
-            try:
-                await browser.close()
-                await playwright.stop()
-            except Exception as e:
-                logger.error(f"唔…关闭页面的时候出错了{e}")
-
-        page.close = close_all
-        return page
+        return ManagedPage(page, context, browser, playwright)
     except Exception as e:
         logger.error(f"初始化浏览器失败:{e}")
         return None

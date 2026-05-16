@@ -7,7 +7,7 @@ select = ["E", "F", "I", "B", "UP", "SIM", "RUF"]
 ignore = ["E501", "RUF001", "RUF002", "RUF003"]
 
 [tool.pytest.ini_options]
-pythonpath = ["."]
+pythonpath = [".."]
 addopts = "-q"
 
 [tool.mypy]

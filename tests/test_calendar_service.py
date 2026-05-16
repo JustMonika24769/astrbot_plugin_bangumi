@@ -3,8 +3,8 @@ from unittest.mock import AsyncMock
 
 import pytest
 
-import src.services.calendar as calendar_module
-from src.services import BangumiApiError, CalendarService
+import astrbot_plugin_bangumi.src.services.calendar as calendar_module
+from astrbot_plugin_bangumi.src.services import BangumiApiError, CalendarService
 
 
 @pytest.fixture

@@ -3,7 +3,7 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from src.services import SubscriptionService
+from astrbot_plugin_bangumi.src.services import SubscriptionService
 
 
 @pytest.fixture

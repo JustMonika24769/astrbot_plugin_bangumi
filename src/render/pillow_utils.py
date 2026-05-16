@@ -2,6 +2,7 @@ import asyncio
 import base64
 import io
 import re
+from collections.abc import Mapping, Sequence
 from functools import lru_cache
 from pathlib import Path
 from urllib.parse import urlparse
@@ -21,31 +22,62 @@ RGBColor = tuple[int, int, int]
 RGBAColor = tuple[int, int, int, int]
 FontType = ImageFont.FreeTypeFont | ImageFont.ImageFont
 Rect = tuple[int, int, int, int]
+_MAX_IMAGE_BYTES = 8 * 1024 * 1024
+_BLANK_THRESHOLD = 246
 
 _DATA_URI_PATTERN = re.compile(r"^data:image/[^;]+;base64,(?P<data>.+)$", re.DOTALL)
-_REGULAR_FONT_PATHS = (
-    Path("/System/Library/Fonts/PingFang.ttc"),
-    Path("/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc"),
-    Path("/usr/share/fonts/truetype/noto/NotoSansCJK-Regular.ttc"),
-    Path("C:/Windows/Fonts/msyh.ttc"),
+_REGULAR_FONT_CANDIDATES = (
+    (Path("/System/Library/Fonts/Hiragino Sans GB.ttc"), 0),
+    (Path("/System/Library/Fonts/PingFang.ttc"), 0),
+    (Path("/System/Library/Fonts/STHeiti Medium.ttc"), 0),
+    (Path("/System/Library/Fonts/Supplemental/Arial Unicode.ttf"), 0),
+    (Path("/System/Library/Fonts/Supplemental/Songti.ttc"), 0),
+    (Path("/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc"), 0),
+    (Path("/usr/share/fonts/truetype/noto/NotoSansCJK-Regular.ttc"), 0),
+    (Path("C:/Windows/Fonts/msyh.ttc"), 0),
 )
-_BOLD_FONT_PATHS = (
-    Path("/System/Library/Fonts/PingFang.ttc"),
-    Path("/usr/share/fonts/opentype/noto/NotoSansCJK-Bold.ttc"),
-    Path("/usr/share/fonts/truetype/noto/NotoSansCJK-Bold.ttc"),
-    Path("C:/Windows/Fonts/msyhbd.ttc"),
-    Path("C:/Windows/Fonts/msyh.ttc"),
+_BOLD_FONT_CANDIDATES = (
+    (Path("/System/Library/Fonts/Hiragino Sans GB.ttc"), 2),
+    (Path("/System/Library/Fonts/PingFang.ttc"), 0),
+    (Path("/System/Library/Fonts/STHeiti Medium.ttc"), 0),
+    (Path("/System/Library/Fonts/Supplemental/Arial Unicode.ttf"), 0),
+    (Path("/System/Library/Fonts/Supplemental/Songti.ttc"), 0),
+    (Path("/usr/share/fonts/opentype/noto/NotoSansCJK-Bold.ttc"), 0),
+    (Path("/usr/share/fonts/truetype/noto/NotoSansCJK-Bold.ttc"), 0),
+    (Path("C:/Windows/Fonts/msyhbd.ttc"), 0),
+    (Path("C:/Windows/Fonts/msyh.ttc"), 0),
 )
+
+
+def stringify_value(value: object) -> str:
+    if isinstance(value, str):
+        return value.strip()
+    if isinstance(value, (int, float)):
+        return str(value)
+    return ""
+
+
+def select_image_url(
+    images: object,
+    priority: Sequence[str] = ("large", "common", "medium"),
+) -> str:
+    if not isinstance(images, Mapping):
+        return ""
+    for key in priority:
+        value = images.get(key)
+        if isinstance(value, str) and value:
+            return value
+    return ""
 
 
 @lru_cache(maxsize=64)
 def get_font(size: int, *, bold: bool = False) -> FontType:
-    candidates = _BOLD_FONT_PATHS if bold else _REGULAR_FONT_PATHS
-    for path in candidates:
+    candidates = _BOLD_FONT_CANDIDATES if bold else _REGULAR_FONT_CANDIDATES
+    for path, font_index in candidates:
         if not path.exists():
             continue
         try:
-            return ImageFont.truetype(str(path), size=size)
+            return ImageFont.truetype(str(path), size=size, index=font_index)
         except OSError:
             continue
     return ImageFont.load_default()
@@ -198,8 +230,25 @@ def blend_color(color: RGBColor, amount: float, target: RGBColor) -> RGBColor:
     )
 
 
-def get_image_accent(image: Image.Image | None) -> RGBColor:
+def is_visually_blank(image: Image.Image | None) -> bool:
     if image is None:
+        return True
+
+    thumbnail = image.convert("RGBA").resize((8, 8), Image.Resampling.BILINEAR)
+    pixels = list(thumbnail.getdata())
+    visible_pixels = [pixel for pixel in pixels if pixel[3] > 12]
+    if not visible_pixels:
+        return True
+
+    channels = [pixel[:3] for pixel in visible_pixels]
+    min_channel = min(min(pixel) for pixel in channels)
+    max_channel = max(max(pixel) for pixel in channels)
+    average = sum(sum(pixel) for pixel in channels) / (len(channels) * 3)
+    return average >= _BLANK_THRESHOLD and max_channel - min_channel <= 12
+
+
+def get_image_accent(image: Image.Image | None) -> RGBColor:
+    if image is None or is_visually_blank(image):
         return (60, 98, 118)
     reduced = image.convert("RGB").resize((1, 1), Image.Resampling.BILINEAR)
     color = reduced.getpixel((0, 0))
@@ -257,17 +306,51 @@ def add_shadow(
     offset: tuple[int, int] = (0, 12),
     shadow_color: RGBAColor = (15, 23, 42, 46),
 ) -> None:
-    shadow_layer = Image.new("RGBA", canvas.size, (0, 0, 0, 0))
-    draw = ImageDraw.Draw(shadow_layer)
     shadow_box = (
         box[0] + offset[0],
         box[1] + offset[1],
         box[2] + offset[0],
         box[3] + offset[1],
     )
-    draw.rounded_rectangle(shadow_box, radius=radius, fill=shadow_color)
-    blurred = shadow_layer.filter(ImageFilter.GaussianBlur(blur))
-    canvas.alpha_composite(blurred)
+    padding = max(blur * 2, 1)
+    raw_left = shadow_box[0] - padding
+    raw_top = shadow_box[1] - padding
+    raw_right = shadow_box[2] + padding
+    raw_bottom = shadow_box[3] + padding
+    if (
+        raw_right <= 0
+        or raw_bottom <= 0
+        or raw_left >= canvas.width
+        or raw_top >= canvas.height
+    ):
+        return
+
+    patch = Image.new(
+        "RGBA", (raw_right - raw_left, raw_bottom - raw_top), (0, 0, 0, 0)
+    )
+    draw = ImageDraw.Draw(patch)
+    draw.rounded_rectangle(
+        (
+            shadow_box[0] - raw_left,
+            shadow_box[1] - raw_top,
+            shadow_box[2] - raw_left,
+            shadow_box[3] - raw_top,
+        ),
+        radius=radius,
+        fill=shadow_color,
+    )
+    blurred = patch.filter(ImageFilter.GaussianBlur(blur))
+
+    dest_x = max(raw_left, 0)
+    dest_y = max(raw_top, 0)
+    crop_left = dest_x - raw_left
+    crop_top = dest_y - raw_top
+    crop_right = crop_left + min(canvas.width, raw_right) - dest_x
+    crop_bottom = crop_top + min(canvas.height, raw_bottom) - dest_y
+    canvas.alpha_composite(
+        blurred.crop((crop_left, crop_top, crop_right, crop_bottom)),
+        (dest_x, dest_y),
+    )
 
 
 def round_image(image: Image.Image, radius: int) -> Image.Image:
@@ -281,14 +364,36 @@ def round_image(image: Image.Image, radius: int) -> Image.Image:
     return rounded
 
 
-def fit_cover(image: Image.Image, size: tuple[int, int], radius: int) -> Image.Image:
-    fitted = ImageOps.fit(image.convert("RGBA"), size, method=Image.Resampling.LANCZOS)
+def fit_cover(
+    image: Image.Image,
+    size: tuple[int, int],
+    radius: int,
+    resample: Image.Resampling = Image.Resampling.BILINEAR,
+) -> Image.Image:
+    fitted = ImageOps.fit(image.convert("RGBA"), size, method=resample)
     return round_image(fitted, radius)
 
 
 def open_image_from_bytes(data: bytes) -> Image.Image:
     with Image.open(io.BytesIO(data)) as image:
         return image.convert("RGBA")
+
+
+async def _read_limited_image(response: aiohttp.ClientResponse) -> bytes | None:
+    content_length = response.headers.get("Content-Length")
+    if (
+        content_length
+        and content_length.isdigit()
+        and int(content_length) > _MAX_IMAGE_BYTES
+    ):
+        return None
+
+    buffer = bytearray()
+    async for chunk in response.content.iter_chunked(64 * 1024):
+        buffer.extend(chunk)
+        if len(buffer) > _MAX_IMAGE_BYTES:
+            return None
+    return bytes(buffer)
 
 
 async def load_image_source(
@@ -300,8 +405,16 @@ async def load_image_source(
 
     match = _DATA_URI_PATTERN.match(source)
     if match:
+        encoded_data = match.group("data")
+        estimated_size = len(encoded_data) * 3 // 4
+        if estimated_size > _MAX_IMAGE_BYTES:
+            logger.warning("[+] data URI 图片过大,已跳过")
+            return None
         try:
-            image_bytes = base64.b64decode(match.group("data"), validate=False)
+            image_bytes = base64.b64decode(encoded_data, validate=False)
+            if len(image_bytes) > _MAX_IMAGE_BYTES:
+                logger.warning("[+] data URI 图片过大,已跳过")
+                return None
             return await asyncio.to_thread(open_image_from_bytes, image_bytes)
         except (ValueError, OSError, UnidentifiedImageError) as e:
             logger.warning(f"[+] 解析 data URI 图片失败: {e}")
@@ -321,8 +434,11 @@ async def load_image_source(
                         f"[+] 图片下载失败,状态码: {response.status}, url={source}"
                     )
                     return None
-                image_bytes = await response.read()
-                return await asyncio.to_thread(open_image_from_bytes, image_bytes)
+                limited_bytes = await _read_limited_image(response)
+                if limited_bytes is None:
+                    logger.warning(f"[+] 图片过大,已跳过: url={source}")
+                    return None
+                return await asyncio.to_thread(open_image_from_bytes, limited_bytes)
 
         async with (
             aiohttp.ClientSession() as temp_session,
@@ -333,8 +449,11 @@ async def load_image_source(
                     f"[+] 图片下载失败,状态码: {response.status}, url={source}"
                 )
                 return None
-            image_bytes = await response.read()
-            return await asyncio.to_thread(open_image_from_bytes, image_bytes)
+            limited_bytes = await _read_limited_image(response)
+            if limited_bytes is None:
+                logger.warning(f"[+] 图片过大,已跳过: url={source}")
+                return None
+            return await asyncio.to_thread(open_image_from_bytes, limited_bytes)
     except (
         aiohttp.ClientError,
         TimeoutError,

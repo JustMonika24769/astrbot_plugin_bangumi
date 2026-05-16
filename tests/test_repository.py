@@ -1,6 +1,6 @@
 from pathlib import Path
 
-from src.db import BangumiRepository
+from astrbot_plugin_bangumi.src.db import BangumiRepository
 
 
 def _build_repository(tmp_path: Path) -> BangumiRepository:

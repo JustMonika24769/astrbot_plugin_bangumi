@@ -1,9 +1,9 @@
-import base64
 from unittest.mock import AsyncMock
 
 import pytest
 
-from src.render import SubjectRenderer
+from astrbot_plugin_bangumi.src.render import SubjectRenderer
+from astrbot_plugin_bangumi.tests.render.image_assertions import assert_png_image
 
 DATA_URI = (
     "data:image/png;base64,"
@@ -68,8 +68,61 @@ async def test_render_subject_card_pillow_returns_base64() -> None:
     base64_image = await renderer.render_subject_card(build_subject_data())
 
     assert base64_image is not None
-    assert len(base64_image) > 100
-    assert base64.b64decode(base64_image).startswith(b"\x89PNG\r\n\x1a\n")
+    assert_png_image(base64_image, (2400, 1674), require_non_blank=True)
+
+
+@pytest.mark.asyncio
+async def test_render_subject_card_pillow_includes_collection_badge() -> None:
+    renderer = SubjectRenderer(render_mode="pillow")
+    subject_data = build_subject_data()
+    subject_data["collection"] = {"doing": 7805}
+
+    base64_image = await renderer.render_subject_card(subject_data)
+
+    assert base64_image is not None
+    assert_png_image(base64_image, (2400, 1674), require_non_blank=True)
+
+
+@pytest.mark.asyncio
+async def test_render_subject_card_pillow_grows_for_full_episode_grid() -> None:
+    renderer = SubjectRenderer(render_mode="pillow")
+    subject_data = build_subject_data()
+    subject_data["total_episodes"] = 13
+    subject_data["episodes"] = [
+        {
+            "ep": episode_number,
+            "type": 0,
+            "airdate": f"2026-01-{episode_number:02d}",
+            "comment": 1,
+        }
+        for episode_number in range(1, 14)
+    ]
+
+    base64_image = await renderer.render_subject_card(subject_data)
+
+    assert base64_image is not None
+    assert_png_image(base64_image, (2400, 1866), require_non_blank=True)
+
+
+@pytest.mark.asyncio
+async def test_render_subject_card_pillow_caps_long_episode_grid() -> None:
+    renderer = SubjectRenderer(render_mode="pillow")
+    subject_data = build_subject_data()
+    subject_data["total_episodes"] = 60
+    subject_data["episodes"] = [
+        {
+            "ep": episode_number,
+            "type": 0,
+            "airdate": f"2026-01-{min(episode_number, 28):02d}",
+            "comment": 1,
+        }
+        for episode_number in range(1, 61)
+    ]
+
+    base64_image = await renderer.render_subject_card(subject_data)
+
+    assert base64_image is not None
+    assert_png_image(base64_image, (2400, 1866), require_non_blank=True)
 
 
 @pytest.mark.asyncio
@@ -81,11 +134,11 @@ async def test_render_subject_card_pillow_with_failed_image_still_succeeds(
     subject_data["image_url"] = "https://example.invalid/cover.png"
 
     monkeypatch.setattr(
-        "src.render.subject_renderer.load_image_source",
+        "astrbot_plugin_bangumi.src.render.subject_renderer.load_image_source",
         AsyncMock(return_value=None),
     )
 
     base64_image = await renderer.render_subject_card(subject_data)
 
     assert base64_image is not None
-    assert base64.b64decode(base64_image).startswith(b"\x89PNG\r\n\x1a\n")
+    assert_png_image(base64_image, (2400, 1674), require_non_blank=True)

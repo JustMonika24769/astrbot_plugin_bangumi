@@ -1,9 +1,8 @@
-import base64
-
 import pytest
 
-from src.render import EpisodeRenderer
-from src.services.schemas import Episode
+from astrbot_plugin_bangumi.src.render import EpisodeRenderer
+from astrbot_plugin_bangumi.src.services.schemas import Episode
+from astrbot_plugin_bangumi.tests.render.image_assertions import assert_png_image
 
 DATA_URI = (
     "data:image/png;base64,"
@@ -34,5 +33,4 @@ async def test_render_episode_pillow_returns_base64() -> None:
     base64_image = await renderer.render_episode(episode)
 
     assert base64_image is not None
-    assert len(base64_image) > 100
-    assert base64.b64decode(base64_image).startswith(b"\x89PNG\r\n\x1a\n")
+    assert_png_image(base64_image, (2304, 3072), require_non_blank=True)

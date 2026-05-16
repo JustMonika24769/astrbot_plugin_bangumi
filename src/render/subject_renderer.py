@@ -10,22 +10,27 @@ from astrbot.api import logger
 from PIL import Image, ImageDraw
 
 from ..bangumi_types import JsonValue
-from ..services import EpisodeItem, RenderData, SubjectType
+from ..domain.contracts import EpisodeItem, RenderData
+from ..domain.types import SubjectType
 from .base_renderer import BaseRenderer
 from .pillow_utils import (
     add_shadow,
-    blend_color,
-    create_linear_gradient,
-    create_placeholder_image,
     draw_pill,
     draw_text_block,
     fit_cover,
     get_font,
-    get_image_accent,
     image_to_base64,
     load_image_source,
     measure_text,
+    select_image_url,
 )
+from .pillow_utils import (
+    stringify_value as _stringify_value,
+)
+
+_EPISODE_GRID_COLUMNS = 6
+_MAX_EPISODE_GRID_ROWS = 3
+_MAX_EPISODE_GRID_ITEMS = _EPISODE_GRID_COLUMNS * _MAX_EPISODE_GRID_ROWS
 
 
 def _process_images(data: RenderData) -> None:
@@ -36,13 +41,7 @@ def _process_images(data: RenderData) -> None:
     if not isinstance(images, dict):
         return
 
-    image_map = cast(dict[str, object], images)
-    for key in ("large", "common", "medium"):
-        value = image_map.get(key)
-        if isinstance(value, str):
-            data["image_url"] = value
-            return
-    data["image_url"] = ""
+    data["image_url"] = select_image_url(images)
 
 
 def _process_dates(data: RenderData) -> None:
@@ -143,14 +142,6 @@ def preprocess_data(data: RenderData) -> RenderData:
     return processed
 
 
-def _stringify_value(value: object) -> str:
-    if isinstance(value, str):
-        return value.strip()
-    if isinstance(value, (int, float)):
-        return str(value)
-    return ""
-
-
 def _extract_infobox_text(value: object) -> str:
     if isinstance(value, list):
         parts: list[str] = []
@@ -210,7 +201,7 @@ def _extract_subject_titles(data: RenderData) -> tuple[str, str]:
     return primary, secondary
 
 
-def _extract_tags(data: RenderData, limit: int = 6) -> list[str]:
+def _extract_tags(data: RenderData, limit: int = 8) -> list[str]:
     raw_tags = data.get("tags")
     if not isinstance(raw_tags, list):
         return []
@@ -255,6 +246,47 @@ def _extract_rating_metrics(data: RenderData) -> tuple[str, str, str]:
             total_text = f"{int(total):,}"
 
     return score_text, rank_text, total_text
+
+
+def _extract_rating_counts(data: RenderData) -> dict[int, int]:
+    rating = data.get("rating")
+    if not isinstance(rating, Mapping):
+        return {}
+    raw_counts = rating.get("count")
+    if not isinstance(raw_counts, Mapping):
+        return {}
+    count_map = cast(Mapping[object, object], raw_counts)
+
+    counts: dict[int, int] = {}
+    for value in range(1, 11):
+        raw_count = count_map.get(str(value), count_map.get(value))
+        if isinstance(raw_count, int):
+            counts[value] = max(0, raw_count)
+        elif isinstance(raw_count, str) and raw_count.isdigit():
+            counts[value] = int(raw_count)
+        else:
+            counts[value] = 0
+    return counts
+
+
+def _extract_collection_doing_label(data: RenderData) -> str:
+    collection = data.get("collection")
+    if not isinstance(collection, Mapping):
+        return ""
+
+    doing = collection.get("doing")
+    if isinstance(doing, int):
+        if doing <= 0:
+            return ""
+        return f"{doing} 人在看"
+    if isinstance(doing, str):
+        doing_text = doing.strip()
+        if not doing_text or doing_text == "0":
+            return ""
+        if "人在看" in doing_text:
+            return doing_text
+        return f"{doing_text} 人在看"
+    return ""
 
 
 def _build_subject_meta(data: RenderData) -> list[str]:
@@ -313,169 +345,397 @@ def _draw_subject_card_image(
     data: RenderData,
     cover_image: Image.Image | None,
 ) -> str:
-    width, height = 1200, 700
+    raw_episode_list = data.get("episode_list")
+    episode_items: list[Mapping[str, object]] = []
+    if isinstance(raw_episode_list, list):
+        episode_items = [item for item in raw_episode_list if isinstance(item, Mapping)]
+    visible_episode_items = episode_items[:_MAX_EPISODE_GRID_ITEMS]
+    episode_rows = (
+        (len(visible_episode_items) + _EPISODE_GRID_COLUMNS - 1)
+        // _EPISODE_GRID_COLUMNS
+        if visible_episode_items
+        else 0
+    )
+    episode_y_shift = max(0, episode_rows - 1) * 96
+
+    width, height = 2400, 1674 + episode_y_shift
     primary_title, secondary_title = _extract_subject_titles(data)
-    accent = get_image_accent(cover_image)
 
-    canvas = create_linear_gradient(
-        (width, height),
-        (243, 246, 249),
-        blend_color(accent, 0.82, (226, 233, 238)),
+    canvas = Image.new("RGBA", (width, height), (0, 0, 0, 0))
+    card_box = (0, 0, width, height)
+    add_shadow(
+        canvas,
+        card_box,
+        radius=60,
+        blur=34,
+        offset=(0, 18),
+        shadow_color=(0, 0, 0, 28),
     )
-    background_overlay = Image.new("RGBA", (width, height), (0, 0, 0, 0))
-    overlay_draw = ImageDraw.Draw(background_overlay)
-    overlay_draw.ellipse(
-        (760, -120, 1240, 280),
-        fill=(*blend_color(accent, 0.7, (255, 255, 255)), 118),
-    )
-    overlay_draw.ellipse(
-        (850, 430, 1320, 860),
-        fill=(*blend_color(accent, 0.28, (255, 255, 255)), 78),
-    )
-    canvas.alpha_composite(background_overlay)
-
-    card_box = (40, 40, 1160, 660)
-    add_shadow(canvas, card_box, radius=38, blur=28)
     draw = ImageDraw.Draw(canvas)
     draw.rounded_rectangle(
-        card_box,
-        radius=38,
-        fill=(251, 252, 254, 248),
-        outline=(221, 228, 234, 255),
+        (0, 0, width - 1, height - 1),
+        radius=60,
+        fill=(255, 255, 255, 255),
+        outline=(250, 250, 250, 255),
         width=1,
     )
 
-    cover = cover_image or create_placeholder_image((320, 480), primary_title, accent)
-    cover_card = fit_cover(cover, (320, 480), 30)
-    cover_box = (82, 110, 402, 590)
+    decoration = Image.new("RGBA", (width, height), (0, 0, 0, 0))
+    decoration_draw = ImageDraw.Draw(decoration)
+    decoration_draw.ellipse(
+        (2097, -150, 2547, 300),
+        fill=(255, 243, 224, 150),
+    )
+    canvas.alpha_composite(decoration)
+    draw = ImageDraw.Draw(canvas)
+
+    cover_box = (75, 78, 705, 969)
     add_shadow(
         canvas,
         cover_box,
-        radius=30,
-        blur=22,
-        offset=(0, 10),
-        shadow_color=(15, 23, 42, 38),
+        radius=36,
+        blur=30,
+        offset=(0, 12),
+        shadow_color=(0, 0, 0, 22),
     )
+    if cover_image is None:
+        cover_card = Image.new(
+            "RGBA",
+            (cover_box[2] - cover_box[0], cover_box[3] - cover_box[1]),
+            (240, 240, 240, 255),
+        )
+        cover_draw = ImageDraw.Draw(cover_card)
+        cover_draw.rounded_rectangle(
+            (0, 0, cover_card.width - 1, cover_card.height - 1),
+            radius=36,
+            fill=(240, 240, 240, 255),
+        )
+    else:
+        cover_card = fit_cover(
+            cover_image,
+            (cover_box[2] - cover_box[0], cover_box[3] - cover_box[1]),
+            36,
+        )
     canvas.alpha_composite(cover_card, (cover_box[0], cover_box[1]))
     draw = ImageDraw.Draw(canvas)
 
-    badge_font = get_font(20, bold=True)
-    title_font = get_font(48, bold=True)
-    subtitle_font = get_font(26)
-    meta_font = get_font(20, bold=True)
-    stat_value_font = get_font(54, bold=True)
-    stat_label_font = get_font(18)
-    tag_font = get_font(20, bold=True)
-    summary_font = get_font(25)
-    footer_font = get_font(20, bold=True)
+    title_font = get_font(84, bold=True)
+    subtitle_font = get_font(42, bold=True)
+    score_font = get_font(108, bold=True)
+    star_font = get_font(78, bold=True)
+    meta_font = get_font(39, bold=True)
+    tag_font = get_font(36, bold=True)
+    summary_label_font = get_font(42, bold=True)
+    summary_font = get_font(45)
+    footer_font = get_font(39)
+    small_font = get_font(30, bold=True)
 
-    right_x = 460
-    draw_pill(
-        draw,
-        (right_x, 88),
-        "Bangumi 条目",
-        badge_font,
-        fill=(*blend_color(accent, 0.82, (255, 255, 255)), 255),
-        text_fill=blend_color(accent, 0.05, (18, 28, 39)),
-        outline=(*blend_color(accent, 0.5, (210, 218, 226)), 255),
-    )
+    air_weekday = _stringify_value(data.get("air_weekday"))
+    if air_weekday:
+        badge_box = (2229, 0, width, 168)
+        draw.rounded_rectangle(
+            (badge_box[0], badge_box[1], badge_box[2] + 60, badge_box[3] + 60),
+            radius=54,
+            fill=(251, 140, 0, 255),
+        )
+        draw.rectangle(
+            (badge_box[0] + 54, 0, width, badge_box[3]), fill=(251, 140, 0, 255)
+        )
+        draw.rectangle(
+            (badge_box[0], 0, width, badge_box[1] + 54), fill=(251, 140, 0, 255)
+        )
+        day_font = get_font(72, bold=True)
+        sub_font = get_font(27, bold=True)
+        day_w, _ = measure_text(draw, air_weekday, day_font)
+        sub_w, _ = measure_text(draw, "曜日", sub_font)
+        center_x = (badge_box[0] + badge_box[2]) // 2
+        draw.text(
+            (center_x - day_w // 2, 26),
+            air_weekday,
+            font=day_font,
+            fill=(255, 255, 255, 255),
+        )
+        draw.text(
+            (center_x - sub_w // 2, 107),
+            "曜日",
+            font=sub_font,
+            fill=(252, 252, 252, 255),
+        )
+
+    right_x = 789
 
     draw_text_block(
         draw,
-        (right_x, 138, 1100, 246),
+        (right_x, 80, 2180, 196),
         primary_title,
         title_font,
-        (16, 24, 33),
-        max_lines=2,
-        line_spacing=6,
+        (26, 26, 26, 255),
+        max_lines=1,
+        line_spacing=0,
     )
     if secondary_title:
         draw_text_block(
             draw,
-            (right_x, 248, 1100, 286),
+            (right_x, 209, 2180, 268),
             secondary_title,
             subtitle_font,
-            (95, 107, 119),
+            (133, 144, 166, 255),
             max_lines=1,
         )
 
-    meta_x = right_x
-    for meta_item in _build_subject_meta(data):
-        pill_width = draw_pill(
-            draw,
-            (meta_x, 300),
-            meta_item,
-            meta_font,
-            fill=(241, 245, 248, 255),
-            text_fill=(68, 80, 91),
-            outline=(223, 229, 235, 255),
-        )
-        meta_x += pill_width + 12
-
-    stats_box = (right_x, 350, 1108, 440)
-    draw.rounded_rectangle(
-        stats_box,
-        radius=28,
-        fill=(*blend_color(accent, 0.88, (248, 250, 252)), 255),
-        outline=(*blend_color(accent, 0.5, (218, 226, 233)), 255),
-        width=1,
-    )
     score_text, rank_text, total_text = _extract_rating_metrics(data)
-    stat_positions = (
-        (486, "评分", score_text),
-        (700, "排名", rank_text),
-        (892, "评分人数", total_text),
+    draw.text((789, 350), "★", font=star_font, fill=(251, 140, 0, 255))
+    draw.text((876, 333), score_text, font=score_font, fill=(251, 140, 0, 255))
+    rank_width = max(168, measure_text(draw, rank_text, meta_font)[0] + 72)
+    draw.rounded_rectangle(
+        (1064, 337, 1064 + rank_width, 407),
+        radius=24,
+        fill=(255, 243, 224, 255),
     )
-    for x_pos, label, value in stat_positions:
-        draw.text((x_pos, 370), value, font=stat_value_font, fill=(18, 26, 35))
-        draw.text((x_pos, 417), label, font=stat_label_font, fill=(101, 111, 121))
+    draw.text((1096, 352), rank_text, font=meta_font, fill=(230, 81, 0, 255))
+    count_label = f"{total_text.replace(',', '')} 人评分"
+    count_width = measure_text(draw, count_label, meta_font)[0] + 84
+    badge_right = width - 75
+    collection_label = _extract_collection_doing_label(data)
+    if collection_label:
+        collection_width = measure_text(draw, collection_label, meta_font)[0] + 84
+        collection_box = (badge_right - collection_width, 334, badge_right, 408)
+        draw.rounded_rectangle(
+            collection_box,
+            radius=37,
+            fill=(245, 245, 245, 255),
+        )
+        draw.text(
+            (collection_box[0] + 42, 351),
+            collection_label,
+            font=meta_font,
+            fill=(133, 144, 166, 255),
+        )
+        badge_right = collection_box[0] - 24
+    count_box = (badge_right - count_width, 334, badge_right, 408)
+    draw.rounded_rectangle(count_box, radius=37, fill=(245, 245, 245, 255))
+    draw.text(
+        (count_box[0] + 42, 351), count_label, font=meta_font, fill=(133, 144, 166, 255)
+    )
 
     tags = _extract_tags(data)
     tag_x = right_x
-    tag_y = 470
+    tag_y = 474
     for tag in tags:
-        preview_width = measure_text(draw, tag, tag_font)[0] + 32
-        if tag_x + preview_width > 1090 and tag_y == 470:
+        preview_width = measure_text(draw, tag, tag_font)[0] + 72
+        if tag_x + preview_width > 2175 and tag_y == 474:
             tag_x = right_x
-            tag_y = 518
+            tag_y = 552
         pill_width = draw_pill(
             draw,
             (tag_x, tag_y),
             tag,
             tag_font,
-            fill=(*blend_color(accent, 0.84, (255, 255, 255)), 255),
-            text_fill=blend_color(accent, 0.1, (17, 29, 39)),
-            outline=(*blend_color(accent, 0.5, (210, 221, 229)), 255),
+            fill=(255, 255, 255, 255),
+            text_fill=(133, 144, 166, 255),
+            outline=(224, 224, 224, 255),
+            padding_x=36,
+            padding_y=16,
         )
-        tag_x += pill_width + 10
+        tag_x += pill_width + 24
 
-    summary_top = 530 if tag_y > 470 else 516
+    summary_top = 628 if tag_y == 474 else 704
+    for x in range(right_x, 2325, 22):
+        draw.line(
+            (x, summary_top, min(x + 10, 2325), summary_top),
+            fill=(234, 234, 234, 255),
+            width=3,
+        )
     draw.text(
-        (right_x, summary_top),
+        (right_x, summary_top + 69),
         "简介",
-        font=footer_font,
-        fill=blend_color(accent, 0.08, (22, 33, 44)),
+        font=summary_label_font,
+        fill=(38, 38, 38, 255),
     )
     draw_text_block(
         draw,
-        (right_x, summary_top + 38, 1100, 640),
+        (right_x, summary_top + 164, 2300, 1138),
         _build_subject_summary(data),
         summary_font,
-        (73, 83, 94),
-        max_lines=5,
-        line_spacing=10,
+        (74, 74, 74, 255),
+        max_lines=3,
+        line_spacing=24,
     )
 
-    progress_text = _build_progress_text(data)
-    if progress_text:
-        draw_pill(
-            draw,
-            (right_x, 612),
-            progress_text,
-            footer_font,
-            fill=(*blend_color(accent, 0.12, (18, 28, 39)), 255),
-            text_fill=(255, 255, 255, 255),
+    if episode_items:
+        ep_box = (75, 1014, 705, 1213 + episode_y_shift)
+        add_shadow(
+            canvas,
+            ep_box,
+            radius=36,
+            blur=30,
+            offset=(0, 12),
+            shadow_color=(0, 0, 0, 18),
         )
+        draw = ImageDraw.Draw(canvas)
+        draw.rounded_rectangle(ep_box, radius=36, fill=(255, 255, 255, 255))
+        aired_count = sum(1 for item in episode_items if item.get("aired") is True)
+        draw.text((105, 1045), "放送进度", font=small_font, fill=(153, 153, 153, 255))
+        progress = f"{aired_count} / {len(episode_items)}"
+        progress_w, _ = measure_text(draw, progress, small_font)
+        draw.text(
+            (672 - progress_w, 1045), progress, font=small_font, fill=(251, 140, 0, 255)
+        )
+        cell_x = 105
+        cell_y = 1102
+        cell_size = 84
+        for item in visible_episode_items:
+            fill = (
+                (255, 152, 0, 255)
+                if item.get("aired") is True
+                else (232, 232, 232, 255)
+            )
+            text_fill = (
+                (255, 255, 255, 255)
+                if item.get("aired") is True
+                else (102, 102, 102, 255)
+            )
+            draw.rounded_rectangle(
+                (cell_x, cell_y, cell_x + cell_size, cell_y + cell_size),
+                radius=18,
+                fill=fill,
+            )
+            label = str(item.get("ep") or "")
+            label_w, label_h = measure_text(draw, label, get_font(33, bold=True))
+            draw.text(
+                (
+                    cell_x + (cell_size - label_w) // 2,
+                    cell_y + (cell_size - label_h) // 2 - 4,
+                ),
+                label,
+                font=get_font(33, bold=True),
+                fill=text_fill,
+            )
+            cell_x += cell_size + 12
+            if cell_x + cell_size > 675:
+                cell_x = 105
+                cell_y += cell_size + 12
+
+    rating_counts = _extract_rating_counts(data)
+    if rating_counts:
+        chart_box = (75, 1251 + episode_y_shift, 705, 1578 + episode_y_shift)
+        add_shadow(
+            canvas,
+            chart_box,
+            radius=36,
+            blur=30,
+            offset=(0, 12),
+            shadow_color=(0, 0, 0, 18),
+        )
+        draw = ImageDraw.Draw(canvas)
+        draw.rounded_rectangle(chart_box, radius=36, fill=(255, 255, 255, 255))
+        title = "评分分布"
+        title_w, _ = measure_text(draw, title, small_font)
+        draw.text(
+            ((chart_box[0] + chart_box[2] - title_w) // 2, 1296 + episode_y_shift),
+            title,
+            font=small_font,
+            fill=(153, 153, 153, 255),
+        )
+        max_count = max(rating_counts.values()) or 1
+        bar_area = (105, 1352 + episode_y_shift, 675, 1490 + episode_y_shift)
+        bar_width = 42
+        gap = 15
+        for index, value in enumerate(range(1, 11)):
+            count = rating_counts[value]
+            bar_height = max(6, int((count / max_count) * (bar_area[3] - bar_area[1])))
+            x = bar_area[0] + index * (bar_width + gap)
+            color = (255, 224, 178, 255) if value < 8 else (251, 140, 0, 255)
+            draw.rounded_rectangle(
+                (x, bar_area[3] - bar_height, x + bar_width, bar_area[3]),
+                radius=6,
+                fill=color,
+            )
+        draw.line(
+            (105, 1498 + episode_y_shift, 675, 1498 + episode_y_shift),
+            fill=(238, 238, 238, 255),
+            width=3,
+        )
+        for label, x in (("1", 105), ("5", 357), ("10", 639)):
+            draw.text(
+                (x, 1522 + episode_y_shift),
+                label,
+                font=get_font(27),
+                fill=(204, 204, 204, 255),
+            )
+
+    footer_y = 1495 + episode_y_shift
+    date_text = _stringify_value(data.get("date"))
+    platform = _stringify_value(data.get("platform"))
+    if date_text:
+        date_box = (789, footer_y, 1125, footer_y + 63)
+        draw.rounded_rectangle(date_box, radius=18, fill=(249, 249, 249, 255))
+        icon_x = 820
+        icon_y = footer_y + 17
+        draw.rounded_rectangle(
+            (icon_x, icon_y + 6, icon_x + 36, icon_y + 39),
+            radius=4,
+            outline=(153, 153, 153, 255),
+            width=3,
+        )
+        draw.rectangle(
+            (icon_x, icon_y + 6, icon_x + 36, icon_y + 16), fill=(153, 153, 153, 255)
+        )
+        draw.line(
+            (icon_x + 9, icon_y, icon_x + 9, icon_y + 10),
+            fill=(153, 153, 153, 255),
+            width=3,
+        )
+        draw.line(
+            (icon_x + 27, icon_y, icon_x + 27, icon_y + 10),
+            fill=(153, 153, 153, 255),
+            width=3,
+        )
+        draw.text(
+            (885, footer_y + 12), date_text, font=footer_font, fill=(153, 153, 153, 255)
+        )
+    if platform:
+        platform_box = (1197, footer_y, 1375, footer_y + 63)
+        draw.rounded_rectangle(platform_box, radius=18, fill=(249, 249, 249, 255))
+        tv_x = 1228
+        tv_y = footer_y + 18
+        draw.rounded_rectangle(
+            (tv_x, tv_y + 4, tv_x + 38, tv_y + 35),
+            radius=5,
+            outline=(153, 153, 153, 255),
+            width=3,
+        )
+        draw.line(
+            (tv_x + 10, tv_y, tv_x + 19, tv_y + 7), fill=(153, 153, 153, 255), width=3
+        )
+        draw.line(
+            (tv_x + 28, tv_y, tv_x + 19, tv_y + 7), fill=(153, 153, 153, 255), width=3
+        )
+        draw.line(
+            (tv_x + 13, tv_y + 40, tv_x + 25, tv_y + 40),
+            fill=(153, 153, 153, 255),
+            width=3,
+        )
+        draw.text(
+            (1293, footer_y + 12), platform, font=footer_font, fill=(153, 153, 153, 255)
+        )
+    subject_id = _stringify_value(data.get("id"))
+    if subject_id:
+        id_label = f"ID: {subject_id}"
+        id_w, _ = measure_text(draw, id_label, footer_font)
+        draw.text(
+            (width - 75 - id_w, footer_y + 14),
+            id_label,
+            font=footer_font,
+            fill=(190, 190, 190, 255),
+        )
+
+    # Browser locator screenshots keep a faint antialiased edge around the card.
+    alpha = canvas.getchannel("A")
+    alpha_draw = ImageDraw.Draw(alpha)
+    alpha_draw.rectangle((0, 0, width - 1, height - 1), outline=254, width=1)
+    alpha.putpixel((0, 0), 2)
+    canvas.putalpha(alpha)
 
     return image_to_base64(canvas)
 
@@ -504,7 +764,14 @@ class SubjectRenderer(BaseRenderer):
             try:
                 return await self._render_subject_card_pillow(render_data)
             except Exception as e:
-                logger.warning(f"[+] Pillow 条目卡片渲染失败,回退 HTML 渲染: {e}")
+                logger.warning(f"[+] Pillow 条目卡片渲染失败,使用纯 PIL 退避卡片: {e}")
+                fallback_data = render_data.copy()
+                fallback_data["image_url"] = ""
+                return await asyncio.to_thread(
+                    _draw_subject_card_image,
+                    fallback_data,
+                    None,
+                )
 
         return await self.render(
             template_path="subject/subject.html",

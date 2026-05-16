@@ -3,7 +3,7 @@ from unittest.mock import AsyncMock, MagicMock
 import pytest
 from astrbot.api.event import AstrMessageEvent
 
-from src.services import SearchService
+from astrbot_plugin_bangumi.src.services import SearchService
 
 
 @pytest.fixture

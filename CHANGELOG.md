@@ -1,5 +1,16 @@
 # Changelog
 
+## v1.1.3
+
+### 架构与渲染
+- **结构分层**: 新增 `src/domain`、`src/api`、`src/app` 分层,保留 `src.services` 旧路径兼容导出
+- **Pillow 渲染退避**: 条目、单集、放送表在 `render_mode=pillow` 下使用纯 Pillow 出图,避免回落到 Playwright
+- **Pillow/Playwright 对齐**: 条目、单集、放送表最终尺寸、宽高比与 alpha 均通过对齐校验,显著变化像素分别为 6.115%、3.038%、4.203%;最终证据目录为 `rendered_images/render-mode-comparison-2026-05-16-group-1-final`,精确字形/浏览器栅格一致性仍作为已知实践限制
+- **渲染健壮性**: 补充 CJK 字体候选、空白封面占位图检测和图片读取大小限制,提升卡片可读性与安全性
+- **渲染测试补强**: 补齐本地 Playwright 截图冒烟测试,并为 Pillow 输出补充 PNG 格式、尺寸与非空白断言
+- **配置辅助**: 支持从 `_conf_schema.json` 生成本地测试 `.env`,并默认保留已有填写值
+- **质量门禁**: 补齐 API、app、db、render、config、utils 与主插件入口测试,并修复严格 mypy 检查问题
+
 ## v1.1.2
 
 ### 修复与整理

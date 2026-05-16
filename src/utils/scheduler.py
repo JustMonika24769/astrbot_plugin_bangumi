@@ -54,7 +54,7 @@ class SchedulerManager:
         """
         try:
             job = self.scheduler.add_job(func, trigger, **kwargs)
-            return job.id
+            return str(job.id)
         except (RuntimeError, ValueError, TypeError) as e:
             logger.error(f"Error adding job: {e}")
             return None

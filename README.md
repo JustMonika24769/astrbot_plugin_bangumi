@@ -1,9 +1,9 @@
 <div align="center">
 
 # Bangumi 搜索插件使用指南
-[![repo](https://img.shields.io/badge/repo-v1.1.2-blue.svg)](https://github.com/united-pooh/astrbot_plugin_bangumi)
+[![repo](https://img.shields.io/badge/repo-v1.1.3-blue.svg)](https://github.com/united-pooh/astrbot_plugin_bangumi)
 [![License](https://img.shields.io/badge/license-Apache%202.0-green.svg)](LICENSE-2.0)
-[![AstrBot](https://img.shields.io/badge/AstrBot-%3E%3D4.0.0-orange.svg)](https://github.com/Soulter/AstrBot)
+[![AstrBot](https://img.shields.io/badge/AstrBot-%3E%3D4.16.0-orange.svg)](https://github.com/Soulter/AstrBot)
 [![Python](https://img.shields.io/badge/python-3.12%2B-blue.svg)](https://www.python.org/)
 
 **和群友一起追番**
@@ -34,6 +34,7 @@
 | 命令 | 功能 | 参数 | 示例 |
 |:-----|:-----|:-----|:-----|
 | `/calendar` | 获取番剧放送表 | 无 | `/calendar` |
+| `/today` | 获取今日番剧更新 | 无 | `/today` |
 | `/追番` | 订阅番剧,更新时自动通知 | `<关键词\|ID>` | `/追番 进击的巨人` |
 | `/弃坑` | 取消订阅番剧 | `<关键词\|ID>` | `/弃坑 进击的巨人` |
 
@@ -56,6 +57,7 @@
 | `port` | string | 无 | HTTP 代理端口(例如 `7890`) |
 | `max_retries` | int | `3` | 网络错误最大重试次数(范围:1–10) |
 | `render_server_url` | string | `https://api.unitedpooh.top/rpc` | 远程渲染图片的 RPC 服务器地址 |
+| `render_mode` | string | `html` | 渲染模式,可设为 `pillow` 使用纯 Pillow 卡片渲染 |
 
 ### Access Token 获取
 
@@ -67,8 +69,10 @@
 
 ## 📦 环境依赖
 
-插件首次运行时会自动检查并安装以下依赖:
-- **Playwright 浏览器内核**:用于渲染卡片图片
+插件首次运行时会检查 Playwright 环境状态;本地渲染不可用时会优先使用已配置的 RPC 渲染。需要本地 HTML 渲染时,请准备以下依赖:
+- **Playwright 浏览器内核**:用于 HTML/RPC 不可用时的本地浏览器渲染
+
+如果配置 `render_mode=pillow`,条目卡、单集卡和放送表会使用纯 Pillow 渲染,不会回落到 Playwright。
 
 如果遇到环境问题,可尝试手动安装:
 ```bash
@@ -80,13 +84,24 @@ playwright install chromium
 
 本项目已切换为 Python 3.12 风格类型写法,并在 CI 中启用阻断式质量门禁(`ruff + mypy + pytest`)
 
+### 本地测试 `.env`
+
+可从 `_conf_schema.json` 生成本地测试用 `.env`,默认保留已有填写值:
+
+```bash
+python - <<'PY'
+from astrbot_plugin_bangumi.src.utils.env_manager import EnvManager
+EnvManager.generate_env_from_schema('_conf_schema.json', '.env', render_mode_default='pillow')
+PY
+```
+
 ### 本地执行命令
 
 ```bash
 ruff check .
 ruff format --check .
-mypy src main.py
-PYTHONPATH=. pytest tests/test_search_service.py tests/test_subscription_service.py
+python -m mypy src main.py
+python -m pytest -q
 ```
 
 ### 强类型编码规则

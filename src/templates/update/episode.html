@@ -4,17 +4,12 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Episode Card Update</title>
-    <link rel="preconnect" href="https://fonts.googleapis.com">
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;800;900&family=Noto+Sans+SC:wght@400;700;900&display=swap"
-          rel="stylesheet">
-
     <style>
         :root {
             --bg-dark: #09090b;
             --text-white: #ffffff;
             --accent-pink: #ec4899;
-            --font-main: 'Inter', 'Noto Sans SC', system-ui, sans-serif;
+            --font-main: "Hiragino Sans GB", "PingFang SC", "Microsoft YaHei", sans-serif;
         }
 
         * {
@@ -219,7 +214,7 @@
                     <span>{{ airdate.split('-')[0] if '-' in airdate else '2026' }}</span>
                     <span class="separator">|</span>
                 {% endif %}
-                <span>24min</span>
+                <span>{{ duration_label or '24min' }}</span>
                 {% if comment > 0 %}
                     <span class="separator">|</span>
                     <span>{{ comment }} comments</span>

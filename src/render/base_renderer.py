@@ -6,8 +6,9 @@ import aiohttp
 import jinja2
 from astrbot.api import logger
 
-from ..services import RenderData
-from ..utils import create_page, retry
+from ..domain.contracts import RenderData
+from ..utils.async_utils import retry
+from ..utils.browser import create_page
 from .render_mode import RenderMode, normalize_render_mode
 
 
@@ -59,22 +60,24 @@ class BaseRenderer:
         """
         通用的本地浏览器截图逻辑,返回 Base64 字符串
         """
-        page = await create_page(headless=headless)
-        if not page:
+        managed_page = await create_page(headless=headless)
+        if not managed_page:
             raise RuntimeError("[-] 无法创建浏览器页面")
 
-        try:
+        async with managed_page as page:
             await page.set_content(html_content, wait_until="load", timeout=timeout)
 
             if wait_time > 0:
                 await asyncio.sleep(wait_time)
 
-            args = {"type": "png", "omit_background": True}
             locator = page.locator(selector)
             screenshot_bytes = None
 
             if await locator.count() > 0:
-                screenshot_bytes = await locator.screenshot(**args)
+                screenshot_bytes = await locator.screenshot(
+                    type="png",
+                    omit_background=True,
+                )
             else:
                 logger.warning(f"[+] 未找到元素 {selector},回退到全页截图")
                 screenshot_bytes = await page.screenshot(full_page=True, type="png")
@@ -82,9 +85,6 @@ class BaseRenderer:
             if screenshot_bytes:
                 return base64.b64encode(screenshot_bytes).decode("utf-8")
             return None
-        finally:
-            if page:
-                await page.close()
 
     async def _handle_rpc_response(
         self, response: aiohttp.ClientResponse

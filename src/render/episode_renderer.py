@@ -4,29 +4,23 @@ from typing import cast
 from astrbot.api import logger
 from PIL import Image, ImageDraw
 
-from ..services import Episode, RenderData
+from ..domain.contracts import RenderData
+from ..domain.schemas import Episode
 from .base_renderer import BaseRenderer
 from .pillow_utils import (
-    add_shadow,
-    blend_color,
-    create_linear_gradient,
     create_placeholder_image,
-    draw_pill,
     draw_text_block,
     fit_cover,
     get_font,
     get_image_accent,
     image_to_base64,
     load_image_source,
+    measure_text,
+    wrap_text,
 )
-
-
-def _stringify_value(value: object) -> str:
-    if isinstance(value, str):
-        return value.strip()
-    if isinstance(value, (int, float)):
-        return str(value)
-    return ""
+from .pillow_utils import (
+    stringify_value as _stringify_value,
+)
 
 
 def _extract_episode_titles(data: RenderData) -> tuple[str, str]:
@@ -41,159 +35,160 @@ def _extract_episode_titles(data: RenderData) -> tuple[str, str]:
     return primary, secondary
 
 
+def _format_duration_label(data: RenderData) -> str:
+    existing_label = _stringify_value(data.get("duration_label"))
+    if existing_label:
+        return existing_label
+
+    duration_text = _stringify_value(data.get("duration"))
+    if ":" in duration_text:
+        parts = duration_text.split(":")
+        if len(parts) >= 3:
+            hours = int(parts[0]) if parts[0].isdigit() else 0
+            minutes = int(parts[1]) if parts[1].isdigit() else 0
+            return f"{hours * 60 + minutes}min"
+        if parts[0].isdigit():
+            return f"{int(parts[0])}min"
+    if duration_text.endswith("min"):
+        return duration_text
+
+    duration_seconds = data.get("duration_seconds")
+    if isinstance(duration_seconds, int) and duration_seconds > 0:
+        return f"{max(1, round(duration_seconds / 60))}min"
+    return "24min"
+
+
 def _draw_episode_card_image(
     render_data: RenderData,
     cover_image: Image.Image | None,
 ) -> str:
-    width, height = 1100, 420
-    primary_title, secondary_title = _extract_episode_titles(render_data)
+    width, height = 2304, 3072
+    primary_title, _secondary_title = _extract_episode_titles(render_data)
     accent = get_image_accent(cover_image)
 
-    canvas = create_linear_gradient(
-        (width, height),
-        blend_color(accent, 0.86, (244, 246, 248)),
-        blend_color(accent, 0.62, (225, 232, 236)),
-    )
-    background_overlay = Image.new("RGBA", (width, height), (0, 0, 0, 0))
-    overlay_draw = ImageDraw.Draw(background_overlay)
-    overlay_draw.ellipse(
-        (730, -90, 1190, 250),
-        fill=(*blend_color(accent, 0.72, (255, 255, 255)), 110),
-    )
-    overlay_draw.ellipse(
-        (760, 210, 1200, 560),
-        fill=(*blend_color(accent, 0.34, (255, 255, 255)), 82),
-    )
-    canvas.alpha_composite(background_overlay)
+    cover = cover_image
+    if cover is None:
+        canvas = Image.new("RGBA", (width, height), (9, 9, 11, 255))
+        fallback = create_placeholder_image((width, height), primary_title, accent)
+        canvas.alpha_composite(fallback)
+        draw = ImageDraw.Draw(canvas)
+        icon_font = get_font(260, bold=True)
+        icon = "🎬"
+        icon_width, icon_height = measure_text(draw, icon, icon_font)
+        draw.text(
+            ((width - icon_width) // 2, (height - icon_height) // 2 - 420),
+            icon,
+            font=icon_font,
+            fill=(36, 36, 39, 255),
+        )
+    else:
+        canvas = fit_cover(cover, (width, height), 0)
+        if canvas.mode != "RGBA":
+            canvas = canvas.convert("RGBA")
 
-    card_box = (32, 32, 1068, 388)
-    add_shadow(canvas, card_box, radius=34, blur=26)
+    gradient = Image.new("RGBA", (width, height), (0, 0, 0, 0))
+    gradient_draw = ImageDraw.Draw(gradient)
+    gradient_start = int(height * 0.4)
+    for y in range(gradient_start, height):
+        ratio = (y - gradient_start) / max(height - gradient_start - 1, 1)
+        if ratio < 0.3:
+            alpha = int(76 * (ratio / 0.3))
+        elif ratio < 0.6:
+            alpha = int(76 + (178 - 76) * ((ratio - 0.3) / 0.3))
+        else:
+            alpha = int(178 + (242 - 178) * ((ratio - 0.6) / 0.4))
+        gradient_draw.line((0, y, width, y), fill=(0, 0, 0, alpha))
+    canvas.alpha_composite(gradient)
     draw = ImageDraw.Draw(canvas)
-    draw.rounded_rectangle(
-        card_box,
-        radius=34,
-        fill=(251, 252, 254, 248),
-        outline=(221, 228, 234, 255),
-        width=1,
-    )
-
-    cover = cover_image or create_placeholder_image((230, 316), primary_title, accent)
-    cover_card = fit_cover(cover, (230, 316), 24)
-    cover_box = (70, 52, 300, 368)
-    add_shadow(
-        canvas,
-        cover_box,
-        radius=24,
-        blur=20,
-        offset=(0, 10),
-        shadow_color=(15, 23, 42, 36),
-    )
-    canvas.alpha_composite(cover_card, (cover_box[0], cover_box[1]))
-    draw = ImageDraw.Draw(canvas)
-
-    badge_font = get_font(20, bold=True)
-    title_font = get_font(40, bold=True)
-    secondary_font = get_font(24)
-    episode_font = get_font(44, bold=True)
-    meta_font = get_font(19, bold=True)
-    body_font = get_font(20)
-
-    draw_pill(
-        draw,
-        (340, 74),
-        "更新提醒",
-        badge_font,
-        fill=(255, 242, 225, 255),
-        text_fill=(163, 96, 32),
-        outline=(244, 214, 180, 255),
-    )
-
-    airdate = _stringify_value(render_data.get("airdate"))
-    duration = _stringify_value(render_data.get("duration"))
-    comment = render_data.get("comment")
-    meta_x = 462
-    if airdate:
-        meta_x += (
-            draw_pill(
-                draw,
-                (meta_x, 74),
-                f"播出 {airdate}",
-                meta_font,
-                fill=(241, 245, 248, 255),
-                text_fill=(73, 83, 93),
-                outline=(223, 228, 235, 255),
-            )
-            + 10
-        )
-    if duration:
-        meta_x += (
-            draw_pill(
-                draw,
-                (meta_x, 74),
-                duration,
-                meta_font,
-                fill=(241, 245, 248, 255),
-                text_fill=(73, 83, 93),
-                outline=(223, 228, 235, 255),
-            )
-            + 10
-        )
-    if isinstance(comment, int) and comment > 0:
-        draw_pill(
-            draw,
-            (meta_x, 74),
-            f"讨论 {comment}",
-            meta_font,
-            fill=(241, 245, 248, 255),
-            text_fill=(73, 83, 93),
-            outline=(223, 228, 235, 255),
-        )
-
-    draw_text_block(
-        draw,
-        (340, 132, 1018, 236),
-        primary_title,
-        title_font,
-        (16, 24, 33),
-        max_lines=2,
-        line_spacing=8,
-    )
-    if secondary_title:
-        draw_text_block(
-            draw,
-            (340, 246, 1018, 282),
-            secondary_title,
-            secondary_font,
-            (95, 107, 119),
-            max_lines=1,
-        )
-
-    info_box = (340, 304, 1018, 358)
-    draw.rounded_rectangle(
-        info_box,
-        radius=24,
-        fill=(*blend_color(accent, 0.9, (248, 250, 252)), 255),
-        outline=(*blend_color(accent, 0.5, (218, 226, 232)), 255),
-        width=1,
-    )
 
     episode_number = render_data.get("ep")
-    episode_label = "EP --"
+    sort_number = render_data.get("sort")
+    number_source = sort_number if sort_number not in (None, "") else episode_number
+    episode_label = "EP.01"
     if isinstance(episode_number, int):
-        episode_label = f"EP {episode_number:02d}"
-    elif isinstance(episode_number, str) and episode_number.isdigit():
-        episode_label = f"EP {int(episode_number):02d}"
-    draw.text((368, 315), episode_label, font=episode_font, fill=(18, 26, 35))
+        episode_label = f"EP.{episode_number:02d}"
+    if isinstance(number_source, int):
+        episode_label = f"EP.{number_source:02d}"
+    elif isinstance(number_source, str) and number_source.isdigit():
+        episode_label = f"EP.{int(number_source):02d}"
 
-    name_label = secondary_title or primary_title
+    ep_font = get_font(168, bold=True)
+    title_font = get_font(144, bold=True)
+    meta_font = get_font(51, bold=True)
+    desc_font = get_font(51)
+
+    left = 84
+    right = 84
+    content_top_padding = 96
+    content_bottom_padding = 84
+    title_row_height = 174
+    title_row_margin_bottom = 36
+    metadata_height = 78
+    metadata_margin_bottom = 60
+    description_line_step = 87
+    description_margin_bottom = 72
+
+    description = _stringify_value(render_data.get("desc"))
+    description_lines = wrap_text(
+        draw,
+        description,
+        desc_font,
+        width - left - right,
+        3,
+    )
+    description_height = len(description_lines) * description_line_step
+    description_block_height = (
+        description_height + description_margin_bottom if description_lines else 0
+    )
+    content_height = (
+        content_top_padding
+        + title_row_height
+        + title_row_margin_bottom
+        + metadata_height
+        + metadata_margin_bottom
+        + description_block_height
+        + content_bottom_padding
+    )
+    header_y = height - content_height + content_top_padding
+
+    ep_width, _ = measure_text(draw, episode_label, ep_font)
+    draw.text((left, header_y), episode_label, font=ep_font, fill=(236, 72, 153, 255))
+    title_x = left + ep_width + 21
     draw_text_block(
         draw,
-        (578, 318, 998, 350),
-        f"标题 {name_label}",
-        body_font,
-        (79, 90, 101),
+        (title_x, header_y + 15, width - right, header_y + title_row_height),
+        primary_title,
+        title_font,
+        (255, 255, 255, 255),
         max_lines=1,
+        line_spacing=0,
     )
+    airdate = _stringify_value(render_data.get("airdate"))
+    year = airdate.split("-", 1)[0] if "-" in airdate else airdate
+    if not year:
+        year = "2026"
+    duration = _stringify_value(
+        render_data.get("duration_label")
+    ) or _format_duration_label(render_data)
+    comment = render_data.get("comment")
+    metadata = [year, duration]
+    if isinstance(comment, int) and comment > 0:
+        metadata.append(f"{comment} comments")
+    meta_text = "   |   ".join(metadata)
+    metadata_y = header_y + title_row_height + title_row_margin_bottom
+    draw.text((left, metadata_y), meta_text, font=meta_font, fill=(204, 204, 204, 255))
+
+    if description_lines:
+        description_y = metadata_y + metadata_height + metadata_margin_bottom
+        draw_text_block(
+            draw,
+            (left, description_y, width - right, height - content_bottom_padding),
+            description,
+            desc_font,
+            (216, 216, 216, 255),
+            max_lines=3,
+            line_spacing=34,
+        )
 
     return image_to_base64(canvas)
 
@@ -217,12 +212,20 @@ class EpisodeRenderer(BaseRenderer):
         渲染单集信息卡片并返回 Base64 编码的图片字符串
         """
         render_data = cast(RenderData, episode_data.model_dump())
+        render_data["duration_label"] = _format_duration_label(render_data)
 
         if self.render_mode == "pillow":
             try:
                 return await self._render_episode_pillow(render_data)
             except Exception as e:
-                logger.warning(f"[+] Pillow 单集卡片渲染失败,回退 HTML 渲染: {e}")
+                logger.warning(f"[+] Pillow 单集卡片渲染失败,使用纯 PIL 退避卡片: {e}")
+                fallback_data = render_data.copy()
+                fallback_data["image_url"] = ""
+                return await asyncio.to_thread(
+                    _draw_episode_card_image,
+                    fallback_data,
+                    None,
+                )
 
         return await self.render(
             template_path="update/episode.html",

@@ -13,7 +13,7 @@ from astrbot.api import logger
 from sqlalchemy import create_engine, or_
 from sqlalchemy.orm import joinedload, scoped_session, sessionmaker
 
-from ..services import DatabaseError
+from ..domain.exceptions import DatabaseError
 from .models import BangumiSubject, Base, Subscription
 
 
@@ -56,7 +56,7 @@ class BangumiRepository:
         except Exception as e:
             raise DatabaseError(f"初始化数据库失败: {e}") from e
 
-    def update_subject(self, subject_id: str, **kwargs) -> bool:
+    def update_subject(self, subject_id: str, **kwargs: str | int | None) -> bool:
         """
         更新或保存番剧信息
 

@@ -5,10 +5,14 @@
 
 """
 
-from sqlalchemy import Column, DateTime, ForeignKey, Integer, String, func
-from sqlalchemy.orm import declarative_base, relationship
+from datetime import datetime
 
-Base = declarative_base()
+from sqlalchemy import DateTime, ForeignKey, Integer, String, func
+from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
+
+
+class Base(DeclarativeBase):
+    pass
 
 
 class BangumiSubject(Base):
@@ -18,16 +22,20 @@ class BangumiSubject(Base):
 
     __tablename__ = "bangumi_subjects"
 
-    subject_id = Column(String, primary_key=True)
-    name = Column(String)
-    air_date = Column(String)  # 开播日期/时间
-    total_episodes = Column(Integer, default=0)
-    current_episode = Column(Integer, default=0)  # 当前已更新/已通知集数
-    updated_at = Column(DateTime, default=func.now(), onupdate=func.now())
+    subject_id: Mapped[str] = mapped_column(String, primary_key=True)
+    name: Mapped[str | None] = mapped_column(String, nullable=True)
+    air_date: Mapped[str | None] = mapped_column(String, nullable=True)  # 开播日期/时间
+    total_episodes: Mapped[int] = mapped_column(Integer, default=0)
+    current_episode: Mapped[int] = mapped_column(
+        Integer, default=0
+    )  # 当前已更新/已通知集数
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime, default=func.now(), onupdate=func.now()
+    )
 
     # 建立与 Subscription 的一对多关系
-    subscriptions = relationship(
-        "Subscription", back_populates="subject", cascade="all, delete-orphan"
+    subscriptions: Mapped[list["Subscription"]] = relationship(
+        back_populates="subject", cascade="all, delete-orphan"
     )
 
     def __repr__(self) -> str:
@@ -44,14 +52,14 @@ class Subscription(Base):
 
     __tablename__ = "subscriptions"
 
-    group_id = Column(String, primary_key=True)
-    subject_id = Column(
+    group_id: Mapped[str] = mapped_column(String, primary_key=True)
+    subject_id: Mapped[str] = mapped_column(
         String, ForeignKey("bangumi_subjects.subject_id"), primary_key=True
     )
-    created_at = Column(DateTime, default=func.now())
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=func.now())
 
     # 建立与 BangumiSubject 的多对一关系
-    subject = relationship("BangumiSubject", back_populates="subscriptions")
+    subject: Mapped[BangumiSubject] = relationship(back_populates="subscriptions")
 
     def __repr__(self) -> str:
         return f"<Subscription(id={self.subject_id}, group_id={self.group_id}, created_at={self.created_at})>"

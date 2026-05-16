@@ -1,6 +1,6 @@
 from unittest.mock import MagicMock
 
-from src.config import ConfigManager
+from astrbot_plugin_bangumi.src.config import ConfigManager
 
 
 def test_get_render_mode_reads_config_value() -> None:
