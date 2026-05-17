@@ -1,7 +1,7 @@
 <div align="center">
 
 # Bangumi 搜索插件使用指南
-[![repo](https://img.shields.io/badge/repo-v1.1.3-blue.svg)](https://github.com/united-pooh/astrbot_plugin_bangumi)
+[![repo](https://img.shields.io/badge/repo-v1.2.0-blue.svg)](https://github.com/united-pooh/astrbot_plugin_bangumi)
 [![License](https://img.shields.io/badge/license-Apache%202.0-green.svg)](LICENSE-2.0)
 [![AstrBot](https://img.shields.io/badge/AstrBot-%3E%3D4.16.0-orange.svg)](https://github.com/Soulter/AstrBot)
 [![Python](https://img.shields.io/badge/python-3.12%2B-blue.svg)](https://www.python.org/)
@@ -103,6 +103,17 @@ ruff format --check .
 python -m mypy src main.py
 python -m pytest -q
 ```
+
+### 本地策略分析脚本
+
+`scripts/analyze_bangumi_strategy.py` 是只读的本地分析工具,用于生成番剧管理策略报告,不会改变插件运行时行为、Bangumi 收藏或 AstrBot 订阅数据库。
+
+```bash
+python scripts/analyze_bangumi_strategy.py
+python scripts/analyze_bangumi_strategy.py --db-path /path/to/data.db
+```
+
+脚本会读取项目 `.env`、环境变量和命令行参数中的 Bangumi 配置;传入 `--db-path` 时会只读读取 AstrBot SQLite 订阅数据。默认报告写入已忽略的 `.pipeline-workspace/`,避免把本地分析结果提交到仓库。
 
 ### 强类型编码规则
 

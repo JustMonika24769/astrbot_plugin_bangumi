@@ -1,9 +1,10 @@
 # Changelog
 
-## v1.1.3
+## v1.2.0
 
 ### 架构与渲染
 - **结构分层**: 新增 `src/domain`、`src/api`、`src/app` 分层,保留 `src.services` 旧路径兼容导出
+- **本地策略分析**: 新增只读脚本 `python scripts/analyze_bangumi_strategy.py`,用于本地采集 Bangumi 收藏与可选 AstrBot SQLite 订阅数据并生成策略分析报告,不影响插件运行时行为
 - **Pillow 渲染退避**: 条目、单集、放送表在 `render_mode=pillow` 下使用纯 Pillow 出图,避免回落到 Playwright
 - **Pillow/Playwright 对齐**: 条目、单集、放送表最终尺寸、宽高比与 alpha 均通过对齐校验,显著变化像素分别为 6.115%、3.038%、4.203%;最终证据目录为 `rendered_images/render-mode-comparison-2026-05-16-group-1-final`,精确字形/浏览器栅格一致性仍作为已知实践限制
 - **渲染健壮性**: 补充 CJK 字体候选、空白封面占位图检测和图片读取大小限制,提升卡片可读性与安全性
