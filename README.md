@@ -57,7 +57,7 @@
 | `port` | string | 无 | HTTP 代理端口(例如 `7890`;地址已带端口时仍需填写本项以启用代理) |
 | `max_retries` | int | `3` | 网络错误最大重试次数(范围:1–10) |
 | `render_server_url` | string | `https://api.unitedpooh.top/rpc` | 远程渲染图片的 RPC 服务器地址 |
-| `render_mode` | string | `html` | 渲染模式,可设为 `pillow` 使用纯 Pillow 卡片渲染 |
+| `render_mode` | string | `html` | 渲染模式;默认 `html` 会按 RPC -> Playwright -> Pillow 自动退避,也可设为 `pillow` 强制使用 Pillow |
 
 ### Access Token 获取
 
@@ -69,10 +69,10 @@
 
 ## 📦 环境依赖
 
-插件首次运行时会检查 Playwright 环境状态;本地渲染不可用时会优先使用已配置的 RPC 渲染。需要本地 HTML 渲染时,请准备以下依赖:
+插件首次运行时会检查 Playwright 环境状态,并在后台线程预热 Pillow 字体,不会阻塞主流程。默认图片渲染顺序为 RPC -> 本地 Playwright -> Pillow。需要本地 HTML 渲染时,请准备以下依赖:
 - **Playwright 浏览器内核**:用于 HTML/RPC 不可用时的本地浏览器渲染
 
-如果配置 `render_mode=pillow`,条目卡、单集卡和放送表会使用纯 Pillow 渲染,不会回落到 Playwright。
+如果配置 `render_mode=pillow`,条目卡、单集卡和放送表会直接使用纯 Pillow 渲染。
 
 如果遇到环境问题,可尝试手动安装:
 ```bash
@@ -91,7 +91,7 @@ playwright install chromium
 ```bash
 python - <<'PY'
 from astrbot_plugin_bangumi.src.utils.env_manager import EnvManager
-EnvManager.generate_env_from_schema('_conf_schema.json', '.env', render_mode_default='pillow')
+EnvManager.generate_env_from_schema('_conf_schema.json', '.env', render_mode_default='html')
 PY
 ```
 

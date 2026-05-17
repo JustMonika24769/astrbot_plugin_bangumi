@@ -48,7 +48,7 @@
   "render_mode": {
     "description": "图片渲染方式",
     "type": "string",
-    "hint": "可选 html 或 pillow，默认 html 以保持兼容",
+    "hint": "html 为默认自动链路：RPC -> Playwright -> Pillow；pillow 为强制使用 Pillow",
     "default": "html",
     "options": ["html", "pillow"]
   }

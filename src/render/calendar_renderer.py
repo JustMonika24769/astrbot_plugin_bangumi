@@ -348,6 +348,14 @@ def _draw_calendar_card_image(
 
 
 class CalendarRenderer(BaseRenderer):
+    async def _render_calendar_pillow(self, calendar_data: list[CalendarDay]) -> str:
+        cover_images = await _load_calendar_covers(calendar_data, self._session)
+        return await asyncio.to_thread(
+            _draw_calendar_card_image,
+            calendar_data,
+            cover_images,
+        )
+
     async def render_calendar(
         self,
         calendar_data: list[CalendarDay],
@@ -365,12 +373,7 @@ class CalendarRenderer(BaseRenderer):
             return None
 
         if self.render_mode == "pillow":
-            cover_images = await _load_calendar_covers(reordered_days, self._session)
-            return await asyncio.to_thread(
-                _draw_calendar_card_image,
-                reordered_days,
-                cover_images,
-            )
+            return await self._render_calendar_pillow(reordered_days)
 
         return await self.render(
             template_path="calendar/calendar.html",
@@ -382,4 +385,5 @@ class CalendarRenderer(BaseRenderer):
             max_retries=max_retries,
             timeout=30000,
             wait_time=2,
+            pillow_fallback=lambda: self._render_calendar_pillow(reordered_days),
         )

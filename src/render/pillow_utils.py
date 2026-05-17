@@ -2,10 +2,12 @@ import asyncio
 import base64
 import io
 import re
+import threading
 from collections.abc import Mapping, Sequence
 from functools import lru_cache
 from pathlib import Path
 from urllib.parse import urlparse
+from urllib.request import urlopen
 
 import aiohttp
 from astrbot.api import logger
@@ -23,9 +25,23 @@ RGBAColor = tuple[int, int, int, int]
 FontType = ImageFont.FreeTypeFont | ImageFont.ImageFont
 Rect = tuple[int, int, int, int]
 _MAX_IMAGE_BYTES = 8 * 1024 * 1024
+_MAX_FONT_BYTES = 64 * 1024 * 1024
 _BLANK_THRESHOLD = 246
 
 _DATA_URI_PATTERN = re.compile(r"^data:image/[^;]+;base64,(?P<data>.+)$", re.DOTALL)
+_FONT_DOWNLOAD_SOURCES = (
+    (
+        "NotoSansCJKsc-Regular.otf",
+        "https://github.com/notofonts/noto-cjk/raw/main/Sans/OTF/SimplifiedChinese/NotoSansCJKsc-Regular.otf",
+    ),
+    (
+        "NotoSansCJKsc-Bold.otf",
+        "https://github.com/notofonts/noto-cjk/raw/main/Sans/OTF/SimplifiedChinese/NotoSansCJKsc-Bold.otf",
+    ),
+)
+_font_dir: Path | None = None
+_font_download_started = False
+_font_download_lock = threading.Lock()
 _REGULAR_FONT_CANDIDATES = (
     (Path("/System/Library/Fonts/Hiragino Sans GB.ttc"), 0),
     (Path("/System/Library/Fonts/PingFang.ttc"), 0),
@@ -47,6 +63,73 @@ _BOLD_FONT_CANDIDATES = (
     (Path("C:/Windows/Fonts/msyhbd.ttc"), 0),
     (Path("C:/Windows/Fonts/msyh.ttc"), 0),
 )
+
+
+def set_font_directory(font_dir: str | Path) -> None:
+    global _font_dir
+    _font_dir = Path(font_dir)
+    get_font.cache_clear()
+
+
+def start_font_download(font_dir: str | Path) -> None:
+    global _font_download_started
+    resolved_font_dir = Path(font_dir)
+    set_font_directory(resolved_font_dir)
+    with _font_download_lock:
+        if _font_download_started:
+            return
+        _font_download_started = True
+
+    thread = threading.Thread(
+        target=_download_fonts,
+        args=(resolved_font_dir,),
+        name="BangumiPillowFontDownload",
+        daemon=True,
+    )
+    thread.start()
+
+
+def _download_fonts(font_dir: Path) -> None:
+    try:
+        font_dir.mkdir(parents=True, exist_ok=True)
+    except OSError as e:
+        logger.warning(f"Pillow 字体目录创建失败,跳过字体下载: {e}")
+        return
+
+    downloaded = False
+    for filename, url in _FONT_DOWNLOAD_SOURCES:
+        target = font_dir / filename
+        if target.exists() and target.stat().st_size > 0:
+            continue
+
+        temp_target = target.with_suffix(f"{target.suffix}.tmp")
+        try:
+            total_bytes = 0
+            with urlopen(url, timeout=30) as response, temp_target.open("wb") as file:
+                while True:
+                    chunk = response.read(1024 * 1024)
+                    if not chunk:
+                        break
+                    total_bytes += len(chunk)
+                    if total_bytes > _MAX_FONT_BYTES:
+                        raise RuntimeError(f"{filename} 超过字体下载大小限制")
+                    file.write(chunk)
+            temp_target.replace(target)
+            downloaded = True
+            logger.info(f"Pillow 字体已下载: {target}")
+        except Exception as e:
+            temp_target.unlink(missing_ok=True)
+            logger.warning(f"Pillow 字体下载失败 {filename}: {e}")
+
+    if downloaded:
+        get_font.cache_clear()
+
+
+def _downloaded_font_candidates(bold: bool) -> tuple[tuple[Path, int], ...]:
+    if _font_dir is None:
+        return ()
+    filename = "NotoSansCJKsc-Bold.otf" if bold else "NotoSansCJKsc-Regular.otf"
+    return ((_font_dir / filename, 0),)
 
 
 def stringify_value(value: object) -> str:
@@ -72,7 +155,10 @@ def select_image_url(
 
 @lru_cache(maxsize=64)
 def get_font(size: int, *, bold: bool = False) -> FontType:
-    candidates = _BOLD_FONT_CANDIDATES if bold else _REGULAR_FONT_CANDIDATES
+    candidates = (
+        *_downloaded_font_candidates(bold),
+        *(_BOLD_FONT_CANDIDATES if bold else _REGULAR_FONT_CANDIDATES),
+    )
     for path, font_index in candidates:
         if not path.exists():
             continue

@@ -201,6 +201,21 @@ class EpisodeRenderer(BaseRenderer):
             _draw_episode_card_image, render_data, cover_image
         )
 
+    async def _render_episode_pillow_with_placeholder(
+        self, render_data: RenderData
+    ) -> str:
+        try:
+            return await self._render_episode_pillow(render_data)
+        except Exception as e:
+            logger.warning(f"[+] Pillow 单集卡片渲染失败,使用纯 PIL 退避卡片: {e}")
+            fallback_data = render_data.copy()
+            fallback_data["image_url"] = ""
+            return await asyncio.to_thread(
+                _draw_episode_card_image,
+                fallback_data,
+                None,
+            )
+
     async def render_episode(
         self,
         episode_data: Episode,
@@ -215,17 +230,7 @@ class EpisodeRenderer(BaseRenderer):
         render_data["duration_label"] = _format_duration_label(render_data)
 
         if self.render_mode == "pillow":
-            try:
-                return await self._render_episode_pillow(render_data)
-            except Exception as e:
-                logger.warning(f"[+] Pillow 单集卡片渲染失败,使用纯 PIL 退避卡片: {e}")
-                fallback_data = render_data.copy()
-                fallback_data["image_url"] = ""
-                return await asyncio.to_thread(
-                    _draw_episode_card_image,
-                    fallback_data,
-                    None,
-                )
+            return await self._render_episode_pillow_with_placeholder(render_data)
 
         return await self.render(
             template_path="update/episode.html",
@@ -234,4 +239,7 @@ class EpisodeRenderer(BaseRenderer):
             rpc_url=rpc_url,
             headless=headless,
             max_retries=max_retries,
+            pillow_fallback=lambda: self._render_episode_pillow_with_placeholder(
+                render_data
+            ),
         )

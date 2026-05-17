@@ -750,6 +750,21 @@ class SubjectRenderer(BaseRenderer):
             cover_image,
         )
 
+    async def _render_subject_card_pillow_with_placeholder(
+        self, render_data: RenderData
+    ) -> str:
+        try:
+            return await self._render_subject_card_pillow(render_data)
+        except Exception as e:
+            logger.warning(f"[+] Pillow 条目卡片渲染失败,使用纯 PIL 退避卡片: {e}")
+            fallback_data = render_data.copy()
+            fallback_data["image_url"] = ""
+            return await asyncio.to_thread(
+                _draw_subject_card_image,
+                fallback_data,
+                None,
+            )
+
     async def render_subject_card(
         self,
         data: RenderData,
@@ -761,17 +776,7 @@ class SubjectRenderer(BaseRenderer):
     ) -> str | None:
         render_data = preprocess_data(data)
         if self.render_mode == "pillow":
-            try:
-                return await self._render_subject_card_pillow(render_data)
-            except Exception as e:
-                logger.warning(f"[+] Pillow 条目卡片渲染失败,使用纯 PIL 退避卡片: {e}")
-                fallback_data = render_data.copy()
-                fallback_data["image_url"] = ""
-                return await asyncio.to_thread(
-                    _draw_subject_card_image,
-                    fallback_data,
-                    None,
-                )
+            return await self._render_subject_card_pillow_with_placeholder(render_data)
 
         return await self.render(
             template_path="subject/subject.html",
@@ -783,6 +788,9 @@ class SubjectRenderer(BaseRenderer):
             max_retries=max_retries,
             wait_time=wait_time,
             timeout=timeout,
+            pillow_fallback=lambda: self._render_subject_card_pillow_with_placeholder(
+                render_data
+            ),
         )
 
     async def render_batch_subject_cards_to_base64(

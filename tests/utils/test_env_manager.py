@@ -1,5 +1,7 @@
 from pathlib import Path
 
+import pytest
+
 from astrbot_plugin_bangumi.src.utils.env_manager import EnvManager
 
 
@@ -38,3 +40,22 @@ def test_generate_env_from_schema_preserves_existing_values(tmp_path: Path) -> N
     content = env.read_text(encoding="utf-8")
     assert "access_token=kept" in content
     assert "render_mode=html" in content
+
+
+def test_start_font_download_uses_background_font_dir(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    calls: list[Path] = []
+
+    def fake_start_font_download(font_dir: str | Path) -> None:
+        calls.append(Path(font_dir))
+
+    monkeypatch.setattr(
+        "astrbot_plugin_bangumi.src.render.pillow_utils.start_font_download",
+        fake_start_font_download,
+    )
+
+    manager = EnvManager(str(tmp_path))
+    manager.start_font_download()
+
+    assert calls == [tmp_path / "fonts"]

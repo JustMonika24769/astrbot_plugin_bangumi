@@ -26,6 +26,7 @@ class EnvManager:
     def __init__(self, data_dir: str) -> None:
         self.data_dir = data_dir
         self.flag_file = os.path.join(data_dir, ".playwright_installed")
+        self.font_dir = os.path.join(data_dir, "fonts")
 
     @staticmethod
     def generate_env_from_schema(
@@ -169,3 +170,9 @@ class EnvManager:
     def is_installed(self) -> bool:
         """检查标记文件是否存在"""
         return os.path.exists(self.flag_file)
+
+    def start_font_download(self) -> None:
+        """在后台线程预热 Pillow 所需字体,不阻塞插件初始化。"""
+        from ..render.pillow_utils import start_font_download
+
+        start_font_download(self.font_dir)

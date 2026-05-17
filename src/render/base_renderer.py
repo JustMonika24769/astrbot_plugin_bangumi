@@ -1,5 +1,6 @@
 import asyncio
 import base64
+from collections.abc import Awaitable, Callable
 from pathlib import Path
 
 import aiohttp
@@ -31,6 +32,21 @@ class BaseRenderer:
         )
         self._session = session
         self.render_mode = normalize_render_mode(render_mode)
+
+    async def _render_with_pillow_fallback(
+        self,
+        template_path: str,
+        pillow_fallback: Callable[[], Awaitable[str | None]] | None,
+    ) -> str | None:
+        if pillow_fallback is None:
+            return None
+
+        logger.warning(f"[-] 正在回退到 Pillow 渲染: {template_path}")
+        try:
+            return await pillow_fallback()
+        except Exception as e:
+            logger.error(f"[-] Pillow 退避渲染失败 ({template_path}): {e}")
+            return None
 
     def _generate_html(
         self, template_path: str, render_data: RenderData, sub_dir: str = ""
@@ -215,9 +231,11 @@ class BaseRenderer:
         wait_time: float = 0,
         headless: bool = True,
         max_retries: int = 3,
+        pillow_fallback: Callable[[], Awaitable[str | None]] | None = None,
     ) -> str | None:
         """
-        通用渲染方法:优先尝试 RPC 渲染,若失败或未配置则回退到本地渲染
+        通用渲染方法:优先尝试 RPC 渲染,若失败或未配置则回退到本地
+        Playwright 渲染,最后按需回退到 Pillow 渲染
 
         Args:
             template_path: 模板路径
@@ -228,7 +246,13 @@ class BaseRenderer:
             timeout: 超时时间(毫秒)
             wait_time: 截图前的等待时间(秒)
         """
-        html_content = self._generate_html(template_path, render_data, sub_dir)
+        try:
+            html_content = self._generate_html(template_path, render_data, sub_dir)
+        except (jinja2.TemplateError, RuntimeError, ValueError, TypeError) as e:
+            logger.error(f"[-] HTML 模板生成失败 ({template_path}): {e}")
+            return await self._render_with_pillow_fallback(
+                template_path, pillow_fallback
+            )
 
         if rpc_url:
             logger.debug(f"[+] 尝试通过 RPC 渲染: {template_path}")
@@ -243,7 +267,7 @@ class BaseRenderer:
                 return result
             logger.warning(f"[-] RPC 渲染失败 ({template_path}),正在回退到本地渲染...")
 
-        return await self._render_locally(
+        local_result = await self._render_locally(
             html_content=html_content,
             template_path=template_path,
             selector=selector,
@@ -252,3 +276,11 @@ class BaseRenderer:
             headless=headless,
             max_retries=max_retries,
         )
+        if local_result:
+            return local_result
+
+        if pillow_fallback is None:
+            return None
+
+        logger.warning(f"[-] 本地渲染失败 ({template_path})")
+        return await self._render_with_pillow_fallback(template_path, pillow_fallback)

@@ -1,4 +1,5 @@
 from datetime import datetime
+from unittest.mock import AsyncMock
 
 import pytest
 
@@ -115,3 +116,30 @@ async def test_render_calendar_html_render_contract() -> None:
     assert calls["template_path"] == "calendar/calendar.html"
     assert calls["selector"] == ".container"
     assert calls["sub_dir"] == "calendar"
+
+
+@pytest.mark.asyncio
+async def test_render_calendar_html_failure_falls_back_to_pillow() -> None:
+    renderer = CalendarRenderer(render_mode="html")
+    renderer._render_via_rpc = AsyncMock(return_value=None)
+    renderer._render_locally = AsyncMock(return_value=None)
+
+    result = await renderer.render_calendar(
+        [
+            {
+                "weekday": {"id": 1, "cn": "星期一"},
+                "items": [
+                    {
+                        "name_cn": "番剧",
+                        "images": {"common": "", "large": "", "medium": ""},
+                    }
+                ],
+            }
+        ],
+        rpc_url="rpc",
+    )
+
+    assert result is not None
+    assert_png_image(result, (2892, 2124), require_non_blank=True)
+    renderer._render_via_rpc.assert_awaited_once()
+    renderer._render_locally.assert_awaited_once()
