@@ -3,7 +3,7 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from src.services import SubscriptionService
+from astrbot_plugin_bangumi.src.services import SubscriptionService
 
 
 @pytest.fixture
@@ -26,8 +26,17 @@ def mock_service() -> MagicMock:
     return service
 
 
+@pytest.fixture
+def mock_config_manager() -> MagicMock:
+    config_manager = MagicMock()
+    config_manager.get_render_mode.return_value = "pillow"
+    config_manager.get_render_server_url.return_value = "https://api.unitedpooh.top/rpc"
+    config_manager.get_max_retries.return_value = 1
+    return config_manager
+
+
 @pytest.mark.asyncio
-async def test_subscribe_success(mock_repo, mock_service) -> None:
+async def test_subscribe_success(mock_repo, mock_service, mock_config_manager) -> None:
     mock_service.search_subjects.return_value = {"data": [{"id": 123}]}
     mock_service.get_subject_details.return_value = {
         "id": 123,
@@ -39,7 +48,9 @@ async def test_subscribe_success(mock_repo, mock_service) -> None:
     mock_service.get_calendar.return_value = [{"items": [{"id": 123}]}]
 
     sub_service = SubscriptionService(
-        repository=mock_repo, service=mock_service, config_manager=MagicMock()
+        repository=mock_repo,
+        service=mock_service,
+        config_manager=mock_config_manager,
     )
     result = await sub_service.subscribe("group_1", "Test Anime")
 
@@ -54,13 +65,17 @@ async def test_subscribe_success(mock_repo, mock_service) -> None:
 
 
 @pytest.mark.asyncio
-async def test_unsubscribe_local_single_match_success(mock_repo, mock_service) -> None:
+async def test_unsubscribe_local_single_match_success(
+    mock_repo, mock_service, mock_config_manager
+) -> None:
     mock_repo.find_group_subscription_candidates.return_value = [
         SimpleNamespace(subject_id="123", name="测试番剧")
     ]
 
     sub_service = SubscriptionService(
-        repository=mock_repo, service=mock_service, config_manager=MagicMock()
+        repository=mock_repo,
+        service=mock_service,
+        config_manager=mock_config_manager,
     )
     result = await sub_service.unsubscribe("group_1", "测")
 
@@ -75,11 +90,15 @@ async def test_unsubscribe_local_single_match_success(mock_repo, mock_service) -
 
 
 @pytest.mark.asyncio
-async def test_unsubscribe_local_no_match(mock_repo, mock_service) -> None:
+async def test_unsubscribe_local_no_match(
+    mock_repo, mock_service, mock_config_manager
+) -> None:
     mock_repo.find_group_subscription_candidates.return_value = []
 
     sub_service = SubscriptionService(
-        repository=mock_repo, service=mock_service, config_manager=MagicMock()
+        repository=mock_repo,
+        service=mock_service,
+        config_manager=mock_config_manager,
     )
     result = await sub_service.unsubscribe("group_1", "不存在")
 
@@ -92,22 +111,24 @@ async def test_unsubscribe_local_no_match(mock_repo, mock_service) -> None:
 
 @pytest.mark.asyncio
 async def test_unsubscribe_local_multi_match_returns_candidates(
-    mock_repo, mock_service
+    mock_repo, mock_service, mock_config_manager
 ) -> None:
     mock_repo.find_group_subscription_candidates.return_value = [
         SimpleNamespace(subject_id="1", name="进击的巨人"),
-        SimpleNamespace(subject_id="2", name="进击！巨人中学"),
+        SimpleNamespace(subject_id="2", name="进击!巨人中学"),
         SimpleNamespace(subject_id="3", name="巨人族的新娘"),
     ]
 
     sub_service = SubscriptionService(
-        repository=mock_repo, service=mock_service, config_manager=MagicMock()
+        repository=mock_repo,
+        service=mock_service,
+        config_manager=mock_config_manager,
     )
     result = await sub_service.unsubscribe("group_1", "巨人")
 
     assert "匹配到多个已订阅番剧" in result
     assert "1. 进击的巨人 (ID: 1)" in result
-    assert "2. 进击！巨人中学 (ID: 2)" in result
+    assert "2. 进击!巨人中学 (ID: 2)" in result
     assert "3. 巨人族的新娘 (ID: 3)" in result
     mock_repo.remove_subscription.assert_not_called()
     mock_service.search_subjects.assert_not_called()
@@ -116,41 +137,49 @@ async def test_unsubscribe_local_multi_match_returns_candidates(
 
 
 @pytest.mark.asyncio
-async def test_unsubscribe_local_remove_failed(mock_repo, mock_service) -> None:
+async def test_unsubscribe_local_remove_failed(
+    mock_repo, mock_service, mock_config_manager
+) -> None:
     mock_repo.find_group_subscription_candidates.return_value = [
         SimpleNamespace(subject_id="123", name="测试番剧")
     ]
     mock_repo.remove_subscription.return_value = False
 
     sub_service = SubscriptionService(
-        repository=mock_repo, service=mock_service, config_manager=MagicMock()
+        repository=mock_repo,
+        service=mock_service,
+        config_manager=mock_config_manager,
     )
     result = await sub_service.unsubscribe("group_1", "测")
 
-    assert "取消订阅失败：你可能并没有订阅《测试番剧》" in result
+    assert "取消订阅失败:你可能并没有订阅《测试番剧》" in result
     mock_repo.remove_subscription.assert_called_once_with("group_1", "123")
 
 
 @pytest.mark.asyncio
-async def test_get_subscribe_candidates_multi_match(mock_repo, mock_service) -> None:
+async def test_get_subscribe_candidates_multi_match(
+    mock_repo, mock_service, mock_config_manager
+) -> None:
     mock_service.search_subjects.return_value = {
         "data": [
             {"id": 1, "name_cn": "进击的巨人"},
-            {"id": 2, "name": "进击！巨人中学"},
+            {"id": 2, "name": "进击!巨人中学"},
             {"id": 1, "name_cn": "进击的巨人"},
             {"name_cn": "无ID条目"},
         ]
     }
 
     sub_service = SubscriptionService(
-        repository=mock_repo, service=mock_service, config_manager=MagicMock()
+        repository=mock_repo,
+        service=mock_service,
+        config_manager=mock_config_manager,
     )
     error_msg, candidates = await sub_service.get_subscribe_candidates("巨人", 5)
 
     assert error_msg is None
     assert candidates == [
         {"subject_id": "1", "name": "进击的巨人"},
-        {"subject_id": "2", "name": "进击！巨人中学"},
+        {"subject_id": "2", "name": "进击!巨人中学"},
     ]
     mock_service.search_subjects.assert_awaited_once_with(
         keyword="巨人",
@@ -161,7 +190,9 @@ async def test_get_subscribe_candidates_multi_match(mock_repo, mock_service) -> 
 
 
 @pytest.mark.asyncio
-async def test_subscribe_by_subject_id_success(mock_repo, mock_service) -> None:
+async def test_subscribe_by_subject_id_success(
+    mock_repo, mock_service, mock_config_manager
+) -> None:
     mock_service.get_subject_details.return_value = {
         "id": 456,
         "name": "Test Name",
@@ -172,7 +203,9 @@ async def test_subscribe_by_subject_id_success(mock_repo, mock_service) -> None:
     mock_service.get_calendar.return_value = [{"items": [{"id": 456}]}]
 
     sub_service = SubscriptionService(
-        repository=mock_repo, service=mock_service, config_manager=MagicMock()
+        repository=mock_repo,
+        service=mock_service,
+        config_manager=mock_config_manager,
     )
     result = await sub_service.subscribe_by_subject_id("group_1", "456")
 
@@ -187,7 +220,9 @@ async def test_subscribe_by_subject_id_success(mock_repo, mock_service) -> None:
 
 
 @pytest.mark.asyncio
-async def test_subscribe_by_subject_id_not_in_calendar(mock_repo, mock_service) -> None:
+async def test_subscribe_by_subject_id_not_in_calendar(
+    mock_repo, mock_service, mock_config_manager
+) -> None:
     mock_service.get_subject_details.return_value = {
         "id": 789,
         "name": "Not In Calendar",
@@ -198,9 +233,23 @@ async def test_subscribe_by_subject_id_not_in_calendar(mock_repo, mock_service) 
     mock_service.get_calendar.return_value = [{"items": [{"id": 456}]}]
 
     sub_service = SubscriptionService(
-        repository=mock_repo, service=mock_service, config_manager=MagicMock()
+        repository=mock_repo,
+        service=mock_service,
+        config_manager=mock_config_manager,
     )
     result = await sub_service.subscribe_by_subject_id("group_1", "789")
 
     assert "不在当前的每日放送列表中" in result
     mock_repo.subscribe_subject.assert_not_called()
+
+
+def test_subscription_service_passes_render_mode_to_renderer(
+    mock_repo, mock_service, mock_config_manager
+) -> None:
+    sub_service = SubscriptionService(
+        repository=mock_repo,
+        service=mock_service,
+        config_manager=mock_config_manager,
+    )
+
+    assert sub_service.renderer.render_mode == "pillow"

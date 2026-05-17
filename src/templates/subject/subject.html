@@ -17,7 +17,7 @@
             --text-sub: #8590a6;
             --text-light: #999;
             --border-color: #eaeaea;
-            --font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
+            --font-family: "Hiragino Sans GB", "PingFang SC", "Microsoft YaHei", sans-serif;
             --card-shadow: 0 12px 40px rgba(0, 0, 0, 0.08);
             --img-shadow: 0 4px 16px rgba(0, 0, 0, 0.08);
         }
@@ -68,7 +68,7 @@
             top: 0;
             right: 0;
             z-index: 10;
-            /* 上边和右边直角，左下角圆角 */
+            /* 上边和右边直角,左下角圆角 */
             border-radius: 0 20px 0 16px;
             background: linear-gradient(135deg, #FF9800 0%, #F57C00 100%);
             padding: 8px 18px 10px 16px;
@@ -135,7 +135,7 @@
             transition: transform 0.3s ease;
         }
 
-        /* 剧集进度（左侧） */
+        /* 剧集进度(左侧) */
         .episode-container {
             background: #fff;
             border-radius: 12px;
@@ -177,7 +177,7 @@
             font-weight: 700;
         }
 
-        /* 已播出：橙色醒目背景 + 白色数字 */
+        /* 已播出:橙色醒目背景 + 白色数字 */
         .ep-aired {
             background: linear-gradient(135deg, #FF9800, #FB8C00);
             color: #fff;
@@ -185,7 +185,7 @@
             text-shadow: 0 1px 2px rgba(0, 0, 0, 0.2);
         }
 
-        /* 未播出：灰色背景 + 深灰数字 */
+        /* 未播出:灰色背景 + 深灰数字 */
         .ep-unaired {
             background-color: #e8e8e8;
             color: #666;
@@ -259,7 +259,6 @@
         .chart-label {
             font-size: 9px;
             color: #ccc;
-            font-family: monospace;
             width: 12px;
             /* 固定宽度以便对齐 */
             text-align: center;
@@ -397,7 +396,7 @@
             line-height: 1.8;
             margin: 0;
             text-align: justify;
-            /* 限制显示行数，防止过长 */
+            /* 限制显示行数,防止过长 */
             display: -webkit-box;
             -webkit-line-clamp: 7;
             -webkit-box-orient: vertical;
@@ -431,7 +430,6 @@
 
         .id-badge {
             margin-left: auto;
-            font-family: monospace;
             opacity: 0.5;
             font-size: 12px;
         }
@@ -446,26 +444,26 @@
 </head>
 
 <body>
-    <div id="card">
-        <!-- 右上角更新日角标 -->
-        {% if air_weekday %}
+<div id="card">
+    <!-- 右上角更新日角标 -->
+    {% if air_weekday %}
         <div class="weekday-badge">
             <span class="weekday-kanji">{{ air_weekday }}</span>
             <span class="weekday-sub">曜日</span>
         </div>
-        {% endif %}
+    {% endif %}
 
-        <!-- 左侧封面 -->
-        <div class="cover-container">
-            <div class="cover-wrapper">
-                {% if image_url %}
+    <!-- 左侧封面 -->
+    <div class="cover-container">
+        <div class="cover-wrapper">
+            {% if image_url %}
                 <img class="cover-image" src="{{ image_url }}" alt="Cover" referrerpolicy="no-referrer"
-                    onerror="this.style.display='none'">
-                {% endif %}
-            </div>
+                     onerror="this.style.display='none'">
+            {% endif %}
+        </div>
 
-            <!-- 剧集进度 -->
-            {% if episode_list %}
+        <!-- 剧集进度 -->
+        {% if episode_list %}
             <div class="episode-container">
                 <div class="episode-label">
                     放送进度
@@ -474,28 +472,28 @@
                 </div>
                 <div class="episode-grid">
                     {% for ep_item in episode_list %}
-                    <div class="ep-cell {{ 'ep-aired' if ep_item.aired else 'ep-unaired' }}">
-                        {{ ep_item.ep }}
-                    </div>
+                        <div class="ep-cell {{ 'ep-aired' if ep_item.aired else 'ep-unaired' }}">
+                            {{ ep_item.ep }}
+                        </div>
                     {% endfor %}
                 </div>
             </div>
-            {% endif %}
+        {% endif %}
 
-            <!-- 评分分布 -->
-            {% if rating and rating.count %}
+        <!-- 评分分布 -->
+        {% if rating and rating.count %}
             <div class="chart-container">
                 <div class="chart-title">评分分布</div>
                 <div class="chart-bars">
                     {% set max_count = rating.count.values() | max if rating.count else 1 %}
 
                     {% for i in range(1, 11) %}
-                    {% set count = rating.count[i|string] or 0 %}
-                    {% set height_percent = (count / max_count * 100) if max_count > 0 else 0 %}
-                    {% set final_height = height_percent if height_percent > 1 else 1 %}
-                    <div class="bar-wrapper" title="{{ i }}分: {{ count }}人">
-                        <div class="bar" style="height: {{ final_height }}%;"></div>
-                    </div>
+                        {% set count = rating.count[i|string] or 0 %}
+                        {% set height_percent = (count / max_count * 100) if max_count > 0 else 0 %}
+                        {% set final_height = height_percent if height_percent > 1 else 1 %}
+                        <div class="bar-wrapper" title="{{ i }}分: {{ count }}人">
+                            <div class="bar" style="height: {{ final_height }}%;"></div>
+                        </div>
                     {% endfor %}
                 </div>
                 <div class="chart-labels">
@@ -511,21 +509,21 @@
                     <span class="chart-label">10</span>
                 </div>
             </div>
+        {% endif %}
+    </div>
+
+    <!-- 右侧信息 -->
+    <div class="content">
+        <!-- 标题 -->
+        <div class="header">
+            <h1 class="title">{{ name_cn or name }}</h1>
+            {% if name_cn and name != name_cn %}
+                <p class="subtitle">{{ name }}</p>
             {% endif %}
         </div>
 
-        <!-- 右侧信息 -->
-        <div class="content">
-            <!-- 标题 -->
-            <div class="header">
-                <h1 class="title">{{ name_cn or name }}</h1>
-                {% if name_cn and name != name_cn %}
-                <p class="subtitle">{{ name }}</p>
-                {% endif %}
-            </div>
-
-            <!-- 评分与排名 -->
-            {% if rating %}
+        <!-- 评分与排名 -->
+        {% if rating %}
             <div class="meta-row">
                 <div class="score-badge">
                     <span class="star-icon">★</span>
@@ -533,64 +531,64 @@
                 </div>
                 {% set display_rank = rating.rank or rank %}
                 {% if display_rank %}
-                <div class="rank-badge">
-                    #{{ display_rank }}
-                </div>
+                    <div class="rank-badge">
+                        #{{ display_rank }}
+                    </div>
                 {% endif %}
                 <div class="rating-count">
                     {{ rating.total }} 人评分
                 </div>
                 {% if collection and collection.doing %}
-                <div class="rating-count" style="margin-left: 8px;">
-                    {{ collection.doing }} 人在看
-                </div>
+                    <div class="rating-count" style="margin-left: 8px;">
+                        {{ collection.doing }} 人在看
+                    </div>
                 {% endif %}
             </div>
-            {% else %}
+        {% else %}
             <div class="meta-row">
                 <span class="no-data">暂无评分</span>
             </div>
-            {% endif %}
+        {% endif %}
 
-            <!-- 标签 -->
-            {% if tags %}
+        <!-- 标签 -->
+        {% if tags %}
             <div class="tags-container">
                 {% for tag in tags[:8] %}
-                <span class="tag">{{ tag.name }}</span>
+                    <span class="tag">{{ tag.name }}</span>
                 {% endfor %}
             </div>
-            {% endif %}
+        {% endif %}
 
-            <!-- 简介 -->
-            <div class="summary-container">
-                <div class="summary-label">简介</div>
-                <p class="summary-text">
-                    {{ summary if summary else '暂无简介' }}
-                </p>
-            </div>
+        <!-- 简介 -->
+        <div class="summary-container">
+            <div class="summary-label">简介</div>
+            <p class="summary-text">
+                {{ summary if summary else '暂无简介' }}
+            </p>
+        </div>
 
-            <!-- 底部额外信息 -->
-            <div class="footer">
-                {% if date %}
+        <!-- 底部额外信息 -->
+        <div class="footer">
+            {% if date %}
                 <div class="info-item">
                     <span class="info-icon">📅</span>
                     <span>{{ date }}</span>
                 </div>
-                {% endif %}
-                {% if platform %}
+            {% endif %}
+            {% if platform %}
                 <div class="info-item">
                     <span class="info-icon">📺</span>
                     <span>{{ platform }}</span>
                 </div>
-                {% endif %}
-                {% if id %}
+            {% endif %}
+            {% if id %}
                 <div class="id-badge">
                     ID: {{ id }}
                 </div>
-                {% endif %}
-            </div>
+            {% endif %}
         </div>
     </div>
+</div>
 </body>
 
 </html>

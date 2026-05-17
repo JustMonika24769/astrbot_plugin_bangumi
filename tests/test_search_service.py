@@ -3,7 +3,7 @@ from unittest.mock import AsyncMock, MagicMock
 import pytest
 from astrbot.api.event import AstrMessageEvent
 
-from src.services import SearchService
+from astrbot_plugin_bangumi.src.services import SearchService
 
 
 @pytest.fixture
@@ -21,6 +21,7 @@ def mock_config_manager() -> MagicMock:
     config_manager = MagicMock()
     config_manager.get_render_server_url.return_value = "https://api.unitedpooh.top/rpc"
     config_manager.get_max_retries.return_value = 1
+    config_manager.get_render_mode.return_value = "pillow"
     return config_manager
 
 
@@ -35,7 +36,7 @@ async def test_handle_calendar_success(
         service=mock_service, config_manager=mock_config_manager
     )
 
-    # Mock 渲染器，避免进入模板渲染逻辑
+    # Mock 渲染器,避免进入模板渲染逻辑
     search_service.calendar_renderer.render_calendar = AsyncMock(
         return_value="fake_base64"
     )
@@ -68,3 +69,14 @@ async def test_handle_subject_search_no_query(
 
     assert len(results) > 0
     assert "❌ 请提供搜索关键词" in str(results[0])
+
+
+def test_search_service_passes_render_mode_to_renderers(
+    mock_service: MagicMock, mock_config_manager: MagicMock
+) -> None:
+    search_service = SearchService(
+        service=mock_service, config_manager=mock_config_manager
+    )
+
+    assert search_service.subject_renderer.render_mode == "pillow"
+    assert search_service.calendar_renderer.render_mode == "pillow"

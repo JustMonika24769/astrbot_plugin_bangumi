@@ -6,8 +6,22 @@ __pycache__/
 .vscode/
 settings.json
 data/
+.mypy_cache/
 .idea/
 *.xml
 *.iml
 .env
-.png
+rendered_images/
+
+# Agent/Codex artifacts
+memory.md
+.claude/
+.codex*/
+.codex-*/
+.codex-pet-runs/
+.agents/
+.pipeline-workspace/
+.pipeline-last-run-summary.json
+.pipeline-*.json
+agent-artifacts/
+.agent-artifacts/

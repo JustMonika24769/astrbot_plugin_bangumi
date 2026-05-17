@@ -1,40 +1,46 @@
+from unittest.mock import AsyncMock
+
 import pytest
-from loguru import logger
 
-from src.render import SubjectRenderer
+from astrbot_plugin_bangumi.src.render import SubjectRenderer
+from astrbot_plugin_bangumi.tests.render.image_assertions import assert_png_image
+
+DATA_URI = (
+    "data:image/png;base64,"
+    "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO7+ZMsAAAAASUVORK5CYII="
+)
 
 
-@pytest.mark.asyncio
-async def test_render_subject_card_success() -> None:
-    # 准备测试数据
-    subject_data = {
+def build_subject_data() -> dict[str, object]:
+    return {
         "date": "2026-01-11",
         "platform": "TV",
-        "images": {
-            "small": "https://lain.bgm.tv/r/200/pic/cover/l/71/50/525565_OxOv7.jpg",
-            "grid": "https://lain.bgm.tv/r/100/pic/cover/l/71/50/525565_OxOv7.jpg",
-            "large": "https://lain.bgm.tv/pic/cover/l/71/50/525565_OxOv7.jpg",
-            "medium": "https://lain.bgm.tv/r/800/pic/cover/l/71/50/525565_OxOv7.jpg",
-            "common": "https://lain.bgm.tv/r/400/pic/cover/l/71/50/525565_OxOv7.jpg",
-        },
-        "summary": "总是活力充沛，却又很在意周遭目光的女孩：铃木实优\r\n以及个性文静，却能清楚表达自己意见的男生：谷悠介\r\n\r\n本次故事将讲述这两人的生活点滴。铃木喜欢着谷，却一直无法鼓起勇气告白。直到某天，两人放学回家时走在同一条路上并牵起了手。借由该契机，两人相互倾诉对彼此的好感并开始了交往。同学们虽然感到讶异，但也都很支持两人的恋情。\r\n这部恋爱喜剧描写的，正是这对个性截然相反的两人，在彼此尊重之下慢慢加深互相的理解，并与朋友们一同度过的校园生活点滴。如此温暖的故事就此开幕！\r\n\r\n\r\n\r\n[简介原文]\r\nいつも元気いっぱいだけど周りの目を気にしてしまう女子・鈴木と、\r\n物静かだけど自分の意見をしっかり言える男子・谷。\r\n正反対な二人が误解や勘違いをしながらもお互いを尊重し、\r\nゆっくりと理解を深めていく姿と、友人たちとの学校生活を描くラブコメディ。",
+        "image_url": DATA_URI,
+        "summary": (
+            "总是活力充沛,却又很在意周遭目光的女孩与个性文静的男生,在校园生活中"
+            "慢慢靠近彼此,是一部气质轻盈但情感推进很扎实的青春恋爱喜剧。"
+        ),
         "name": "正反対な君と僕",
         "name_cn": "相反的你和我",
         "tags": [
             {"name": "恋爱", "count": 1356},
             {"name": "校园", "count": 1071},
-            {"name": "2026年1月", "count": 1033},
             {"name": "漫画改", "count": 823},
+            {"name": "TV", "count": 120},
         ],
         "infobox": [
             {"key": "中文名", "value": "相反的你和我"},
-            {"key": "别名", "value": [{"v": "正相反的你与我"}]},
             {"key": "话数", "value": "12"},
             {"key": "放送开始", "value": "2026年1月11日"},
         ],
         "total_episodes": 12,
         "id": 525565,
         "type": 2,
+        "episodes": [
+            {"ep": 1, "type": 0, "airdate": "2026-01-11", "comment": 10},
+            {"ep": 2, "type": 0, "airdate": "2026-01-18", "comment": 5},
+            {"ep": 3, "type": 0, "airdate": "2026-01-25", "comment": 0},
+        ],
         "rating": {
             "rank": 677,
             "total": 2517,
@@ -54,19 +60,85 @@ async def test_render_subject_card_success() -> None:
         },
     }
 
-    renderer = SubjectRenderer()
 
-    # 运行渲染器
-    base64_image = await renderer.render_subject_card(
-        rpc_url="https://api.unitedpooh.top/rpc",
-        data=subject_data,
-        headless=True,
-        timeout=60000,
+@pytest.mark.asyncio
+async def test_render_subject_card_pillow_returns_base64() -> None:
+    renderer = SubjectRenderer(render_mode="pillow")
+
+    base64_image = await renderer.render_subject_card(build_subject_data())
+
+    assert base64_image is not None
+    assert_png_image(base64_image, (2400, 1674), require_non_blank=True)
+
+
+@pytest.mark.asyncio
+async def test_render_subject_card_pillow_includes_collection_badge() -> None:
+    renderer = SubjectRenderer(render_mode="pillow")
+    subject_data = build_subject_data()
+    subject_data["collection"] = {"doing": 7805}
+
+    base64_image = await renderer.render_subject_card(subject_data)
+
+    assert base64_image is not None
+    assert_png_image(base64_image, (2400, 1674), require_non_blank=True)
+
+
+@pytest.mark.asyncio
+async def test_render_subject_card_pillow_grows_for_full_episode_grid() -> None:
+    renderer = SubjectRenderer(render_mode="pillow")
+    subject_data = build_subject_data()
+    subject_data["total_episodes"] = 13
+    subject_data["episodes"] = [
+        {
+            "ep": episode_number,
+            "type": 0,
+            "airdate": f"2026-01-{episode_number:02d}",
+            "comment": 1,
+        }
+        for episode_number in range(1, 14)
+    ]
+
+    base64_image = await renderer.render_subject_card(subject_data)
+
+    assert base64_image is not None
+    assert_png_image(base64_image, (2400, 1866), require_non_blank=True)
+
+
+@pytest.mark.asyncio
+async def test_render_subject_card_pillow_caps_long_episode_grid() -> None:
+    renderer = SubjectRenderer(render_mode="pillow")
+    subject_data = build_subject_data()
+    subject_data["total_episodes"] = 60
+    subject_data["episodes"] = [
+        {
+            "ep": episode_number,
+            "type": 0,
+            "airdate": f"2026-01-{min(episode_number, 28):02d}",
+            "comment": 1,
+        }
+        for episode_number in range(1, 61)
+    ]
+
+    base64_image = await renderer.render_subject_card(subject_data)
+
+    assert base64_image is not None
+    assert_png_image(base64_image, (2400, 1866), require_non_blank=True)
+
+
+@pytest.mark.asyncio
+async def test_render_subject_card_pillow_with_failed_image_still_succeeds(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    renderer = SubjectRenderer(render_mode="pillow")
+    subject_data = build_subject_data()
+    subject_data["image_url"] = "https://example.invalid/cover.png"
+
+    monkeypatch.setattr(
+        "astrbot_plugin_bangumi.src.render.subject_renderer.load_image_source",
+        AsyncMock(return_value=None),
     )
 
-    # 验证结果
-    assert base64_image is not None, "[-] 渲染失败，未返回 Base64 字符串"
-    assert isinstance(base64_image, str), "返回值应为 Base64 字符串"
-    assert len(base64_image) > 100, "Base64 字符串过短"
+    base64_image = await renderer.render_subject_card(subject_data)
 
-    logger.info(f"[+] 渲染成功！图片长度: {len(base64_image)} 字符")
+    assert base64_image is not None
+    assert_png_image(base64_image, (2400, 1674), require_non_blank=True)

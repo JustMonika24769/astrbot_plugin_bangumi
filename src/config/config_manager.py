@@ -3,42 +3,70 @@ from pathlib import Path
 import yaml
 from astrbot.api import AstrBotConfig, logger
 
+from ..render.render_mode import RenderMode, normalize_render_mode
+
 
 class ConfigManager:
     def __init__(self, config: AstrBotConfig) -> None:
         self.config = config
 
+    def _get_str(self, key: str, default: str) -> str:
+        value = self.config.get(key, default)
+        return value if isinstance(value, str) else default
+
+    def _get_int(self, key: str, default: int) -> int:
+        value = self.config.get(key, default)
+        if isinstance(value, int) and not isinstance(value, bool):
+            return value
+        if isinstance(value, str):
+            try:
+                return int(value)
+            except ValueError:
+                return default
+        return default
+
     def get_access_token(self) -> str:
         """
         获取bangumi的access_token
         """
-        return self.config.get("access_token", "")
+        return self._get_str("access_token", "")
 
     def get_user_agent(self) -> str:
-        user_agent = self.config.get("user_agent", "")
+        user_agent = self._get_str("user_agent", "")
         if user_agent == "":
             with open(
                 f"{Path(__file__).resolve().parent.parent.parent}/metadata.yaml",
                 encoding="utf-8",
             ) as f:
                 metadata = yaml.safe_load(f)
-                user_agent = f"AstrBot-Bangumi-Plugin/{metadata['version']} (https://github.com/united-pooh/astrbot_plugin_bangumi)"
+                version = "unknown"
+                if isinstance(metadata, dict):
+                    version_value = metadata.get("version")
+                    if version_value is not None:
+                        version = str(version_value)
+                user_agent = (
+                    f"AstrBot-Bangumi-Plugin/{version} "
+                    "(https://github.com/united-pooh/astrbot_plugin_bangumi)"
+                )
         return user_agent
 
     def get_max_fuzzy_results(self) -> int:
-        return self.config.get("max_fuzzy_results", 5)
+        return self._get_int("max_fuzzy_results", 5)
 
     def get_proxy_http(self) -> str:
-        return self.config.get("proxy_http", "127.0.0.1")
+        return self._get_str("proxy_http", "")
 
     def get_port(self) -> str:
-        return self.config.get("port", "7890")
+        return self._get_str("port", "")
 
     def get_max_retries(self) -> int:
-        return self.config.get("max_retries", 3)
+        return self._get_int("max_retries", 3)
 
     def get_render_server_url(self) -> str:
-        return self.config.get("render_server_url", "https://api.unitedpooh.top/rpc")
+        return self._get_str("render_server_url", "https://api.unitedpooh.top/rpc")
+
+    def get_render_mode(self) -> RenderMode:
+        return normalize_render_mode(self.config.get("render_mode", "html"))
 
     def save_config(self) -> None:
         """
