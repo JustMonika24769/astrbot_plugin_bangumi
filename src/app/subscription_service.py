@@ -1,36 +1,34 @@
-from typing import TYPE_CHECKING
+import logging
 
-import aiohttp
-from astrbot.api import logger
-from astrbot.api.star import StarTools
-from astrbot.core.message.message_event_result import MessageChain
-
-from ..config import ConfigManager
-from ..db import BangumiRepository
 from ..domain.contracts import SubscribeCandidate, SubscribeMatch, UnsubscribeMatch
 from ..domain.exceptions import BangumiApiError, DatabaseError, SubscriptionError
 from ..domain.schemas import Episode
 from ..domain.types import ImageSize, SubjectType
-from ..render import EpisodeRenderer
+from .ports import (
+    BangumiApiPort,
+    EpisodeRendererPort,
+    GroupNotifierPort,
+    RenderConfigPort,
+    SubscriptionStorePort,
+)
 
-if TYPE_CHECKING:
-    from ..api import BangumiService
+logger = logging.getLogger(__name__)
 
 
 class SubscriptionService:
     def __init__(
         self,
-        repository: BangumiRepository,
-        service: "BangumiService",
-        config_manager: ConfigManager,
-        session: aiohttp.ClientSession | None = None,
+        store: SubscriptionStorePort,
+        api: BangumiApiPort,
+        render_config: RenderConfigPort,
+        renderer: EpisodeRendererPort,
+        notifier: GroupNotifierPort,
     ) -> None:
-        self.storage = repository
-        self.service = service
-        self.config_manager = config_manager
-        self.renderer = EpisodeRenderer(
-            session=session, render_mode=self.config_manager.get_render_mode()
-        )
+        self.storage = store
+        self.service = api
+        self.render_config = render_config
+        self.renderer = renderer
+        self.notifier = notifier
 
     async def get_subscribe_candidates(
         self, keyword: str, limit: int
@@ -284,25 +282,27 @@ class SubscriptionService:
         if not subscribed_groups:
             return
 
-        base64_image = await self.renderer.render_episode(
-            episode,
-            rpc_url=self.config_manager.get_render_server_url(),
-            max_retries=self.config_manager.get_max_retries(),
-            variant=self.config_manager.get_episode_card_template(),
+        fallback_text = (
+            f"🔔 番剧《{subject_name}》更新啦!\n"
+            f"第 {episode.ep} 集:{episode.name_cn or episode.name}"
         )
-
-        chain = MessageChain()
-        if base64_image:
-            chain = chain.base64_image(base64_image)
-        else:
-            chain = chain.message(
-                f"🔔 番剧《{subject_name}》更新啦!\n第 {episode.ep} 集:{episode.name_cn or episode.name}"
+        try:
+            base64_image = await self.renderer.render_episode(
+                episode,
+                rpc_url=self.render_config.get_render_server_url(),
+                max_retries=self.render_config.get_max_retries(),
+                variant=self.render_config.get_episode_card_template(),
             )
+        except Exception as e:
+            logger.error(f"渲染《{subject_name}》更新通知失败: {e}")
+            base64_image = None
 
         for group_id in subscribed_groups:
             try:
-                await StarTools.send_message_by_id(
-                    type="GroupMessage", id=group_id, message_chain=chain
+                await self.notifier.send_episode_update(
+                    group_id=group_id,
+                    image_base64=base64_image,
+                    fallback_text=fallback_text,
                 )
                 logger.info(f"向群组 {group_id} 发送《{subject_name}》更新通知成功")
             except Exception as e:
