@@ -18,6 +18,7 @@ from .contracts import (
     SubscribeMatch,
     UnsubscribeMatch,
     UserDetailsResponse,
+    is_episode_card_variant,
 )
 from .exceptions import (
     BangumiApiError,
@@ -59,4 +60,5 @@ __all__ = [
     "SubscriptionError",
     "UnsubscribeMatch",
     "UserDetailsResponse",
+    "is_episode_card_variant",
 ]

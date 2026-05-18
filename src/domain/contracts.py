@@ -1,4 +1,4 @@
-from typing import Literal, TypeAlias, TypedDict
+from typing import Literal, TypeAlias, TypedDict, TypeGuard
 
 from ..bangumi_types import JsonValue
 
@@ -120,3 +120,7 @@ EPISODE_CARD_VARIANTS: tuple[EpisodeCardVariant, ...] = (
 DEFAULT_EPISODE_CARD_VARIANT: EpisodeCardVariant = "cinematic_poster"
 RenderData: TypeAlias = dict[str, JsonValue]
 MessageResult: TypeAlias = object
+
+
+def is_episode_card_variant(value: object) -> TypeGuard[EpisodeCardVariant]:
+    return isinstance(value, str) and value in EPISODE_CARD_VARIANTS

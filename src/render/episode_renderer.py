@@ -9,6 +9,7 @@ from ..domain.contracts import (
     EPISODE_CARD_VARIANTS,
     EpisodeCardVariant,
     RenderData,
+    is_episode_card_variant,
 )
 from ..domain.schemas import Episode
 from .base_renderer import BaseRenderer
@@ -71,8 +72,8 @@ def _format_duration_label(data: RenderData) -> str:
 def _normalize_episode_variant(variant: object | None) -> EpisodeCardVariant:
     if variant is None:
         return DEFAULT_EPISODE_CARD_VARIANT
-    if isinstance(variant, str) and variant in EPISODE_CARD_VARIANTS:
-        return cast(EpisodeCardVariant, variant)
+    if is_episode_card_variant(variant):
+        return variant
     known = ", ".join(EPISODE_CARD_VARIANTS)
     raise ValueError(
         f"Unknown episode card variant {variant!r}; expected one of: {known}"
