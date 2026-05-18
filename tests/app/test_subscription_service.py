@@ -37,6 +37,7 @@ def mock_config_manager() -> MagicMock:
     config_manager.get_render_mode.return_value = "html"
     config_manager.get_render_server_url.return_value = "rpc"
     config_manager.get_max_retries.return_value = 1
+    config_manager.get_episode_card_template.return_value = "cinematic_poster"
     return config_manager
 
 
@@ -123,6 +124,35 @@ async def test_notify_subscribers_skips_without_groups(
     await service._notify_subscribers(_episode(), "1", "番")
 
     service.renderer.render_episode.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_notify_subscribers_passes_configured_episode_template(
+    mock_repo: MagicMock,
+    mock_service: MagicMock,
+    mock_config_manager: MagicMock,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    mock_repo.get_subject_subscribers.return_value = ["group"]
+    mock_config_manager.get_episode_card_template.return_value = "pastel_lightbox"
+    send_message_by_id = AsyncMock()
+    monkeypatch.setattr(
+        "astrbot_plugin_bangumi.src.app.subscription_service.StarTools.send_message_by_id",
+        send_message_by_id,
+    )
+    service = SubscriptionService(mock_repo, mock_service, mock_config_manager)
+    service.renderer.render_episode = AsyncMock(return_value="image")
+    episode = _episode()
+
+    await service._notify_subscribers(episode, "1", "番")
+
+    service.renderer.render_episode.assert_awaited_once_with(
+        episode,
+        rpc_url="rpc",
+        max_retries=1,
+        variant="pastel_lightbox",
+    )
+    send_message_by_id.assert_awaited_once()
 
 
 def _episode() -> Episode:

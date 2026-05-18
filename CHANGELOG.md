@@ -1,10 +1,12 @@
 # Changelog
 
-## v1.2.0
+## v1.3.0
 
 ### 架构与渲染
 - **结构分层**: 新增 `src/domain`、`src/api`、`src/app` 分层,保留 `src.services` 旧路径兼容导出
 - **本地策略分析**: 新增只读脚本 `python scripts/analyze_bangumi_strategy.py`,用于本地采集 Bangumi 收藏与可选 AstrBot SQLite 订阅数据并生成策略分析报告,不影响插件运行时行为
+- **单集卡片变体**: 单集更新卡片保留 `pastel_lightbox`、`editorial_digest`、`cinematic_poster` 三种模板,默认使用第三个 `cinematic_poster`,并支持通过 `episode_card_template` 或 `/bgm模板` 切换
+- **单集卡片预览**: 新增 `python scripts/render_episode_variants.py`,默认使用 Bangumi API 真实条目与剧集数据生成三种卡片预览图,并支持 HTML/Pillow 像素对齐报告
 - **Pillow 渲染退避**: 条目、单集、放送表在 `render_mode=pillow` 下使用纯 Pillow 出图,避免回落到 Playwright
 - **默认渲染链路**: 默认按 RPC -> Playwright -> Pillow 顺序自动退避,并在初始化时后台预热 Pillow 字体,避免阻塞插件启动
 - **Pillow/Playwright 对齐**: 条目、单集、放送表最终尺寸、宽高比与 alpha 均通过对齐校验,显著变化像素分别为 6.115%、3.038%、4.203%;最终证据目录为 `rendered_images/render-mode-comparison-2026-05-16-group-1-final`,精确字形/浏览器栅格一致性仍作为已知实践限制

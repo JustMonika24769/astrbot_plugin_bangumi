@@ -1,4 +1,4 @@
-from typing import TypeAlias, TypedDict
+from typing import Literal, TypeAlias, TypedDict
 
 from ..bangumi_types import JsonValue
 
@@ -107,5 +107,16 @@ class UnsubscribeMatch(TypedDict):
     name: str
 
 
+EpisodeCardVariant: TypeAlias = Literal[
+    "pastel_lightbox",
+    "editorial_digest",
+    "cinematic_poster",
+]
+EPISODE_CARD_VARIANTS: tuple[EpisodeCardVariant, ...] = (
+    "pastel_lightbox",
+    "editorial_digest",
+    "cinematic_poster",
+)
+DEFAULT_EPISODE_CARD_VARIANT: EpisodeCardVariant = "cinematic_poster"
 RenderData: TypeAlias = dict[str, JsonValue]
 MessageResult: TypeAlias = object

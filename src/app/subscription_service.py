@@ -288,6 +288,7 @@ class SubscriptionService:
             episode,
             rpc_url=self.config_manager.get_render_server_url(),
             max_retries=self.config_manager.get_max_retries(),
+            variant=self.config_manager.get_episode_card_template(),
         )
 
         chain = MessageChain()

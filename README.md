@@ -1,7 +1,7 @@
 <div align="center">
 
 # Bangumi 搜索插件使用指南
-[![repo](https://img.shields.io/badge/repo-v1.2.0-blue.svg)](https://github.com/united-pooh/astrbot_plugin_bangumi)
+[![version](https://img.shields.io/badge/version-v1.3.0-blue.svg)](https://github.com/united-pooh/astrbot_plugin_bangumi)
 [![License](https://img.shields.io/badge/license-Apache%202.0-green.svg)](LICENSE-2.0)
 [![AstrBot](https://img.shields.io/badge/AstrBot-%3E%3D4.16.0-orange.svg)](https://github.com/Soulter/AstrBot)
 [![Python](https://img.shields.io/badge/python-3.12%2B-blue.svg)](https://www.python.org/)
@@ -37,6 +37,7 @@
 | `/today` | 获取今日番剧更新 | 无 | `/today` |
 | `/追番` | 订阅番剧,更新时自动通知 | `<关键词\|ID>` | `/追番 进击的巨人` |
 | `/弃坑` | 取消订阅番剧 | `<关键词\|ID>` | `/弃坑 进击的巨人` |
+| `/bgm模板` | 查看或切换单集更新卡片模板 | `[1\|2\|3\|模板名]` | `/bgm模板 3` |
 
 
 **功能亮点**:
@@ -58,6 +59,7 @@
 | `max_retries` | int | `3` | 网络错误最大重试次数(范围:1–10) |
 | `render_server_url` | string | `https://api.unitedpooh.top/rpc` | 远程渲染图片的 RPC 服务器地址 |
 | `render_mode` | string | `html` | 渲染模式;默认 `html` 会按 RPC -> Playwright -> Pillow 自动退避,也可设为 `pillow` 强制使用 Pillow |
+| `episode_card_template` | string | `cinematic_poster` | 单集更新卡片模板;可选 `pastel_lightbox`、`editorial_digest`、`cinematic_poster`,第三个为默认 |
 
 ### Access Token 获取
 
@@ -73,6 +75,22 @@
 - **Playwright 浏览器内核**:用于 HTML/RPC 不可用时的本地浏览器渲染
 
 如果配置 `render_mode=pillow`,条目卡、单集卡和放送表会直接使用纯 Pillow 渲染。
+
+### 单集卡片预览
+
+单集更新卡片保留三种候选模板:`pastel_lightbox`、`editorial_digest`、`cinematic_poster`。默认使用第三个 `cinematic_poster`,也可以在 `_conf_schema.json` 的 `episode_card_template` 中配置,或通过 `/bgm模板 1`、`/bgm模板 2`、`/bgm模板 3` 指令切换。三种模板都会通过 Pillow 输出,HTML 链路会内嵌同一张 Pillow 预渲染图片以保持像素级对齐。可用本地脚本从 Bangumi API 拉取真实条目与剧集数据,生成真实数据对比图:
+
+```bash
+python scripts/render_episode_variants.py
+```
+
+生成结果会写入本地忽略目录 `rendered_images/episode-card-variants/`,用于设计挑选和渲染回归检查。需要验证 HTML 与 Pillow 兼容性时,可同时生成像素对齐报告:
+
+```bash
+python scripts/render_episode_variants.py --verify-pixel-alignment
+```
+
+脚本默认搜索 `葬送的芙莉莲`,也可用 `--subject-id` 或 `--subject-query` 指定真实 Bangumi 条目;自动化测试仍可用 `--data-source fixture` 走离线夹具。
 
 如果遇到环境问题,可尝试手动安装:
 ```bash

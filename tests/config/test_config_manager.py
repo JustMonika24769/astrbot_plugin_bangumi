@@ -33,6 +33,34 @@ def test_get_str_rejects_non_string_proxy_values() -> None:
     assert manager.get_port() == ""
 
 
+def test_get_episode_card_template_reads_valid_config() -> None:
+    manager = _manager({"episode_card_template": "editorial_digest"})
+
+    assert manager.get_episode_card_template() == "editorial_digest"
+
+
+def test_get_episode_card_template_falls_back_to_default() -> None:
+    assert _manager({}).get_episode_card_template() == "cinematic_poster"
+    assert (
+        _manager(
+            {"episode_card_template": "risograph_zine"}
+        ).get_episode_card_template()
+        == "cinematic_poster"
+    )
+
+
+def test_set_episode_card_template_updates_config_value() -> None:
+    config = MagicMock()
+    config.get.side_effect = lambda key, default=None: default
+    manager = ConfigManager(config)
+
+    manager.set_episode_card_template("pastel_lightbox")
+
+    config.__setitem__.assert_called_once_with(
+        "episode_card_template", "pastel_lightbox"
+    )
+
+
 def test_user_agent_uses_config_value() -> None:
     assert _manager({"user_agent": "custom"}).get_user_agent() == "custom"
 

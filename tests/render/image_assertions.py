@@ -2,8 +2,9 @@ from __future__ import annotations
 
 import base64
 import io
+from collections.abc import Sequence
 
-from PIL import Image
+from PIL import Image, ImageChops, ImageStat
 
 from astrbot_plugin_bangumi.src.render.pillow_utils import is_visually_blank
 
@@ -62,3 +63,20 @@ def assert_alpha_has_no_large_translucent_surface(
             translucent += 1
     assert transparent / pixels * 100 <= max_translucent_percent
     assert translucent / pixels * 100 <= max_translucent_percent
+
+
+def assert_images_are_visually_distinct(
+    images: Sequence[Image.Image],
+    *,
+    min_rms_delta: float = 14.0,
+) -> None:
+    assert len(images) >= 2
+    prepared = [
+        image.convert("RGB").resize((72, 96), Image.Resampling.BILINEAR)
+        for image in images
+    ]
+    for left_index, left in enumerate(prepared):
+        for right_index in range(left_index + 1, len(prepared)):
+            diff = ImageChops.difference(left, prepared[right_index])
+            rms = sum(ImageStat.Stat(diff).rms) / 3
+            assert rms >= min_rms_delta
