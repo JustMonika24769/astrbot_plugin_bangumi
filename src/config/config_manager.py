@@ -3,6 +3,11 @@ from pathlib import Path
 import yaml
 from astrbot.api import AstrBotConfig, logger
 
+from ..domain import (
+    DEFAULT_EPISODE_CARD_VARIANT,
+    EpisodeCardVariant,
+    is_episode_card_variant,
+)
 from ..render.render_mode import RenderMode, normalize_render_mode
 
 
@@ -67,6 +72,15 @@ class ConfigManager:
 
     def get_render_mode(self) -> RenderMode:
         return normalize_render_mode(self.config.get("render_mode", "html"))
+
+    def get_episode_card_template(self) -> EpisodeCardVariant:
+        value = self.config.get("episode_card_template", DEFAULT_EPISODE_CARD_VARIANT)
+        if is_episode_card_variant(value):
+            return value
+        return DEFAULT_EPISODE_CARD_VARIANT
+
+    def set_episode_card_template(self, template: EpisodeCardVariant) -> None:
+        self.config["episode_card_template"] = template
 
     def save_config(self) -> None:
         """

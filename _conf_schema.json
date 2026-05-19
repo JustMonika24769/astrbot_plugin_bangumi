@@ -51,5 +51,12 @@
     "hint": "html 为默认自动链路：RPC -> Playwright -> Pillow；pillow 为强制使用 Pillow",
     "default": "html",
     "options": ["html", "pillow"]
+  },
+  "episode_card_template": {
+    "description": "单集更新卡片模板",
+    "type": "string",
+    "hint": "1=pastel_lightbox，2=editorial_digest，3=cinematic_poster；默认使用第 3 个海报模板",
+    "default": "cinematic_poster",
+    "options": ["pastel_lightbox", "editorial_digest", "cinematic_poster"]
   }
 }

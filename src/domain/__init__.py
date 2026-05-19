@@ -1,7 +1,10 @@
 from .contracts import (
+    DEFAULT_EPISODE_CARD_VARIANT,
+    EPISODE_CARD_VARIANTS,
     CalendarDay,
     CalendarItem,
     CalendarWeekday,
+    EpisodeCardVariant,
     EpisodeItem,
     EpisodeListResponse,
     MessageResult,
@@ -15,6 +18,7 @@ from .contracts import (
     SubscribeMatch,
     UnsubscribeMatch,
     UserDetailsResponse,
+    is_episode_card_variant,
 )
 from .exceptions import (
     BangumiApiError,
@@ -27,6 +31,8 @@ from .schemas import Episode
 from .types import CommonTag, ImageSize, PersonType, SubjectType
 
 __all__ = [
+    "DEFAULT_EPISODE_CARD_VARIANT",
+    "EPISODE_CARD_VARIANTS",
     "BangumiApiError",
     "BangumiRateLimitError",
     "CalendarDay",
@@ -35,6 +41,7 @@ __all__ = [
     "CommonTag",
     "DatabaseError",
     "Episode",
+    "EpisodeCardVariant",
     "EpisodeItem",
     "EpisodeListResponse",
     "ImageSize",
@@ -53,4 +60,5 @@ __all__ = [
     "SubscriptionError",
     "UnsubscribeMatch",
     "UserDetailsResponse",
+    "is_episode_card_variant",
 ]

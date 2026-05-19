@@ -28,6 +28,18 @@ def test_should_requeue_subscribe_command() -> None:
     assert BangumiPlugin._should_requeue_subscribe_command("普通消息") is False
 
 
+def test_normalize_episode_card_template_accepts_names_and_order() -> None:
+    assert BangumiPlugin._normalize_episode_card_template("1") == "pastel_lightbox"
+    assert BangumiPlugin._normalize_episode_card_template("2") == "editorial_digest"
+    assert BangumiPlugin._normalize_episode_card_template("3") == "cinematic_poster"
+    assert (
+        BangumiPlugin._normalize_episode_card_template("cinematic-poster")
+        == "cinematic_poster"
+    )
+    assert BangumiPlugin._normalize_episode_card_template("默认") == "cinematic_poster"
+    assert BangumiPlugin._normalize_episode_card_template("unknown") is None
+
+
 def test_build_proxy_url_requires_host_and_port() -> None:
     assert BangumiPlugin._build_proxy_url("", "7890") is None
     assert BangumiPlugin._build_proxy_url("127.0.0.1", "") is None
@@ -85,6 +97,60 @@ async def test_today_dispatches_to_search_service() -> None:
 
     assert results == ["today"]
     plugin.search_service.handle_today.assert_called_once_with(event)
+
+
+@pytest.mark.asyncio
+async def test_episode_card_template_command_shows_current_template() -> None:
+    plugin = BangumiPlugin.__new__(BangumiPlugin)
+    plugin.config_manager = MagicMock()
+    plugin.config_manager.get_episode_card_template.return_value = "cinematic_poster"
+    event = _event()
+
+    results = [
+        result async for result in BangumiPlugin.episode_card_template(plugin, event)
+    ]
+
+    assert len(results) == 1
+    assert "当前单集卡片模板: cinematic_poster" in results[0]
+    assert "1. pastel_lightbox" in results[0]
+    assert "3. cinematic_poster" in results[0]
+    plugin.config_manager.set_episode_card_template.assert_not_called()
+    plugin.config_manager.save_config.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_episode_card_template_command_updates_config() -> None:
+    plugin = BangumiPlugin.__new__(BangumiPlugin)
+    plugin.config_manager = MagicMock()
+    event = _event()
+
+    results = [
+        result
+        async for result in BangumiPlugin.episode_card_template(plugin, event, "2")
+    ]
+
+    assert results == ["✅ 已切换单集卡片模板为 editorial_digest - Episode digest"]
+    plugin.config_manager.set_episode_card_template.assert_called_once_with(
+        "editorial_digest"
+    )
+    plugin.config_manager.save_config.assert_called_once()
+
+
+@pytest.mark.asyncio
+async def test_episode_card_template_command_rejects_unknown_template() -> None:
+    plugin = BangumiPlugin.__new__(BangumiPlugin)
+    plugin.config_manager = MagicMock()
+    event = _event()
+
+    results = [
+        result
+        async for result in BangumiPlugin.episode_card_template(plugin, event, "bad")
+    ]
+
+    assert len(results) == 1
+    assert "❌ 未知单集卡片模板: bad" in results[0]
+    plugin.config_manager.set_episode_card_template.assert_not_called()
+    plugin.config_manager.save_config.assert_not_called()
 
 
 @pytest.mark.asyncio

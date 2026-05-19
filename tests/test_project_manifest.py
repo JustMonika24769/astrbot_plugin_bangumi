@@ -99,10 +99,20 @@ def test_readme_documents_registered_commands_and_dependency_behavior() -> None:
     readme = (PROJECT_ROOT / "README.md").read_text()
 
     commands = set(re.findall(r'@filter\.command\("([^"]+)"\)', main_py))
+    readme_commands = set(re.findall(r"^\| `/([^`]+)` \|", readme, re.MULTILINE))
 
     assert commands
-    assert all(f"`/{command}`" in readme for command in commands)
+    assert readme_commands == commands
     assert "插件首次运行时会自动检查并安装" not in readme
+
+
+def test_readme_version_badge_matches_metadata_version() -> None:
+    metadata = yaml.safe_load((PROJECT_ROOT / "metadata.yaml").read_text())
+    readme = (PROJECT_ROOT / "README.md").read_text()
+
+    assert (
+        f"https://img.shields.io/badge/version-{metadata['version']}-blue.svg" in readme
+    )
 
 
 def test_plugin_uses_metadata_instead_of_deprecated_register_decorator() -> None:
@@ -148,6 +158,12 @@ def test_config_schema_exposes_render_mode_options() -> None:
     schema = json.loads((PROJECT_ROOT / "_conf_schema.json").read_text())
 
     assert schema["render_mode"]["options"] == ["html", "pillow"]
+    assert schema["episode_card_template"]["default"] == "cinematic_poster"
+    assert schema["episode_card_template"]["options"] == [
+        "pastel_lightbox",
+        "editorial_digest",
+        "cinematic_poster",
+    ]
 
 
 def test_gitignore_excludes_generated_artifacts() -> None:

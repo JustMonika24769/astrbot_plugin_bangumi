@@ -32,6 +32,7 @@ def mock_config_manager() -> MagicMock:
     config_manager.get_render_mode.return_value = "pillow"
     config_manager.get_render_server_url.return_value = "https://api.unitedpooh.top/rpc"
     config_manager.get_max_retries.return_value = 1
+    config_manager.get_episode_card_template.return_value = "cinematic_poster"
     return config_manager
 
 

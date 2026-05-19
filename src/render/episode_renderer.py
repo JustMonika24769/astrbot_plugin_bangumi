@@ -4,11 +4,20 @@ from typing import cast
 from astrbot.api import logger
 from PIL import Image, ImageDraw
 
-from ..domain.contracts import RenderData
+from ..domain.contracts import (
+    DEFAULT_EPISODE_CARD_VARIANT,
+    EPISODE_CARD_VARIANTS,
+    EpisodeCardVariant,
+    RenderData,
+    is_episode_card_variant,
+)
 from ..domain.schemas import Episode
 from .base_renderer import BaseRenderer
 from .pillow_utils import (
+    add_shadow,
+    blend_color,
     create_placeholder_image,
+    draw_pill,
     draw_text_block,
     fit_cover,
     get_font,
@@ -21,6 +30,8 @@ from .pillow_utils import (
 from .pillow_utils import (
     stringify_value as _stringify_value,
 )
+
+_EPISODE_CARD_SIZE = (2304, 3072)
 
 
 def _extract_episode_titles(data: RenderData) -> tuple[str, str]:
@@ -58,60 +69,122 @@ def _format_duration_label(data: RenderData) -> str:
     return "24min"
 
 
-def _draw_episode_card_image(
+def _normalize_episode_variant(variant: object | None) -> EpisodeCardVariant:
+    if variant is None:
+        return DEFAULT_EPISODE_CARD_VARIANT
+    if is_episode_card_variant(variant):
+        return variant
+    known = ", ".join(EPISODE_CARD_VARIANTS)
+    raise ValueError(
+        f"Unknown episode card variant {variant!r}; expected one of: {known}"
+    )
+
+
+def _format_episode_label(render_data: RenderData) -> str:
+    episode_number = render_data.get("ep")
+    sort_number = render_data.get("sort")
+    number_source = sort_number if sort_number not in (None, "") else episode_number
+    if isinstance(number_source, int):
+        return f"EP.{number_source:02d}"
+    if isinstance(number_source, str) and number_source.isdigit():
+        return f"EP.{int(number_source):02d}"
+    if isinstance(episode_number, int):
+        return f"EP.{episode_number:02d}"
+    return "EP.01"
+
+
+def _format_airdate_parts(render_data: RenderData) -> tuple[str, str]:
+    airdate = _stringify_value(render_data.get("airdate"))
+    year = airdate.split("-", 1)[0] if "-" in airdate else airdate
+    return airdate or "TBA", year or "2026"
+
+
+def _format_comment_label(render_data: RenderData) -> str:
+    comment = render_data.get("comment")
+    if isinstance(comment, int) and comment > 0:
+        return f"{comment} comments"
+    return ""
+
+
+def _format_metadata(
+    render_data: RenderData, *, prefer_airdate: bool = False
+) -> list[str]:
+    airdate, year = _format_airdate_parts(render_data)
+    duration = _stringify_value(
+        render_data.get("duration_label")
+    ) or _format_duration_label(render_data)
+    metadata = [
+        airdate if prefer_airdate else year,
+        duration,
+        _format_comment_label(render_data),
+    ]
+    return [item for item in metadata if item]
+
+
+def _fit_episode_cover(
     render_data: RenderData,
     cover_image: Image.Image | None,
-) -> str:
-    width, height = 2304, 3072
+    size: tuple[int, int],
+    *,
+    radius: int = 0,
+) -> Image.Image:
+    primary_title, _secondary_title = _extract_episode_titles(render_data)
+    if cover_image is None:
+        return create_placeholder_image(size, primary_title, get_image_accent(None))
+    return fit_cover(cover_image, size, radius)
+
+
+def _draw_vertical_gradient(
+    canvas: Image.Image,
+    start_y: int,
+    end_y: int,
+    *,
+    start_alpha: int,
+    end_alpha: int,
+) -> None:
+    width = canvas.width
+    gradient = Image.new("RGBA", canvas.size, (0, 0, 0, 0))
+    gradient_draw = ImageDraw.Draw(gradient)
+    for y in range(max(0, start_y), min(canvas.height, end_y)):
+        ratio = (y - start_y) / max(end_y - start_y - 1, 1)
+        alpha = int(start_alpha + (end_alpha - start_alpha) * ratio)
+        gradient_draw.line((0, y, width, y), fill=(0, 0, 0, alpha))
+    canvas.alpha_composite(gradient)
+
+
+def _draw_cinematic_poster(
+    render_data: RenderData,
+    cover_image: Image.Image | None,
+) -> Image.Image:
+    width, height = _EPISODE_CARD_SIZE
     primary_title, _secondary_title = _extract_episode_titles(render_data)
     accent = get_image_accent(cover_image)
 
-    cover = cover_image
-    if cover is None:
-        canvas = Image.new("RGBA", (width, height), (9, 9, 11, 255))
-        fallback = create_placeholder_image((width, height), primary_title, accent)
-        canvas.alpha_composite(fallback)
+    canvas = _fit_episode_cover(render_data, cover_image, _EPISODE_CARD_SIZE)
+    if canvas.mode != "RGBA":
+        canvas = canvas.convert("RGBA")
+    if cover_image is None:
         draw = ImageDraw.Draw(canvas)
         icon_font = get_font(260, bold=True)
-        icon = "🎬"
+        icon = "EP"
         icon_width, icon_height = measure_text(draw, icon, icon_font)
         draw.text(
             ((width - icon_width) // 2, (height - icon_height) // 2 - 420),
             icon,
             font=icon_font,
-            fill=(36, 36, 39, 255),
+            fill=(*blend_color(accent, 0.25, (20, 20, 24)), 210),
         )
-    else:
-        canvas = fit_cover(cover, (width, height), 0)
-        if canvas.mode != "RGBA":
-            canvas = canvas.convert("RGBA")
 
-    gradient = Image.new("RGBA", (width, height), (0, 0, 0, 0))
-    gradient_draw = ImageDraw.Draw(gradient)
-    gradient_start = int(height * 0.4)
-    for y in range(gradient_start, height):
-        ratio = (y - gradient_start) / max(height - gradient_start - 1, 1)
-        if ratio < 0.3:
-            alpha = int(76 * (ratio / 0.3))
-        elif ratio < 0.6:
-            alpha = int(76 + (178 - 76) * ((ratio - 0.3) / 0.3))
-        else:
-            alpha = int(178 + (242 - 178) * ((ratio - 0.6) / 0.4))
-        gradient_draw.line((0, y, width, y), fill=(0, 0, 0, alpha))
-    canvas.alpha_composite(gradient)
+    _draw_vertical_gradient(
+        canvas,
+        int(height * 0.4),
+        height,
+        start_alpha=0,
+        end_alpha=242,
+    )
     draw = ImageDraw.Draw(canvas)
 
-    episode_number = render_data.get("ep")
-    sort_number = render_data.get("sort")
-    number_source = sort_number if sort_number not in (None, "") else episode_number
-    episode_label = "EP.01"
-    if isinstance(episode_number, int):
-        episode_label = f"EP.{episode_number:02d}"
-    if isinstance(number_source, int):
-        episode_label = f"EP.{number_source:02d}"
-    elif isinstance(number_source, str) and number_source.isdigit():
-        episode_label = f"EP.{int(number_source):02d}"
-
+    episode_label = _format_episode_label(render_data)
     ep_font = get_font(168, bold=True)
     title_font = get_font(144, bold=True)
     meta_font = get_font(51, bold=True)
@@ -163,18 +236,7 @@ def _draw_episode_card_image(
         max_lines=1,
         line_spacing=0,
     )
-    airdate = _stringify_value(render_data.get("airdate"))
-    year = airdate.split("-", 1)[0] if "-" in airdate else airdate
-    if not year:
-        year = "2026"
-    duration = _stringify_value(
-        render_data.get("duration_label")
-    ) or _format_duration_label(render_data)
-    comment = render_data.get("comment")
-    metadata = [year, duration]
-    if isinstance(comment, int) and comment > 0:
-        metadata.append(f"{comment} comments")
-    meta_text = "   |   ".join(metadata)
+    meta_text = "   |   ".join(_format_metadata(render_data))
     metadata_y = header_y + title_row_height + title_row_margin_bottom
     draw.text((left, metadata_y), meta_text, font=meta_font, fill=(204, 204, 204, 255))
 
@@ -189,7 +251,277 @@ def _draw_episode_card_image(
             max_lines=3,
             line_spacing=34,
         )
+    return canvas
 
+
+def _draw_editorial_digest(
+    render_data: RenderData,
+    cover_image: Image.Image | None,
+) -> Image.Image:
+    width, height = _EPISODE_CARD_SIZE
+    primary_title, secondary_title = _extract_episode_titles(render_data)
+    accent = get_image_accent(cover_image)
+    ink = (30, 34, 38, 255)
+    muted = (93, 98, 105, 255)
+    paper = blend_color(accent, 0.86, (244, 241, 232))
+
+    canvas = Image.new("RGBA", (width, height), (*paper, 255))
+    draw = ImageDraw.Draw(canvas)
+    draw.rectangle(
+        (0, 0, 42, height), fill=(*blend_color(accent, 0.08, (40, 48, 56)), 255)
+    )
+    draw.rectangle(
+        (width - 104, 0, width, height),
+        fill=(*blend_color(accent, 0.68, (255, 255, 255)), 255),
+    )
+
+    cover_box = (156, 156, width - 156, 1436)
+    add_shadow(
+        canvas,
+        cover_box,
+        radius=48,
+        blur=54,
+        offset=(0, 30),
+        shadow_color=(39, 44, 52, 72),
+    )
+    cover = _fit_episode_cover(
+        render_data,
+        cover_image,
+        (cover_box[2] - cover_box[0], cover_box[3] - cover_box[1]),
+        radius=48,
+    )
+    canvas.alpha_composite(cover, (cover_box[0], cover_box[1]))
+
+    label_font = get_font(42, bold=True)
+    episode_label = _format_episode_label(render_data)
+    draw_pill(
+        draw,
+        (cover_box[0] + 54, cover_box[1] + 54),
+        "EPISODE DIGEST",
+        label_font,
+        fill=(255, 255, 255, 232),
+        text_fill=(*blend_color(accent, 0.1, (20, 26, 33)), 255),
+        padding_x=28,
+        padding_y=14,
+    )
+
+    ep_font = get_font(136, bold=True)
+    title_font = get_font(126, bold=True)
+    secondary_font = get_font(56)
+    meta_font = get_font(48, bold=True)
+    desc_font = get_font(58)
+    rule_color = (*blend_color(accent, 0.35, (55, 60, 66)), 255)
+
+    text_left = 156
+    text_right = width - 156
+    y = cover_box[3] + 132
+    draw.text((text_left, y), episode_label, font=ep_font, fill=rule_color)
+    draw.line((text_left, y + 188, text_right, y + 188), fill=rule_color, width=8)
+    y += 242
+
+    title_height = draw_text_block(
+        draw,
+        (text_left, y, text_right, y + 360),
+        primary_title,
+        title_font,
+        ink,
+        max_lines=2,
+        line_spacing=18,
+    )
+    y += max(title_height, 132) + 24
+
+    if secondary_title:
+        secondary_height = draw_text_block(
+            draw,
+            (text_left, y, text_right, y + 96),
+            secondary_title,
+            secondary_font,
+            muted,
+            max_lines=1,
+            line_spacing=0,
+        )
+        y += secondary_height + 66
+    else:
+        y += 42
+
+    meta_y = y
+    meta_parts = _format_metadata(render_data, prefer_airdate=True)
+    meta_x = text_left
+    for meta in meta_parts:
+        width_used = draw_pill(
+            draw,
+            (meta_x, meta_y),
+            meta,
+            meta_font,
+            fill=(*blend_color(accent, 0.82, (255, 255, 255)), 255),
+            text_fill=ink,
+            padding_x=30,
+            padding_y=16,
+            outline=(*blend_color(accent, 0.48, (165, 165, 165)), 255),
+        )
+        meta_x += width_used + 24
+    y += 128
+
+    description = _stringify_value(render_data.get("desc"))
+    if description:
+        draw_text_block(
+            draw,
+            (text_left, y, text_right, height - 168),
+            description,
+            desc_font,
+            (54, 59, 64, 255),
+            max_lines=5,
+            line_spacing=30,
+        )
+
+    draw.text(
+        (text_left, height - 122),
+        "BANGUMI UPDATE",
+        font=label_font,
+        fill=(115, 119, 124, 255),
+    )
+    return canvas
+
+
+def _draw_pastel_lightbox(
+    render_data: RenderData,
+    cover_image: Image.Image | None,
+) -> Image.Image:
+    width, height = _EPISODE_CARD_SIZE
+    primary_title, secondary_title = _extract_episode_titles(render_data)
+    sky = (198, 232, 246)
+    blush = (255, 202, 216)
+    mint = (218, 244, 226)
+    cream = (255, 252, 241)
+    ink = (45, 54, 70, 255)
+    coral = (226, 104, 139)
+
+    canvas = Image.new("RGBA", (width, height), (*cream, 255))
+    draw = ImageDraw.Draw(canvas)
+
+    draw.rectangle((0, 0, width, 420), fill=(*sky, 255))
+    draw.rectangle((0, 420, 260, height), fill=(*mint, 255))
+    draw.rounded_rectangle(
+        (width - 612, 84, width - 86, 392), radius=44, fill=(*blush, 255)
+    )
+    draw.rounded_rectangle(
+        (116, height - 642, width - 116, height - 96),
+        radius=42,
+        fill=(255, 255, 252, 255),
+    )
+
+    mat_box = (164, 304, width - 164, 1580)
+    add_shadow(
+        canvas,
+        mat_box,
+        radius=42,
+        blur=46,
+        offset=(0, 28),
+        shadow_color=(109, 126, 145, 52),
+    )
+    draw.rounded_rectangle(
+        mat_box,
+        radius=42,
+        fill=(255, 255, 252, 255),
+        outline=(235, 223, 214, 255),
+        width=3,
+    )
+    cover_box = (216, 360, width - 216, 1516)
+    cover = _fit_episode_cover(
+        render_data,
+        cover_image,
+        (cover_box[2] - cover_box[0], cover_box[3] - cover_box[1]),
+        radius=28,
+    )
+    canvas.alpha_composite(cover, (cover_box[0], cover_box[1]))
+    draw.rounded_rectangle(
+        cover_box,
+        radius=28,
+        outline=(255, 255, 252, 255),
+        width=8,
+    )
+
+    episode_label = _format_episode_label(render_data)
+    label_font = get_font(48, bold=True)
+    ep_font = get_font(164, bold=True)
+    title_font = get_font(142, bold=True)
+    secondary_font = get_font(54)
+    meta_font = get_font(46, bold=True)
+    desc_font = get_font(50)
+
+    draw.text((116, 124), "PASTEL LIGHTBOX", font=label_font, fill=ink)
+    draw.text(
+        (width - 552, 124),
+        _format_airdate_parts(render_data)[0],
+        font=label_font,
+        fill=(88, 101, 118, 255),
+    )
+    draw.rounded_rectangle((116, 1648, 680, 1840), radius=36, fill=(*blush, 255))
+    draw.text((152, 1666), episode_label, font=ep_font, fill=(255, 255, 252, 255))
+    draw.text(
+        (720, 1716), "soft daylight edition", font=meta_font, fill=(88, 101, 118, 255)
+    )
+
+    draw_text_block(
+        draw,
+        (146, 1910, width - 146, 2202),
+        primary_title,
+        title_font,
+        ink,
+        max_lines=2,
+        line_spacing=12,
+    )
+    if secondary_title:
+        draw_text_block(
+            draw,
+            (146, 2226, width - 146, 2304),
+            secondary_title,
+            secondary_font,
+            (94, 104, 119, 255),
+            max_lines=1,
+            line_spacing=0,
+        )
+
+    meta_text = "  /  ".join(_format_metadata(render_data, prefer_airdate=True))
+    draw.text(
+        (146, 2368),
+        meta_text,
+        font=meta_font,
+        fill=(*coral, 255),
+    )
+    description = _stringify_value(render_data.get("desc"))
+    if description:
+        desc_box = (146, 2450, width - 146, height - 162)
+        draw.rounded_rectangle(
+            desc_box,
+            radius=24,
+            fill=(255, 255, 252, 255),
+            outline=(230, 217, 208, 255),
+            width=2,
+        )
+        draw_text_block(
+            draw,
+            (desc_box[0] + 30, desc_box[1] + 30, desc_box[2] - 30, desc_box[3] - 28),
+            description,
+            desc_font,
+            (55, 62, 74, 255),
+            max_lines=3,
+            line_spacing=22,
+        )
+    return canvas
+
+
+def _draw_episode_card_image(
+    render_data: RenderData,
+    cover_image: Image.Image | None,
+) -> str:
+    variant = _normalize_episode_variant(render_data.get("episode_variant"))
+    if variant == "cinematic_poster":
+        canvas = _draw_cinematic_poster(render_data, cover_image)
+    elif variant == "editorial_digest":
+        canvas = _draw_editorial_digest(render_data, cover_image)
+    else:
+        canvas = _draw_pastel_lightbox(render_data, cover_image)
     return image_to_base64(canvas)
 
 
@@ -222,15 +554,39 @@ class EpisodeRenderer(BaseRenderer):
         rpc_url: str | None = None,
         headless: bool = True,
         max_retries: int = 3,
+        *,
+        variant: EpisodeCardVariant | None = None,
     ) -> str | None:
         """
         渲染单集信息卡片并返回 Base64 编码的图片字符串
         """
+        episode_variant = _normalize_episode_variant(variant)
         render_data = cast(RenderData, episode_data.model_dump())
         render_data["duration_label"] = _format_duration_label(render_data)
+        render_data["episode_variant"] = episode_variant
 
         if self.render_mode == "pillow":
             return await self._render_episode_pillow_with_placeholder(render_data)
+
+        pillow_payload: str | None = None
+
+        async def pillow_fallback() -> str | None:
+            nonlocal pillow_payload
+            if pillow_payload is None:
+                pillow_payload = await self._render_episode_pillow_with_placeholder(
+                    render_data
+                )
+            return pillow_payload
+
+        try:
+            pillow_payload = await pillow_fallback()
+        except Exception as e:
+            logger.warning(f"[+] 单集卡片像素对齐预渲染失败,继续使用 HTML 模板: {e}")
+        else:
+            if pillow_payload:
+                render_data["pillow_card_data_uri"] = (
+                    f"data:image/png;base64,{pillow_payload}"
+                )
 
         return await self.render(
             template_path="update/episode.html",
@@ -239,7 +595,5 @@ class EpisodeRenderer(BaseRenderer):
             rpc_url=rpc_url,
             headless=headless,
             max_retries=max_retries,
-            pillow_fallback=lambda: self._render_episode_pillow_with_placeholder(
-                render_data
-            ),
+            pillow_fallback=pillow_fallback,
         )

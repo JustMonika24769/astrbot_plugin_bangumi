@@ -22,8 +22,41 @@ from .src.api import BangumiService
 from .src.app import SearchService, SubscriptionService
 from .src.config import ConfigManager
 from .src.db import BangumiRepository
-from .src.domain import CommonTag, SubjectType
+from .src.domain import (
+    DEFAULT_EPISODE_CARD_VARIANT,
+    EPISODE_CARD_VARIANTS,
+    CommonTag,
+    EpisodeCardVariant,
+    SubjectType,
+)
 from .src.utils import EnvManager, SchedulerManager
+
+EPISODE_CARD_TEMPLATE_LABELS: dict[EpisodeCardVariant, str] = {
+    "pastel_lightbox": "Pastel lightbox",
+    "editorial_digest": "Episode digest",
+    "cinematic_poster": "Cinematic poster",
+}
+
+EPISODE_CARD_TEMPLATE_ALIASES: dict[str, EpisodeCardVariant] = {
+    "1": "pastel_lightbox",
+    "pastel": "pastel_lightbox",
+    "pastel_lightbox": "pastel_lightbox",
+    "lightbox": "pastel_lightbox",
+    "粉彩": "pastel_lightbox",
+    "2": "editorial_digest",
+    "editorial": "editorial_digest",
+    "editorial_digest": "editorial_digest",
+    "digest": "editorial_digest",
+    "杂志": "editorial_digest",
+    "摘要": "editorial_digest",
+    "3": "cinematic_poster",
+    "cinematic": "cinematic_poster",
+    "cinematic_poster": "cinematic_poster",
+    "poster": "cinematic_poster",
+    "海报": "cinematic_poster",
+    "默认": DEFAULT_EPISODE_CARD_VARIANT,
+    "default": DEFAULT_EPISODE_CARD_VARIANT,
+}
 
 
 class BangumiPlugin(Star):  # type: ignore[misc]
@@ -146,6 +179,24 @@ class BangumiPlugin(Star):  # type: ignore[misc]
         return first_token[1:] if first_token.startswith("/") else first_token
 
     @staticmethod
+    def _normalize_episode_card_template(
+        raw_text: str,
+    ) -> EpisodeCardVariant | None:
+        normalized = raw_text.strip().lower().replace("-", "_")
+        if not normalized:
+            return None
+        return EPISODE_CARD_TEMPLATE_ALIASES.get(normalized)
+
+    @staticmethod
+    def _format_episode_card_template_options() -> str:
+        lines = ["可选模板:"]
+        for index, template in enumerate(EPISODE_CARD_VARIANTS, start=1):
+            lines.append(
+                f"{index}. {template} - {EPISODE_CARD_TEMPLATE_LABELS[template]}"
+            )
+        return "\n".join(lines)
+
+    @staticmethod
     def _build_proxy_url(proxy_host: str, proxy_port: str) -> str | None:
         host = proxy_host.strip()
         port = proxy_port.strip()
@@ -258,6 +309,38 @@ class BangumiPlugin(Star):  # type: ignore[misc]
             return
         async for result in self.search_service.handle_today(event):
             yield result
+
+    @filter.command("bgm模板")  # type: ignore[untyped-decorator]
+    async def episode_card_template(
+        self, event: AstrMessageEvent, template: str = ""
+    ) -> AsyncGenerator[object, None]:
+        """查看或切换订阅更新的单集卡片模板。"""
+        options = self._format_episode_card_template_options()
+        if not template.strip():
+            current = self.config_manager.get_episode_card_template()
+            label = EPISODE_CARD_TEMPLATE_LABELS[current]
+            yield event.plain_result(
+                f"当前单集卡片模板: {current} - {label}\n"
+                f"{options}\n"
+                "发送 `/bgm模板 3` 或 `/bgm模板 cinematic_poster` 切换。"
+            )
+            return
+
+        resolved = self._normalize_episode_card_template(template)
+        if resolved is None:
+            yield event.plain_result(
+                f"❌ 未知单集卡片模板: {template}\n"
+                f"{options}\n"
+                "可使用序号 1/2/3 或模板名切换。"
+            )
+            return
+
+        self.config_manager.set_episode_card_template(resolved)
+        self.config_manager.save_config()
+        yield event.plain_result(
+            "✅ 已切换单集卡片模板为 "
+            f"{resolved} - {EPISODE_CARD_TEMPLATE_LABELS[resolved]}"
+        )
 
     @filter.command("追番")  # type: ignore[untyped-decorator]
     async def subscribe(
