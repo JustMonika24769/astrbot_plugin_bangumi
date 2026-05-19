@@ -16,14 +16,25 @@ def test_resolve_session_key_prefers_group_id() -> None:
 
 
 def test_parse_subscribe_selection() -> None:
+    assert BangumiPlugin._parse_subscribe_selection("1") == 1
+    assert BangumiPlugin._parse_subscribe_selection("  10  ") == 10
     assert BangumiPlugin._parse_subscribe_selection("/追番 2") == 2
     assert BangumiPlugin._parse_subscribe_selection("追番 3") == 3
     assert BangumiPlugin._parse_subscribe_selection("追番 abc") is None
+    assert BangumiPlugin._parse_subscribe_selection("1 abc") is None
+
+
+def test_format_subscribe_selection_hint_mentions_bare_number() -> None:
+    assert (
+        BangumiPlugin._format_subscribe_selection_hint(10)
+        == "请输入 1-10 的序号,例如 `1` 或 `/追番 1`"
+    )
 
 
 def test_should_requeue_subscribe_command() -> None:
     assert BangumiPlugin._should_requeue_subscribe_command("/bgm test") is True
     assert BangumiPlugin._should_requeue_subscribe_command("追番 巨人") is True
+    assert BangumiPlugin._should_requeue_subscribe_command("1") is False
     assert BangumiPlugin._should_requeue_subscribe_command("/追番 1") is False
     assert BangumiPlugin._should_requeue_subscribe_command("普通消息") is False
 

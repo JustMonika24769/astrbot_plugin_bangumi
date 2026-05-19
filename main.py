@@ -162,13 +162,17 @@ class BangumiPlugin(Star):  # type: ignore[misc]
 
     @staticmethod
     def _parse_subscribe_selection(raw_text: str) -> int | None:
-        match = re.match(r"^/?追番\s+(\d+)\s*$", raw_text.strip())
+        match = re.match(r"^(?:/?追番\s+)?(\d+)\s*$", raw_text.strip())
         if not match:
             return None
         try:
             return int(match.group(1))
         except ValueError:
             return None
+
+    @staticmethod
+    def _format_subscribe_selection_hint(candidate_count: int) -> str:
+        return f"请输入 1-{candidate_count} 的序号,例如 `1` 或 `/追番 1`"
 
     @staticmethod
     def _normalize_command_token(raw_text: str) -> str:
@@ -411,12 +415,25 @@ class BangumiPlugin(Star):  # type: ignore[misc]
 
             selected_index = self._parse_subscribe_selection(incoming_text)
             if selected_index is None:
+                await wait_event.send(
+                    MessageChain(
+                        [
+                            Comp.Plain(
+                                f"❌ {self._format_subscribe_selection_hint(len(candidates))}"
+                            )
+                        ]
+                    )
+                )
                 controller.keep(timeout=0)
                 return
             if selected_index < 1 or selected_index > len(candidates):
                 await wait_event.send(
                     MessageChain(
-                        [Comp.Plain(f"❌ 序号超出范围,请输入 1-{len(candidates)}")]
+                        [
+                            Comp.Plain(
+                                f"❌ 序号超出范围,{self._format_subscribe_selection_hint(len(candidates))}"
+                            )
+                        ]
                     )
                 )
                 controller.keep(timeout=0)

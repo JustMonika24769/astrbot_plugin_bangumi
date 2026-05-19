@@ -115,6 +115,13 @@ def test_readme_version_badge_matches_metadata_version() -> None:
     )
 
 
+def test_changelog_documents_metadata_version() -> None:
+    metadata = yaml.safe_load((PROJECT_ROOT / "metadata.yaml").read_text())
+    changelog = (PROJECT_ROOT / "CHANGELOG.md").read_text()
+
+    assert f"## {metadata['version']}" in changelog
+
+
 def test_plugin_uses_metadata_instead_of_deprecated_register_decorator() -> None:
     main_py = (PROJECT_ROOT / "main.py").read_text()
 
