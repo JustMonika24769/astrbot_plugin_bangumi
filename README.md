@@ -1,7 +1,7 @@
 <div align="center">
 
 # Bangumi 搜索插件使用指南
-[![version](https://img.shields.io/badge/version-v1.3.1-blue.svg)](https://github.com/united-pooh/astrbot_plugin_bangumi)
+[![version](https://img.shields.io/badge/version-v1.3.2-blue.svg)](https://github.com/united-pooh/astrbot_plugin_bangumi)
 [![License](https://img.shields.io/badge/license-Apache%202.0-green.svg)](LICENSE-2.0)
 [![AstrBot](https://img.shields.io/badge/AstrBot-%3E%3D4.16.0-orange.svg)](https://github.com/Soulter/AstrBot)
 [![Python](https://img.shields.io/badge/python-3.12%2B-blue.svg)](https://www.python.org/)
@@ -24,7 +24,12 @@
 |:-----|:-----|:-----|:-----|
 | `/bgm` | 全类别搜索 | `<关键词\|ID> [top_k]` | `/bgm 进击的巨人 3` |
 | `/bgm番剧` | 仅搜索 TV 动画 | `<关键词\|ID> [top_k]` | `/bgm番剧 命运石之门` |
+| `/bgm动漫` | `/bgm番剧` 的别名 | `<关键词\|ID> [top_k]` | `/bgm动漫 命运石之门` |
+| `/bgm动画` | `/bgm番剧` 的别名 | `<关键词\|ID> [top_k]` | `/bgm动画 命运石之门` |
+| `/bgm番` | `/bgm番剧` 的别名 | `<关键词\|ID> [top_k]` | `/bgm番 命运石之门` |
+| `/bgm动画片` | `/bgm番剧` 的别名 | `<关键词\|ID> [top_k]` | `/bgm动画片 命运石之门` |
 | `/bgm剧场版` | 仅搜索剧场版动画 | `<关键词\|ID> [top_k]` | `/bgm剧场版 凉宫春日的消失` |
+| `/bgm电影` | `/bgm剧场版` 的别名 | `<关键词\|ID> [top_k]` | `/bgm电影 凉宫春日的消失` |
 | `/bgm漫画` | 仅搜索漫画条目 | `<关键词\|ID> [top_k]` | `/bgm漫画 迷宫饭` |
 
 > `top_k`(可选):返回结果数量,默认为 `1`

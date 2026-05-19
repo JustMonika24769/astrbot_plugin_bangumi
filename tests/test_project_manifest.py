@@ -85,6 +85,25 @@ def _find_top_level_monkeypatch_targets(file_path: Path) -> list[str]:
     return violations
 
 
+def _commands_for_handler(main_py: str, handler_name: str) -> set[str]:
+    tree = ast.parse(main_py)
+    commands: set[str] = set()
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.AsyncFunctionDef) or node.name != handler_name:
+            continue
+        for decorator in node.decorator_list:
+            if (
+                isinstance(decorator, ast.Call)
+                and isinstance(decorator.func, ast.Attribute)
+                and decorator.func.attr == "command"
+                and decorator.args
+                and isinstance(decorator.args[0], ast.Constant)
+                and isinstance(decorator.args[0].value, str)
+            ):
+                commands.add(decorator.args[0].value)
+    return commands
+
+
 def test_metadata_declares_recommended_astrbot_fields() -> None:
     metadata = yaml.safe_load((PROJECT_ROOT / "metadata.yaml").read_text())
 
@@ -104,6 +123,22 @@ def test_readme_documents_registered_commands_and_dependency_behavior() -> None:
     assert commands
     assert readme_commands == commands
     assert "插件首次运行时会自动检查并安装" not in readme
+
+
+def test_bgm_search_aliases_register_on_existing_handlers() -> None:
+    main_py = (PROJECT_ROOT / "main.py").read_text()
+
+    assert _commands_for_handler(main_py, "search_anime") == {
+        "bgm番剧",
+        "bgm动漫",
+        "bgm动画",
+        "bgm番",
+        "bgm动画片",
+    }
+    assert _commands_for_handler(main_py, "search_movie") == {
+        "bgm剧场版",
+        "bgm电影",
+    }
 
 
 def test_readme_version_badge_matches_metadata_version() -> None:

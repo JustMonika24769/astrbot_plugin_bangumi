@@ -246,6 +246,10 @@ class BangumiPlugin(Star):  # type: ignore[misc]
         ):
             yield result
 
+    @filter.command("bgm动画片")  # type: ignore[untyped-decorator]
+    @filter.command("bgm动画")  # type: ignore[untyped-decorator]
+    @filter.command("bgm动漫")  # type: ignore[untyped-decorator]
+    @filter.command("bgm番")  # type: ignore[untyped-decorator]
     @filter.command("bgm番剧")  # type: ignore[untyped-decorator]
     async def search_anime(
         self, event: AstrMessageEvent, query: str, top_k: int = 1
@@ -263,6 +267,7 @@ class BangumiPlugin(Star):  # type: ignore[misc]
         ):
             yield result
 
+    @filter.command("bgm电影")  # type: ignore[untyped-decorator]
     @filter.command("bgm剧场版")  # type: ignore[untyped-decorator]
     async def search_movie(
         self, event: AstrMessageEvent, query: str, top_k: int = 1
