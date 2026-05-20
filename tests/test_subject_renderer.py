@@ -3,7 +3,7 @@ import io
 from unittest.mock import AsyncMock
 
 import pytest
-from PIL import Image
+from PIL import Image, ImageChops
 
 from astrbot_plugin_bangumi.src.domain import EPISODE_CARD_VARIANTS
 from astrbot_plugin_bangumi.src.render import SubjectRenderer
@@ -123,6 +123,35 @@ async def test_render_subject_card_variants_are_visually_distinct() -> None:
         )
 
     assert len(fingerprints) == len(EPISODE_CARD_VARIANTS)
+
+
+@pytest.mark.asyncio
+async def test_render_subject_card_pastel_and_cinematic_are_not_near_duplicates() -> (
+    None
+):
+    renderer = SubjectRenderer(render_mode="pillow")
+
+    pastel_payload = await renderer.render_subject_card(
+        build_subject_data(), variant="pastel_lightbox"
+    )
+    cinematic_payload = await renderer.render_subject_card(
+        build_subject_data(), variant="cinematic_poster"
+    )
+
+    assert pastel_payload is not None
+    assert cinematic_payload is not None
+    pastel_image = Image.open(io.BytesIO(base64.b64decode(pastel_payload))).convert(
+        "RGBA"
+    )
+    cinematic_image = Image.open(
+        io.BytesIO(base64.b64decode(cinematic_payload))
+    ).convert("RGBA")
+    diff = ImageChops.difference(pastel_image, cinematic_image).convert("L")
+    flat_data = getattr(diff, "get_flattened_data", diff.getdata)
+    changed = sum(1 for value in flat_data() if value > 8)
+    changed_ratio = changed / (diff.width * diff.height)
+
+    assert changed_ratio > 0.12
 
 
 @pytest.mark.asyncio

@@ -97,21 +97,21 @@ _SUBJECT_CARD_STYLES: dict[EpisodeCardVariant, SubjectCardStyle] = {
         header_band=None,
     ),
     "cinematic_poster": SubjectCardStyle(
-        surface=(247, 242, 232, 255),
+        surface=(253, 247, 238, 255),
         card=(255, 255, 250, 255),
-        outline=(220, 226, 218, 255),
-        accent=(223, 112, 132, 255),
-        accent_soft=(249, 226, 231, 255),
-        accent_text=(143, 66, 82, 255),
+        outline=(232, 218, 203, 255),
+        accent=(214, 112, 94, 255),
+        accent_soft=(250, 229, 215, 255),
+        accent_text=(135, 71, 60, 255),
         title=(31, 36, 44, 255),
         secondary=(97, 108, 119, 255),
         body=(45, 53, 65, 255),
         muted=(97, 108, 119, 255),
         panel=(255, 255, 250, 255),
-        panel_outline=(220, 226, 218, 255),
+        panel_outline=(232, 218, 203, 255),
         tag_fill=(255, 255, 250, 255),
         side_strip=None,
-        header_band=(207, 234, 239, 255),
+        header_band=(255, 231, 213, 255),
     ),
 }
 
@@ -437,7 +437,8 @@ def _draw_subject_card_image(
     cover_image: Image.Image | None,
     variant: EpisodeCardVariant = DEFAULT_EPISODE_CARD_VARIANT,
 ) -> str:
-    style = _SUBJECT_CARD_STYLES[_normalize_subject_variant(variant)]
+    resolved_variant = _normalize_subject_variant(variant)
+    style = _SUBJECT_CARD_STYLES[resolved_variant]
     raw_episode_list = data.get("episode_list")
     episode_items: list[Mapping[str, object]] = []
     if isinstance(raw_episode_list, list):
@@ -479,6 +480,17 @@ def _draw_subject_card_image(
             fill=style.header_band,
         )
         draw.rectangle((0, 112, width, 228), fill=style.header_band)
+    if resolved_variant == "cinematic_poster":
+        draw.polygon(
+            [
+                (0, 0),
+                (735, 0),
+                (585, height),
+                (0, height),
+            ],
+            fill=(255, 241, 226, 255),
+        )
+        draw.rectangle((0, 228, 112, height), fill=(255, 234, 217, 255))
     if style.side_strip:
         draw.rounded_rectangle(
             (0, 0, 92, height - 1),
@@ -493,6 +505,11 @@ def _draw_subject_card_image(
         (2097, -150, 2547, 300),
         fill=(*style.accent_soft[:3], 150),
     )
+    if resolved_variant == "cinematic_poster":
+        decoration_draw.ellipse(
+            (-180, 940, 520, 1640),
+            fill=(255, 232, 206, 120),
+        )
     canvas.alpha_composite(decoration)
     draw = ImageDraw.Draw(canvas)
 
