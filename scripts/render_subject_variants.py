@@ -157,6 +157,16 @@ def _pixel_alignment_ratio(candidate: Path, baseline: Path) -> float:
     return changed / (diff.width * diff.height)
 
 
+def _image_size(path: Path) -> dict[str, object]:
+    with Image.open(path) as image:
+        width, height = image.size
+    return {
+        "width": width,
+        "height": height,
+        "aspect_ratio": round(width / height, 6),
+    }
+
+
 async def render_previews(
     output_dir: Path,
     query: str,
@@ -192,7 +202,11 @@ async def render_previews(
 
         target = output_dir / f"{variant}-{render_mode}.png"
         target.write_bytes(base64.b64decode(payload))
-        preview: dict[str, object] = {"variant": variant, "path": str(target)}
+        preview: dict[str, object] = {
+            "variant": variant,
+            "path": str(target),
+            **_image_size(target),
+        }
 
         if verify_pixel_alignment:
             pillow_payload = await pillow_renderer.render_subject_card(

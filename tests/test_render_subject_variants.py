@@ -3,10 +3,12 @@ from __future__ import annotations
 import base64
 import importlib.util
 import sys
+from io import BytesIO
 from pathlib import Path
 from types import ModuleType
 
 import pytest
+from PIL import Image
 
 from astrbot_plugin_bangumi.src.render import SubjectRenderer
 
@@ -24,6 +26,12 @@ def load_script() -> ModuleType:
     sys.modules[spec.name] = module
     spec.loader.exec_module(module)
     return module
+
+
+def fake_png_base64(width: int = 24, height: int = 12) -> str:
+    buffer = BytesIO()
+    Image.new("RGBA", (width, height), (255, 255, 255, 255)).save(buffer, format="PNG")
+    return base64.b64encode(buffer.getvalue()).decode()
 
 
 @pytest.mark.asyncio
@@ -62,8 +70,8 @@ async def test_render_previews_outputs_all_variants(
         rpc_url: str | None = None,
         **kwargs: object,
     ) -> str:
-        del self, data, rpc_url, kwargs
-        return base64.b64encode(str(variant).encode()).decode()
+        del self, data, variant, rpc_url, kwargs
+        return fake_png_base64()
 
     monkeypatch.setattr(script, "_build_subject", fake_subject)
     monkeypatch.setattr(
@@ -85,4 +93,7 @@ async def test_render_previews_outputs_all_variants(
         "editorial_digest",
         "cinematic_poster",
     ]
+    assert all(item["width"] == 24 for item in report["previews"])
+    assert all(item["height"] == 12 for item in report["previews"])
+    assert all(item["aspect_ratio"] == 2 for item in report["previews"])
     assert (tmp_path / "preview-report-pillow.json").exists()
