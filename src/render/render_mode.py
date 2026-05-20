@@ -1,9 +1,20 @@
 from typing import Literal
 
-RenderMode = Literal["html", "pillow"]
+RenderMode = Literal["pillow", "playwright", "rpc"]
+DEFAULT_RENDER_MODE: RenderMode = "pillow"
 
 
 def normalize_render_mode(value: object) -> RenderMode:
-    if isinstance(value, str) and value.strip().lower() == "pillow":
+    if not isinstance(value, str):
+        return DEFAULT_RENDER_MODE
+
+    normalized = value.strip().lower()
+    if normalized == "html":
+        return "playwright"
+    if normalized == "pillow":
         return "pillow"
-    return "html"
+    if normalized == "playwright":
+        return "playwright"
+    if normalized == "rpc":
+        return "rpc"
+    return DEFAULT_RENDER_MODE

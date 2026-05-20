@@ -100,7 +100,7 @@ async def test_render_calendar_pillow_grows_for_all_items_in_a_day() -> None:
 
 
 @pytest.mark.asyncio
-async def test_render_calendar_html_render_contract() -> None:
+async def test_render_calendar_legacy_html_render_contract() -> None:
     renderer = CalendarRenderer(render_mode="html")
     calls = {}
 
@@ -119,7 +119,7 @@ async def test_render_calendar_html_render_contract() -> None:
 
 
 @pytest.mark.asyncio
-async def test_render_calendar_html_failure_falls_back_to_pillow() -> None:
+async def test_render_calendar_legacy_html_failure_falls_back_to_pillow() -> None:
     renderer = CalendarRenderer(render_mode="html")
     renderer._render_via_rpc = AsyncMock(return_value=None)
     renderer._render_locally = AsyncMock(return_value=None)
@@ -141,5 +141,5 @@ async def test_render_calendar_html_failure_falls_back_to_pillow() -> None:
 
     assert result is not None
     assert_png_image(result, (2892, 2124), require_non_blank=True)
-    renderer._render_via_rpc.assert_awaited_once()
+    renderer._render_via_rpc.assert_not_awaited()
     renderer._render_locally.assert_awaited_once()

@@ -54,7 +54,7 @@ class AnalysisConfig:
     proxy_http: str = ""
     port: str = ""
     max_retries: int = 3
-    render_mode: str = "html"
+    render_mode: str = "pillow"
     env_path: Path = REPO_ROOT / ".env"
     db_path: Path | None = None
     require_db: bool = False
@@ -173,7 +173,7 @@ def create_parser() -> argparse.ArgumentParser:
     parser.add_argument("--port", help="代理端口，例如 7890。")
     parser.add_argument("--max-retries", type=int, help="API 失败后的最大重试次数。")
     parser.add_argument(
-        "--render-mode", help="记录当前插件渲染模式，例如 html 或 pillow。"
+        "--render-mode", help="记录当前插件渲染模式，例如 pillow、playwright 或 rpc。"
     )
     parser.add_argument(
         "--db-path", type=Path, help="本地 AstrBot Bangumi SQLite 数据库路径。"
@@ -247,7 +247,7 @@ def load_config(argv: list[str] | None = None) -> AnalysisConfig:
         env_values,
         environment,
         ("render_mode", "BANGUMI_RENDER_MODE"),
-        "html",
+        "pillow",
     )
     max_retries = parse_int(
         first_config_value(

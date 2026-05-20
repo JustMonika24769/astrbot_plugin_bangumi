@@ -1,5 +1,7 @@
 import base64
 import io
+import zipfile
+from pathlib import Path
 
 import pytest
 from PIL import Image, ImageDraw
@@ -52,6 +54,66 @@ def test_create_placeholder_image_is_non_blank_and_sized() -> None:
     assert image.size == (160, 240)
     assert image.mode == "RGBA"
     assert not is_visually_blank(image)
+
+
+def test_smiley_sans_download_skips_existing_local_font(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    font_dir = tmp_path / "fonts"
+    font_dir.mkdir()
+    (font_dir / "SmileySans-Oblique.otf").write_bytes(b"font")
+
+    def fail_urlopen(*args: object, **kwargs: object) -> object:
+        raise AssertionError("existing Smiley Sans should not trigger network")
+
+    monkeypatch.setattr(pillow_utils, "urlopen", fail_urlopen)
+
+    assert not pillow_utils._download_smiley_sans(font_dir)
+
+
+def test_smiley_sans_download_extracts_font(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    archive = io.BytesIO()
+    with zipfile.ZipFile(archive, "w") as zip_file:
+        zip_file.writestr("SmileySans-Oblique.otf", b"font-bytes")
+    archive_bytes = archive.getvalue()
+
+    class FakeResponse:
+        def __init__(self, payload: bytes) -> None:
+            self._buffer = io.BytesIO(payload)
+
+        def __enter__(self) -> "FakeResponse":
+            return self
+
+        def __exit__(self, *args: object) -> None:
+            return None
+
+        def read(self, size: int = -1) -> bytes:
+            return self._buffer.read(size)
+
+    monkeypatch.setattr(
+        pillow_utils,
+        "urlopen",
+        lambda *args, **kwargs: FakeResponse(archive_bytes),
+    )
+
+    assert pillow_utils._download_smiley_sans(tmp_path)
+    assert (tmp_path / "SmileySans-Oblique.otf").read_bytes() == b"font-bytes"
+
+
+def test_smiley_sans_download_failure_keeps_fallback_usable(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(
+        pillow_utils,
+        "urlopen",
+        lambda *args, **kwargs: (_ for _ in ()).throw(OSError("offline")),
+    )
+
+    assert not pillow_utils._download_smiley_sans(tmp_path)
+    assert not (tmp_path / "SmileySans-Oblique.otf.tmp").exists()
+    assert get_font(18) is not None
 
 
 @pytest.mark.asyncio

@@ -199,7 +199,8 @@ def test_tests_and_scripts_use_package_imports_for_plugin_internals() -> None:
 def test_config_schema_exposes_render_mode_options() -> None:
     schema = json.loads((PROJECT_ROOT / "_conf_schema.json").read_text())
 
-    assert schema["render_mode"]["options"] == ["html", "pillow"]
+    assert schema["render_mode"]["default"] == "pillow"
+    assert schema["render_mode"]["options"] == ["pillow", "playwright", "rpc"]
     assert schema["episode_card_template"]["default"] == "cinematic_poster"
     assert schema["episode_card_template"]["options"] == [
         "pastel_lightbox",

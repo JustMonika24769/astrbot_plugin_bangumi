@@ -29,6 +29,8 @@ from .src.domain import (
     EpisodeCardVariant,
     SubjectType,
 )
+from .src.render import ResponseRenderer
+from .src.render.response_renderer import should_render_text_as_image
 from .src.utils import EnvManager, SchedulerManager
 
 EPISODE_CARD_TEMPLATE_LABELS: dict[EpisodeCardVariant, str] = {
@@ -76,6 +78,7 @@ class BangumiPlugin(Star):  # type: ignore[misc]
         self.service: BangumiService | None = None
         self.subscription_service: SubscriptionService | None = None
         self.search_service: SearchService | None = None
+        self.response_renderer: ResponseRenderer | None = None
         self.env_manager: EnvManager | None = None
 
     async def initialize(self) -> None:
@@ -112,12 +115,16 @@ class BangumiPlugin(Star):  # type: ignore[misc]
             logger.error(f"服务初始化失败: {e}")
 
         # 4. 初始化业务逻辑服务 (Dependency Injection)
+        self.response_renderer = ResponseRenderer(
+            session=self.session, render_mode=self.config_manager.get_render_mode()
+        )
         if self.service:
             # 搜索服务
             self.search_service = SearchService(
                 service=self.service,
                 config_manager=self.config_manager,
                 session=self.session,
+                text_result_builder=self._result_for_text,
             )
 
             # 订阅服务
@@ -200,6 +207,38 @@ class BangumiPlugin(Star):  # type: ignore[misc]
             )
         return "\n".join(lines)
 
+    async def _render_response_text_base64(self, text: str) -> str | None:
+        response_renderer = getattr(self, "response_renderer", None)
+        if not isinstance(response_renderer, ResponseRenderer):
+            return None
+        try:
+            return await response_renderer.render_response_text(
+                text,
+                variant=self.config_manager.get_episode_card_template(),
+                rpc_url=self.config_manager.get_render_server_url(),
+                max_retries=self.config_manager.get_max_retries(),
+            )
+        except Exception as exc:
+            logger.warning(f"[-] 长文本响应图片渲染失败,回退纯文字: {exc}")
+            return None
+
+    async def _result_for_text(self, event: AstrMessageEvent, text: str) -> object:
+        if not should_render_text_as_image(text):
+            return event.plain_result(text)
+
+        base64_image = await self._render_response_text_base64(text)
+        if base64_image:
+            return event.chain_result([Comp.Image.fromBase64(base64_image)])
+        return event.plain_result(text)
+
+    async def _send_text(self, event: AstrMessageEvent, text: str) -> None:
+        if should_render_text_as_image(text):
+            base64_image = await self._render_response_text_base64(text)
+            if base64_image:
+                await event.send(MessageChain([Comp.Image.fromBase64(base64_image)]))
+                return
+        await event.send(MessageChain([Comp.Plain(text)]))
+
     @staticmethod
     def _build_proxy_url(proxy_host: str, proxy_port: str) -> str | None:
         host = proxy_host.strip()
@@ -239,7 +278,7 @@ class BangumiPlugin(Star):  # type: ignore[misc]
     ) -> AsyncGenerator[object, None]:
         """全类别搜索 Bangumi 条目。"""
         if not self.search_service:
-            yield event.plain_result("❌ 搜索服务未就绪")
+            yield await self._result_for_text(event, "❌ 搜索服务未就绪")
             return
         async for result in self.search_service.handle_subject_search(
             event, query, top_k, subject_type=None
@@ -256,7 +295,7 @@ class BangumiPlugin(Star):  # type: ignore[misc]
     ) -> AsyncGenerator[object, None]:
         """仅搜索 TV 动画条目。"""
         if not self.search_service:
-            yield event.plain_result("❌ 搜索服务未就绪")
+            yield await self._result_for_text(event, "❌ 搜索服务未就绪")
             return
         async for result in self.search_service.handle_subject_search(
             event,
@@ -274,7 +313,7 @@ class BangumiPlugin(Star):  # type: ignore[misc]
     ) -> AsyncGenerator[object, None]:
         """仅搜索剧场版动画条目。"""
         if not self.search_service:
-            yield event.plain_result("❌ 搜索服务未就绪")
+            yield await self._result_for_text(event, "❌ 搜索服务未就绪")
             return
         async for result in self.search_service.handle_subject_search(
             event,
@@ -291,7 +330,7 @@ class BangumiPlugin(Star):  # type: ignore[misc]
     ) -> AsyncGenerator[object, None]:
         """仅搜索漫画条目。"""
         if not self.search_service:
-            yield event.plain_result("❌ 搜索服务未就绪")
+            yield await self._result_for_text(event, "❌ 搜索服务未就绪")
             return
         async for result in self.search_service.handle_subject_search(
             event,
@@ -306,7 +345,7 @@ class BangumiPlugin(Star):  # type: ignore[misc]
     async def calendar(self, event: AstrMessageEvent) -> AsyncGenerator[object, None]:
         """获取今日番剧放送表。"""
         if not self.search_service:
-            yield event.plain_result("❌ 搜索服务未就绪")
+            yield await self._result_for_text(event, "❌ 搜索服务未就绪")
             return
         async for result in self.search_service.handle_calendar(event):
             yield result
@@ -314,7 +353,7 @@ class BangumiPlugin(Star):  # type: ignore[misc]
     @filter.command("today")  # type: ignore[untyped-decorator]
     async def today(self, event: AstrMessageEvent) -> AsyncGenerator[object, None]:
         if not self.search_service:
-            yield event.plain_result("❌ 搜索服务未就绪")
+            yield await self._result_for_text(event, "❌ 搜索服务未就绪")
             return
         async for result in self.search_service.handle_today(event):
             yield result
@@ -328,27 +367,30 @@ class BangumiPlugin(Star):  # type: ignore[misc]
         if not template.strip():
             current = self.config_manager.get_episode_card_template()
             label = EPISODE_CARD_TEMPLATE_LABELS[current]
-            yield event.plain_result(
+            yield await self._result_for_text(
+                event,
                 f"当前单集卡片模板: {current} - {label}\n"
                 f"{options}\n"
-                "发送 `/bgm模板 3` 或 `/bgm模板 cinematic_poster` 切换。"
+                "发送 `/bgm模板 3` 或 `/bgm模板 cinematic_poster` 切换。",
             )
             return
 
         resolved = self._normalize_episode_card_template(template)
         if resolved is None:
-            yield event.plain_result(
+            yield await self._result_for_text(
+                event,
                 f"❌ 未知单集卡片模板: {template}\n"
                 f"{options}\n"
-                "可使用序号 1/2/3 或模板名切换。"
+                "可使用序号 1/2/3 或模板名切换。",
             )
             return
 
         self.config_manager.set_episode_card_template(resolved)
         self.config_manager.save_config()
-        yield event.plain_result(
+        yield await self._result_for_text(
+            event,
             "✅ 已切换单集卡片模板为 "
-            f"{resolved} - {EPISODE_CARD_TEMPLATE_LABELS[resolved]}"
+            f"{resolved} - {EPISODE_CARD_TEMPLATE_LABELS[resolved]}",
         )
 
     @filter.command("追番")  # type: ignore[untyped-decorator]
@@ -357,12 +399,12 @@ class BangumiPlugin(Star):  # type: ignore[misc]
     ) -> AsyncGenerator[object, None]:
         """订阅番剧，更新时自动通知。"""
         if not self.subscription_service:
-            yield event.plain_result("❌ 订阅服务未就绪")
+            yield await self._result_for_text(event, "❌ 订阅服务未就绪")
             return
 
         group_id = self._resolve_session_key(event)
         if not group_id:
-            yield event.plain_result("❌ 无法获取群组ID")
+            yield await self._result_for_text(event, "❌ 无法获取群组ID")
             return
 
         (
@@ -373,10 +415,10 @@ class BangumiPlugin(Star):  # type: ignore[misc]
             limit=self.config_manager.get_max_fuzzy_results(),
         )
         if error_msg:
-            yield event.plain_result(error_msg)
+            yield await self._result_for_text(event, error_msg)
             return
         if not candidates:
-            yield event.plain_result("🔍 未找到相关番剧")
+            yield await self._result_for_text(event, "🔍 未找到相关番剧")
             return
 
         subscription_service = self.subscription_service
@@ -386,7 +428,7 @@ class BangumiPlugin(Star):  # type: ignore[misc]
                 group_id=group_id,
                 subject_id=candidates[0]["subject_id"],
             )
-            yield event.plain_result(result)
+            yield await self._result_for_text(event, result)
             return
 
         candidate_lines = ["⚠️ 匹配到多个候选,请使用 `/追番 序号` 确认:"]
@@ -397,7 +439,7 @@ class BangumiPlugin(Star):  # type: ignore[misc]
         candidate_lines.append(
             "5分钟内有效;若发送新的斜杠命令或重新输入 `追番` 将自动取消本次确认"
         )
-        yield event.plain_result("\n".join(candidate_lines))
+        yield await self._result_for_text(event, "\n".join(candidate_lines))
         session_key = group_id
 
         class GroupSessionFilter(SessionFilter):  # type: ignore[misc]
@@ -420,26 +462,16 @@ class BangumiPlugin(Star):  # type: ignore[misc]
 
             selected_index = self._parse_subscribe_selection(incoming_text)
             if selected_index is None:
-                await wait_event.send(
-                    MessageChain(
-                        [
-                            Comp.Plain(
-                                f"❌ {self._format_subscribe_selection_hint(len(candidates))}"
-                            )
-                        ]
-                    )
+                await self._send_text(
+                    wait_event,
+                    f"❌ {self._format_subscribe_selection_hint(len(candidates))}",
                 )
                 controller.keep(timeout=0)
                 return
             if selected_index < 1 or selected_index > len(candidates):
-                await wait_event.send(
-                    MessageChain(
-                        [
-                            Comp.Plain(
-                                f"❌ 序号超出范围,{self._format_subscribe_selection_hint(len(candidates))}"
-                            )
-                        ]
-                    )
+                await self._send_text(
+                    wait_event,
+                    f"❌ 序号超出范围,{self._format_subscribe_selection_hint(len(candidates))}",
                 )
                 controller.keep(timeout=0)
                 return
@@ -449,7 +481,7 @@ class BangumiPlugin(Star):  # type: ignore[misc]
                 group_id=session_key,
                 subject_id=selected["subject_id"],
             )
-            await wait_event.send(MessageChain([Comp.Plain(result)]))
+            await self._send_text(wait_event, result)
             wait_event.stop_event()
             controller.stop()
 
@@ -459,7 +491,9 @@ class BangumiPlugin(Star):  # type: ignore[misc]
                 session_filter=GroupSessionFilter(),
             )
         except TimeoutError:
-            yield event.plain_result("⏰ 候选确认已过期,请重新使用 `/追番 关键词`")
+            yield await self._result_for_text(
+                event, "⏰ 候选确认已过期,请重新使用 `/追番 关键词`"
+            )
 
     @filter.command("弃坑")  # type: ignore[untyped-decorator]
     async def unsubscribe(
@@ -467,16 +501,16 @@ class BangumiPlugin(Star):  # type: ignore[misc]
     ) -> AsyncGenerator[object, None]:
         """取消订阅番剧。"""
         if not self.subscription_service:
-            yield event.plain_result("❌ 订阅服务未就绪")
+            yield await self._result_for_text(event, "❌ 订阅服务未就绪")
             return
 
         group_id = self._resolve_session_key(event)
         if not group_id:
-            yield event.plain_result("❌ 无法获取群组ID")
+            yield await self._result_for_text(event, "❌ 无法获取群组ID")
             return
 
         result = await self.subscription_service.unsubscribe(group_id, query)
-        yield event.plain_result(result)
+        yield await self._result_for_text(event, result)
 
     async def terminate(self) -> None:
         logger.info("正在清理 Bangumi 插件资源...")

@@ -8,7 +8,7 @@ from ..domain import (
     EpisodeCardVariant,
     is_episode_card_variant,
 )
-from ..render.render_mode import RenderMode, normalize_render_mode
+from ..render.render_mode import DEFAULT_RENDER_MODE, RenderMode, normalize_render_mode
 
 
 class ConfigManager:
@@ -71,7 +71,9 @@ class ConfigManager:
         return self._get_str("render_server_url", "https://api.unitedpooh.top/rpc")
 
     def get_render_mode(self) -> RenderMode:
-        return normalize_render_mode(self.config.get("render_mode", "html"))
+        return normalize_render_mode(
+            self.config.get("render_mode", DEFAULT_RENDER_MODE)
+        )
 
     def get_episode_card_template(self) -> EpisodeCardVariant:
         value = self.config.get("episode_card_template", DEFAULT_EPISODE_CARD_VARIANT)

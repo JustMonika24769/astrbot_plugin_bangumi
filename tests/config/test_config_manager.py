@@ -39,6 +39,16 @@ def test_get_episode_card_template_reads_valid_config() -> None:
     assert manager.get_episode_card_template() == "editorial_digest"
 
 
+def test_get_render_mode_defaults_to_pillow() -> None:
+    assert _manager({}).get_render_mode() == "pillow"
+
+
+def test_get_render_mode_accepts_new_modes_and_legacy_html() -> None:
+    assert _manager({"render_mode": "playwright"}).get_render_mode() == "playwright"
+    assert _manager({"render_mode": "RPC"}).get_render_mode() == "rpc"
+    assert _manager({"render_mode": "html"}).get_render_mode() == "playwright"
+
+
 def test_get_episode_card_template_falls_back_to_default() -> None:
     assert _manager({}).get_episode_card_template() == "cinematic_poster"
     assert (

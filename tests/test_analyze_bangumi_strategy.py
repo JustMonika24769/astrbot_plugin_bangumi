@@ -213,6 +213,17 @@ def test_config_precedence_and_proxy_requires_port(
     assert override_config.max_retries == 4
     assert override_config.render_mode == "html"
     assert script.build_proxy_url("socks5://127.0.0.1:1080", "") is None
+
+
+def test_load_config_defaults_render_mode_to_pillow(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    script = load_script()
+    monkeypatch.delenv("BANGUMI_RENDER_MODE", raising=False)
+
+    config = script.load_config(["--env-path", str(tmp_path / "missing.env")])
+
+    assert config.render_mode == "pillow"
     assert (
         script.build_proxy_url("socks5://127.0.0.1:1080", "7890")
         == "socks5://127.0.0.1:1080"

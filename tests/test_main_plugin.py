@@ -4,6 +4,8 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
+from astrbot_plugin_bangumi.src.render import ResponseRenderer
+
 BangumiPlugin = importlib.import_module("astrbot_plugin_bangumi.main").BangumiPlugin
 
 
@@ -78,6 +80,81 @@ def test_build_proxy_url_preserves_scheme_and_existing_port() -> None:
         BangumiPlugin._build_proxy_url("proxy.local:1080", "7890")
         == "http://proxy.local:1080"
     )
+
+
+@pytest.mark.asyncio
+async def test_result_for_text_keeps_short_plain_text() -> None:
+    plugin = BangumiPlugin.__new__(BangumiPlugin)
+    plugin.response_renderer = MagicMock()
+    event = _event()
+
+    result = await BangumiPlugin._result_for_text(plugin, event, "短消息")
+
+    assert result == "短消息"
+    event.plain_result.assert_called_once_with("短消息")
+    event.chain_result.assert_not_called()
+    plugin.response_renderer.render_response_text.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_result_for_text_renders_long_text_as_image() -> None:
+    plugin = BangumiPlugin.__new__(BangumiPlugin)
+    plugin.config_manager = MagicMock()
+    plugin.config_manager.get_episode_card_template.return_value = "cinematic_poster"
+    plugin.config_manager.get_render_server_url.return_value = "rpc"
+    plugin.config_manager.get_max_retries.return_value = 1
+    plugin.response_renderer = ResponseRenderer.__new__(ResponseRenderer)
+    plugin.response_renderer.render_response_text = AsyncMock(return_value="b64")
+    event = _event()
+
+    result = await BangumiPlugin._result_for_text(plugin, event, "长" * 31)
+
+    assert result == event.chain_result.call_args.args[0]
+    event.plain_result.assert_not_called()
+    event.chain_result.assert_called_once()
+
+
+@pytest.mark.asyncio
+async def test_result_for_text_falls_back_to_plain_text_when_render_fails() -> None:
+    plugin = BangumiPlugin.__new__(BangumiPlugin)
+    plugin.config_manager = MagicMock()
+    plugin.config_manager.get_episode_card_template.return_value = "cinematic_poster"
+    plugin.config_manager.get_render_server_url.return_value = "rpc"
+    plugin.config_manager.get_max_retries.return_value = 1
+    plugin.response_renderer = ResponseRenderer.__new__(ResponseRenderer)
+    plugin.response_renderer.render_response_text = AsyncMock(
+        side_effect=RuntimeError("font boom")
+    )
+    event = _event()
+    long_text = "长" * 31
+
+    result = await BangumiPlugin._result_for_text(plugin, event, long_text)
+
+    assert result == long_text
+    event.plain_result.assert_called_once_with(long_text)
+    event.chain_result.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_send_text_falls_back_to_plain_text_when_render_fails() -> None:
+    plugin = BangumiPlugin.__new__(BangumiPlugin)
+    plugin.config_manager = MagicMock()
+    plugin.config_manager.get_episode_card_template.return_value = "cinematic_poster"
+    plugin.config_manager.get_render_server_url.return_value = "rpc"
+    plugin.config_manager.get_max_retries.return_value = 1
+    plugin.response_renderer = ResponseRenderer.__new__(ResponseRenderer)
+    plugin.response_renderer.render_response_text = AsyncMock(
+        side_effect=RuntimeError("draw boom")
+    )
+    event = _event()
+    event.send = AsyncMock()
+    long_text = "长" * 31
+
+    await BangumiPlugin._send_text(plugin, event, long_text)
+
+    sent_chain = event.send.await_args.args[0]
+    assert len(sent_chain.chain) == 1
+    assert sent_chain.chain[0].text == long_text
 
 
 @pytest.mark.asyncio

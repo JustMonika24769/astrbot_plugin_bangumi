@@ -3,6 +3,7 @@ import base64
 import io
 import re
 import threading
+import zipfile
 from collections.abc import Mapping, Sequence
 from functools import lru_cache
 from pathlib import Path
@@ -29,6 +30,11 @@ _MAX_FONT_BYTES = 64 * 1024 * 1024
 _BLANK_THRESHOLD = 246
 
 _DATA_URI_PATTERN = re.compile(r"^data:image/[^;]+;base64,(?P<data>.+)$", re.DOTALL)
+_SMILEY_SANS_FILENAME = "SmileySans-Oblique.otf"
+_SMILEY_SANS_DOWNLOAD_URL = (
+    "https://github.com/atelier-anchor/smiley-sans/releases/download/"
+    "v2.0.1/smiley-sans-v2.0.1.zip"
+)
 _FONT_DOWNLOAD_SOURCES = (
     (
         "NotoSansCJKsc-Regular.otf",
@@ -96,7 +102,7 @@ def _download_fonts(font_dir: Path) -> None:
         logger.warning(f"Pillow 字体目录创建失败,跳过字体下载: {e}")
         return
 
-    downloaded = False
+    downloaded = _download_smiley_sans(font_dir)
     for filename, url in _FONT_DOWNLOAD_SOURCES:
         target = font_dir / filename
         if target.exists() and target.stat().st_size > 0:
@@ -125,11 +131,66 @@ def _download_fonts(font_dir: Path) -> None:
         get_font.cache_clear()
 
 
+def _download_smiley_sans(font_dir: Path) -> bool:
+    target = font_dir / _SMILEY_SANS_FILENAME
+    if target.exists() and target.stat().st_size > 0:
+        return False
+
+    temp_target = target.with_suffix(f"{target.suffix}.tmp")
+    try:
+        total_bytes = 0
+        archive = io.BytesIO()
+        with urlopen(_SMILEY_SANS_DOWNLOAD_URL, timeout=30) as response:
+            while True:
+                chunk = response.read(1024 * 1024)
+                if not chunk:
+                    break
+                total_bytes += len(chunk)
+                if total_bytes > _MAX_FONT_BYTES:
+                    raise RuntimeError("Smiley Sans 字体包超过下载大小限制")
+                archive.write(chunk)
+
+        archive.seek(0)
+        with zipfile.ZipFile(archive) as zip_file:
+            font_members = [
+                member
+                for member in zip_file.infolist()
+                if not member.is_dir()
+                and member.filename.lower().endswith((".otf", ".ttf"))
+                and not member.filename.lower().endswith(".woff2")
+            ]
+            preferred = next(
+                (
+                    member
+                    for member in font_members
+                    if Path(member.filename).name == _SMILEY_SANS_FILENAME
+                ),
+                font_members[0] if font_members else None,
+            )
+            if preferred is None:
+                raise RuntimeError("Smiley Sans 字体包内未找到 OTF/TTF 字体")
+            if preferred.file_size > _MAX_FONT_BYTES:
+                raise RuntimeError("Smiley Sans 字体文件超过大小限制")
+            with zip_file.open(preferred) as source, temp_target.open("wb") as file:
+                file.write(source.read())
+
+        temp_target.replace(target)
+        logger.info(f"Pillow 得意黑字体已下载: {target}")
+        return True
+    except Exception as e:
+        temp_target.unlink(missing_ok=True)
+        logger.warning(f"Pillow 得意黑字体下载失败,将使用默认字体退化渲染: {e}")
+        return False
+
+
 def _downloaded_font_candidates(bold: bool) -> tuple[tuple[Path, int], ...]:
     if _font_dir is None:
         return ()
     filename = "NotoSansCJKsc-Bold.otf" if bold else "NotoSansCJKsc-Regular.otf"
-    return ((_font_dir / filename, 0),)
+    return (
+        (_font_dir / _SMILEY_SANS_FILENAME, 0),
+        (_font_dir / filename, 0),
+    )
 
 
 def stringify_value(value: object) -> str:

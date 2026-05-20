@@ -48,14 +48,14 @@
   "render_mode": {
     "description": "图片渲染方式",
     "type": "string",
-    "hint": "html 为默认自动链路：RPC -> Playwright -> Pillow；pillow 为强制使用 Pillow",
-    "default": "html",
-    "options": ["html", "pillow"]
+    "hint": "默认 pillow；playwright 为本地浏览器渲染；rpc 为远程 RPC 渲染。旧值 html 会兼容为 playwright",
+    "default": "pillow",
+    "options": ["pillow", "playwright", "rpc"]
   },
   "episode_card_template": {
-    "description": "单集更新卡片模板",
+    "description": "图片卡片风格",
     "type": "string",
-    "hint": "1=pastel_lightbox，2=editorial_digest，3=cinematic_poster；默认使用第 3 个海报模板",
+    "hint": "用于单集更新卡片和长文本响应卡片；1=pastel_lightbox，2=editorial_digest，3=cinematic_poster；默认使用第 3 个海报模板",
     "default": "cinematic_poster",
     "options": ["pastel_lightbox", "editorial_digest", "cinematic_poster"]
   }

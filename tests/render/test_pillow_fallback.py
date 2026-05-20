@@ -28,10 +28,10 @@ async def test_subject_pillow_failure_uses_pure_pil_fallback(
 
 
 @pytest.mark.asyncio
-async def test_subject_html_failure_falls_back_to_pillow(
+async def test_subject_playwright_failure_falls_back_to_pillow(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    renderer = SubjectRenderer(render_mode="html")
+    renderer = SubjectRenderer(render_mode="playwright")
     renderer._render_via_rpc = AsyncMock(return_value=None)
     renderer._render_locally = AsyncMock(return_value=None)
     monkeypatch.setattr(
@@ -45,7 +45,7 @@ async def test_subject_html_failure_falls_back_to_pillow(
 
     assert base64_image is not None
     assert_png_image(base64_image, (2400, 1674), require_non_blank=True)
-    renderer._render_via_rpc.assert_awaited_once()
+    renderer._render_via_rpc.assert_not_awaited()
     renderer._render_locally.assert_awaited_once()
 
 
@@ -86,10 +86,10 @@ async def test_episode_pillow_failure_uses_pure_pil_fallback(
 
 
 @pytest.mark.asyncio
-async def test_episode_html_failure_falls_back_to_pillow(
+async def test_episode_playwright_failure_falls_back_to_pillow(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    renderer = EpisodeRenderer(render_mode="html")
+    renderer = EpisodeRenderer(render_mode="playwright")
     renderer._render_via_rpc = AsyncMock(return_value=None)
     renderer._render_locally = AsyncMock(return_value=None)
     monkeypatch.setattr(
@@ -119,5 +119,5 @@ async def test_episode_html_failure_falls_back_to_pillow(
 
     assert base64_image is not None
     assert_png_image(base64_image, (2304, 3072), require_non_blank=True)
-    renderer._render_via_rpc.assert_awaited_once()
+    renderer._render_via_rpc.assert_not_awaited()
     renderer._render_locally.assert_awaited_once()

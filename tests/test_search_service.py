@@ -71,6 +71,27 @@ async def test_handle_subject_search_no_query(
     assert "❌ 请提供搜索关键词" in str(results[0])
 
 
+@pytest.mark.asyncio
+async def test_handle_subject_search_uses_injected_text_result_builder(
+    mock_service: MagicMock, mock_config_manager: MagicMock
+) -> None:
+    async def text_builder(event: AstrMessageEvent, text: str) -> object:
+        return {"event": event, "text": text, "kind": "mapped"}
+
+    search_service = SearchService(
+        service=mock_service,
+        config_manager=mock_config_manager,
+        text_result_builder=text_builder,
+    )
+    event = MagicMock(spec=AstrMessageEvent)
+
+    results = [res async for res in search_service.handle_subject_search(event, "")]
+
+    assert results == [
+        {"event": event, "text": "❌ 请提供搜索关键词", "kind": "mapped"}
+    ]
+
+
 def test_search_service_passes_render_mode_to_renderers(
     mock_service: MagicMock, mock_config_manager: MagicMock
 ) -> None:
