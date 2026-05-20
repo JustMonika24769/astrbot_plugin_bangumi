@@ -7,7 +7,13 @@ from PIL import Image, ImageChops
 
 from astrbot_plugin_bangumi.src.domain import EPISODE_CARD_VARIANTS
 from astrbot_plugin_bangumi.src.render import SubjectRenderer
-from astrbot_plugin_bangumi.src.render.subject_renderer import _SUBJECT_CARD_STYLES
+from astrbot_plugin_bangumi.src.render.subject_renderer import (
+    _SUBJECT_CARD_STYLES,
+    _SUBJECT_COVER_BOX,
+    _SUBJECT_LEFT_PANEL_RIGHT,
+    _SUBJECT_RIGHT_X,
+    _SUBJECT_TITLE_PANEL_BOTTOM,
+)
 from astrbot_plugin_bangumi.tests.render.image_assertions import assert_png_image
 
 DATA_URI = (
@@ -182,6 +188,35 @@ async def test_render_subject_card_weekday_badge_is_square() -> None:
     assert 168 <= badge_width <= 172
     assert 168 <= badge_height <= 172
     assert abs(badge_width - badge_height) <= 2
+
+
+@pytest.mark.asyncio
+async def test_render_subject_card_aligns_cover_panel_and_title_band() -> None:
+    renderer = SubjectRenderer(render_mode="pillow")
+
+    payload = await renderer.render_subject_card(
+        build_subject_data(), variant="pastel_lightbox"
+    )
+
+    assert payload is not None
+    image = Image.open(io.BytesIO(base64.b64decode(payload))).convert("RGBA")
+    style = _SUBJECT_CARD_STYLES["pastel_lightbox"]
+    assert style.side_strip is not None
+    assert style.header_band is not None
+    cover_left, _, cover_right, _ = _SUBJECT_COVER_BOX
+    assert _SUBJECT_LEFT_PANEL_RIGHT - cover_right == cover_left
+
+    assert image.getpixel((5, 500)) == style.side_strip
+    assert image.getpixel((_SUBJECT_LEFT_PANEL_RIGHT - 10, 500)) == style.side_strip
+    assert image.getpixel((_SUBJECT_LEFT_PANEL_RIGHT + 10, 500)) == style.card
+    assert (
+        image.getpixel((_SUBJECT_RIGHT_X, _SUBJECT_TITLE_PANEL_BOTTOM - 8))
+        == style.header_band
+    )
+    assert (
+        image.getpixel((_SUBJECT_RIGHT_X, _SUBJECT_TITLE_PANEL_BOTTOM + 16))
+        == style.card
+    )
 
 
 @pytest.mark.asyncio

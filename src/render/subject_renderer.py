@@ -38,6 +38,10 @@ from .pillow_utils import (
 _EPISODE_GRID_COLUMNS = 6
 _MAX_EPISODE_GRID_ROWS = 3
 _MAX_EPISODE_GRID_ITEMS = _EPISODE_GRID_COLUMNS * _MAX_EPISODE_GRID_ROWS
+_SUBJECT_COVER_BOX = (75, 78, 705, 969)
+_SUBJECT_LEFT_PANEL_RIGHT = _SUBJECT_COVER_BOX[2] + _SUBJECT_COVER_BOX[0]
+_SUBJECT_RIGHT_X = _SUBJECT_LEFT_PANEL_RIGHT + 60
+_SUBJECT_TITLE_PANEL_BOTTOM = 300
 
 Color = tuple[int, int, int, int]
 
@@ -94,7 +98,7 @@ _SUBJECT_CARD_STYLES: dict[EpisodeCardVariant, SubjectCardStyle] = {
         panel_outline=(204, 214, 206, 255),
         tag_fill=(246, 248, 242, 255),
         side_strip=(139, 160, 148, 255),
-        header_band=None,
+        header_band=(226, 236, 226, 255),
     ),
     "cinematic_poster": SubjectCardStyle(
         surface=(253, 247, 238, 255),
@@ -110,10 +114,70 @@ _SUBJECT_CARD_STYLES: dict[EpisodeCardVariant, SubjectCardStyle] = {
         panel=(255, 255, 250, 255),
         panel_outline=(232, 218, 203, 255),
         tag_fill=(255, 255, 250, 255),
-        side_strip=None,
+        side_strip=(255, 241, 226, 255),
         header_band=(255, 231, 213, 255),
     ),
 }
+
+
+def _draw_left_panel(
+    draw: ImageDraw.ImageDraw,
+    height: int,
+    fill: Color,
+) -> None:
+    """绘制封面承载侧栏,让封面左右留白保持一致。"""
+
+    radius = 60
+    panel_box = (0, 0, _SUBJECT_LEFT_PANEL_RIGHT, height - 1)
+    draw.rounded_rectangle(panel_box, radius=radius, fill=fill)
+    draw.rectangle(
+        (radius, 0, _SUBJECT_LEFT_PANEL_RIGHT, height - 1),
+        fill=fill,
+    )
+    draw.rectangle(
+        (0, radius, _SUBJECT_LEFT_PANEL_RIGHT, height - radius),
+        fill=fill,
+    )
+    draw.line(
+        (_SUBJECT_LEFT_PANEL_RIGHT, 0, _SUBJECT_LEFT_PANEL_RIGHT, height),
+        fill=fill,
+        width=1,
+    )
+
+
+def _draw_title_panel(
+    draw: ImageDraw.ImageDraw,
+    width: int,
+    fill: Color,
+) -> None:
+    """标题背景只包住中日文标题,底部停在标题与评分之间的中线。"""
+
+    radius = 60
+    panel_box = (
+        _SUBJECT_LEFT_PANEL_RIGHT,
+        0,
+        width - 1,
+        _SUBJECT_TITLE_PANEL_BOTTOM,
+    )
+    draw.rounded_rectangle(panel_box, radius=radius, fill=fill)
+    draw.rectangle(
+        (
+            _SUBJECT_LEFT_PANEL_RIGHT,
+            0,
+            width - radius,
+            _SUBJECT_TITLE_PANEL_BOTTOM,
+        ),
+        fill=fill,
+    )
+    draw.rectangle(
+        (
+            _SUBJECT_LEFT_PANEL_RIGHT,
+            radius,
+            width - 1,
+            _SUBJECT_TITLE_PANEL_BOTTOM,
+        ),
+        fill=fill,
+    )
 
 
 def _normalize_subject_variant(
@@ -473,31 +537,20 @@ def _draw_subject_card_image(
         outline=style.outline,
         width=1,
     )
+    if style.side_strip:
+        _draw_left_panel(draw, height, style.side_strip)
     if style.header_band:
-        draw.rounded_rectangle(
-            (0, 0, width - 1, 228),
-            radius=60,
-            fill=style.header_band,
-        )
-        draw.rectangle((0, 112, width, 228), fill=style.header_band)
+        _draw_title_panel(draw, width, style.header_band)
     if resolved_variant == "cinematic_poster":
         draw.polygon(
             [
-                (0, 0),
-                (735, 0),
-                (585, height),
-                (0, height),
+                (_SUBJECT_LEFT_PANEL_RIGHT - 180, 0),
+                (_SUBJECT_LEFT_PANEL_RIGHT, 0),
+                (_SUBJECT_LEFT_PANEL_RIGHT - 120, height),
+                (_SUBJECT_LEFT_PANEL_RIGHT - 300, height),
             ],
-            fill=(255, 241, 226, 255),
+            fill=(255, 232, 206, 255),
         )
-        draw.rectangle((0, 228, 112, height), fill=(255, 234, 217, 255))
-    if style.side_strip:
-        draw.rounded_rectangle(
-            (0, 0, 92, height - 1),
-            radius=60,
-            fill=style.side_strip,
-        )
-        draw.rectangle((0, 0, 92, height), fill=style.side_strip)
 
     decoration = Image.new("RGBA", (width, height), (0, 0, 0, 0))
     decoration_draw = ImageDraw.Draw(decoration)
@@ -513,7 +566,7 @@ def _draw_subject_card_image(
     canvas.alpha_composite(decoration)
     draw = ImageDraw.Draw(canvas)
 
-    cover_box = (75, 78, 705, 969)
+    cover_box = _SUBJECT_COVER_BOX
     add_shadow(
         canvas,
         cover_box,
@@ -581,7 +634,7 @@ def _draw_subject_card_image(
             fill=(252, 252, 252, 255),
         )
 
-    right_x = 789
+    right_x = _SUBJECT_RIGHT_X
 
     draw_text_block(
         draw,
@@ -603,15 +656,16 @@ def _draw_subject_card_image(
         )
 
     score_text, rank_text, total_text = _extract_rating_metrics(data)
-    draw.text((789, 350), "★", font=star_font, fill=style.accent)
-    draw.text((876, 333), score_text, font=score_font, fill=style.accent)
+    draw.text((right_x, 350), "★", font=star_font, fill=style.accent)
+    draw.text((right_x + 87, 333), score_text, font=score_font, fill=style.accent)
     rank_width = max(168, measure_text(draw, rank_text, meta_font)[0] + 72)
+    rank_x = right_x + 275
     draw.rounded_rectangle(
-        (1064, 337, 1064 + rank_width, 407),
+        (rank_x, 337, rank_x + rank_width, 407),
         radius=24,
         fill=style.accent_soft,
     )
-    draw.text((1096, 352), rank_text, font=meta_font, fill=style.accent_text)
+    draw.text((rank_x + 32, 352), rank_text, font=meta_font, fill=style.accent_text)
     count_label = f"{total_text.replace(',', '')} 人评分"
     count_width = measure_text(draw, count_label, meta_font)[0] + 84
     badge_right = width - 75
@@ -779,9 +833,9 @@ def _draw_subject_card_image(
     date_text = _stringify_value(data.get("date"))
     platform = _stringify_value(data.get("platform"))
     if date_text:
-        date_box = (789, footer_y, 1125, footer_y + 63)
+        date_box = (right_x, footer_y, right_x + 336, footer_y + 63)
         draw.rounded_rectangle(date_box, radius=18, fill=style.panel)
-        icon_x = 820
+        icon_x = right_x + 31
         icon_y = footer_y + 17
         draw.rounded_rectangle(
             (icon_x, icon_y + 6, icon_x + 36, icon_y + 39),
@@ -800,11 +854,16 @@ def _draw_subject_card_image(
             fill=style.muted,
             width=3,
         )
-        draw.text((885, footer_y + 12), date_text, font=footer_font, fill=style.muted)
+        draw.text(
+            (right_x + 96, footer_y + 12),
+            date_text,
+            font=footer_font,
+            fill=style.muted,
+        )
     if platform:
-        platform_box = (1197, footer_y, 1375, footer_y + 63)
+        platform_box = (right_x + 408, footer_y, right_x + 586, footer_y + 63)
         draw.rounded_rectangle(platform_box, radius=18, fill=style.panel)
-        tv_x = 1228
+        tv_x = right_x + 439
         tv_y = footer_y + 18
         draw.rounded_rectangle(
             (tv_x, tv_y + 4, tv_x + 38, tv_y + 35),
@@ -819,7 +878,12 @@ def _draw_subject_card_image(
             fill=style.muted,
             width=3,
         )
-        draw.text((1293, footer_y + 12), platform, font=footer_font, fill=style.muted)
+        draw.text(
+            (right_x + 504, footer_y + 12),
+            platform,
+            font=footer_font,
+            fill=style.muted,
+        )
     subject_id = _stringify_value(data.get("id"))
     if subject_id:
         id_label = f"ID: {subject_id}"
