@@ -157,6 +157,16 @@ def test_changelog_documents_metadata_version() -> None:
     assert f"## {metadata['version']}" in changelog
 
 
+def test_card_template_docs_include_search_results() -> None:
+    schema = json.loads((PROJECT_ROOT / "_conf_schema.json").read_text())
+    readme = (PROJECT_ROOT / "README.md").read_text()
+
+    assert "/bgm 搜索结果" in schema["episode_card_template"]["hint"]
+    assert "`episode_card_template`" in readme
+    assert "`/bgm` 搜索结果" in readme
+    assert "scripts/render_subject_variants.py" in readme
+
+
 def test_plugin_uses_metadata_instead_of_deprecated_register_decorator() -> None:
     main_py = (PROJECT_ROOT / "main.py").read_text()
 

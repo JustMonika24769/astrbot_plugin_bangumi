@@ -189,6 +189,7 @@ class SearchService:
             data_list=cast(list[RenderData], data_list),
             rpc_url=self.config_manager.get_render_server_url(),
             max_retries=self.config_manager.get_max_retries(),
+            variant=self.config_manager.get_episode_card_template(),
         )
 
         return [Comp.Image.fromBase64(b64) for b64 in base64_list]

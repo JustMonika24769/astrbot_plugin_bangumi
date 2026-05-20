@@ -199,7 +199,7 @@ async def test_episode_card_template_command_shows_current_template() -> None:
     ]
 
     assert len(results) == 1
-    assert "当前单集卡片模板: cinematic_poster" in results[0]
+    assert "当前图片卡片风格: cinematic_poster" in results[0]
     assert "1. pastel_lightbox" in results[0]
     assert "3. cinematic_poster" in results[0]
     plugin.config_manager.set_episode_card_template.assert_not_called()
@@ -217,7 +217,7 @@ async def test_episode_card_template_command_updates_config() -> None:
         async for result in BangumiPlugin.episode_card_template(plugin, event, "2")
     ]
 
-    assert results == ["✅ 已切换单集卡片模板为 editorial_digest - Episode digest"]
+    assert results == ["✅ 已切换图片卡片风格为 editorial_digest - Episode digest"]
     plugin.config_manager.set_episode_card_template.assert_called_once_with(
         "editorial_digest"
     )
@@ -236,7 +236,7 @@ async def test_episode_card_template_command_rejects_unknown_template() -> None:
     ]
 
     assert len(results) == 1
-    assert "❌ 未知单集卡片模板: bad" in results[0]
+    assert "❌ 未知图片卡片风格: bad" in results[0]
     plugin.config_manager.set_episode_card_template.assert_not_called()
     plugin.config_manager.save_config.assert_not_called()
 

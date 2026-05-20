@@ -1,7 +1,7 @@
 <div align="center">
 
 # Bangumi 搜索插件使用指南
-[![version](https://img.shields.io/badge/version-v1.4.0-blue.svg)](https://github.com/united-pooh/astrbot_plugin_bangumi)
+[![version](https://img.shields.io/badge/version-v1.4.1-blue.svg)](https://github.com/united-pooh/astrbot_plugin_bangumi)
 [![License](https://img.shields.io/badge/license-Apache%202.0-green.svg)](LICENSE-2.0)
 [![AstrBot](https://img.shields.io/badge/AstrBot-%3E%3D4.16.0-orange.svg)](https://github.com/Soulter/AstrBot)
 [![Python](https://img.shields.io/badge/python-3.12%2B-blue.svg)](https://www.python.org/)
@@ -42,7 +42,7 @@
 | `/today` | 获取今日番剧更新 | 无 | `/today` |
 | `/追番` | 订阅番剧,更新时自动通知 | `<关键词\|ID>` | `/追番 进击的巨人` |
 | `/弃坑` | 取消订阅番剧 | `<关键词\|ID>` | `/弃坑 进击的巨人` |
-| `/bgm模板` | 查看或切换单集更新卡片模板 | `[1\|2\|3\|模板名]` | `/bgm模板 3` |
+| `/bgm模板` | 查看或切换图片卡片风格 | `[1\|2\|3\|模板名]` | `/bgm模板 3` |
 
 
 **功能亮点**:
@@ -64,7 +64,7 @@
 | `max_retries` | int | `3` | 网络错误最大重试次数(范围:1–10) |
 | `render_server_url` | string | `https://api.unitedpooh.top/rpc` | 远程渲染图片的 RPC 服务器地址 |
 | `render_mode` | string | `pillow` | 渲染模式;可选 `pillow`、`playwright`、`rpc`;旧配置值 `html` 会兼容为 `playwright` |
-| `episode_card_template` | string | `cinematic_poster` | 图片卡片风格;可选 `pastel_lightbox`、`editorial_digest`、`cinematic_poster`,第三个为默认 |
+| `episode_card_template` | string | `cinematic_poster` | 图片卡片风格;影响 `/bgm` 搜索结果、单集更新和长文本响应;可选 `pastel_lightbox`、`editorial_digest`、`cinematic_poster`,第三个为默认 |
 
 ### Access Token 获取
 
@@ -81,6 +81,16 @@
 
 如果配置 `render_mode=pillow`,条目卡、单集卡、放送表和长文本响应卡会直接使用纯 Pillow 渲染。配置 `render_mode=rpc` 时会优先使用 `render_server_url` 指向的 RPC 渲染服务,失败后退化到 Pillow。
 
+### 搜索结果卡片
+
+`/bgm` 搜索结果卡片同步支持三种风格:`pastel_lightbox`、`editorial_digest`、`cinematic_poster`。默认使用 `cinematic_poster`,也可以在 `_conf_schema.json` 的 `episode_card_template` 中配置,或通过 `/bgm模板 1`、`/bgm模板 2`、`/bgm模板 3` 指令切换。Playwright/RPC 链路会内嵌同一张 Pillow 预渲染图片,保持三种渲染模式的视觉一致。可用本地脚本从 Bangumi API 拉取真实条目数据生成预览图:
+
+```bash
+python scripts/render_subject_variants.py
+```
+
+生成结果会写入本地忽略目录 `rendered_images/subject-card-v1.4.1/`,用于用户审核前的可读性自检。
+
 ### 长文本响应卡片
 
 普通命令响应会按长度自动选择输出方式:30 字以内且不含换行时仍发送纯文字;超过 30 字或包含换行时会使用当前 `episode_card_template` 对应的三种风格之一渲染为图片。可用本地脚本生成真实数据预览图:
@@ -93,7 +103,7 @@ python scripts/render_response_previews.py
 
 ### 单集卡片预览
 
-单集更新卡片和长文本响应卡片保留三种候选风格:`pastel_lightbox`、`editorial_digest`、`cinematic_poster`。默认使用第三个 `cinematic_poster`,也可以在 `_conf_schema.json` 的 `episode_card_template` 中配置,或通过 `/bgm模板 1`、`/bgm模板 2`、`/bgm模板 3` 指令切换。三种模板都会通过 Pillow 输出,HTML 链路会内嵌同一张 Pillow 预渲染图片以保持像素级对齐。可用本地脚本从 Bangumi API 拉取真实条目与剧集数据,生成真实数据对比图:
+单集更新卡片、搜索结果卡片和长文本响应卡片保留三种候选风格:`pastel_lightbox`、`editorial_digest`、`cinematic_poster`。默认使用第三个 `cinematic_poster`,也可以在 `_conf_schema.json` 的 `episode_card_template` 中配置,或通过 `/bgm模板 1`、`/bgm模板 2`、`/bgm模板 3` 指令切换。三种模板都会通过 Pillow 输出,HTML 链路会内嵌同一张 Pillow 预渲染图片以保持像素级对齐。可用本地脚本从 Bangumi API 拉取真实条目与剧集数据,生成真实数据对比图:
 
 ```bash
 python scripts/render_episode_variants.py

@@ -23,6 +23,7 @@ def mock_config_manager() -> MagicMock:
     config_manager.get_render_server_url.return_value = "https://api.unitedpooh.top/rpc"
     config_manager.get_max_retries.return_value = 1
     config_manager.get_render_mode.return_value = "html"
+    config_manager.get_episode_card_template.return_value = "editorial_digest"
     return config_manager
 
 
@@ -55,7 +56,12 @@ async def test_prepare_subject_images_skips_missing_details_and_tolerates_episod
     )
 
     assert len(images) == 1
-    service.subject_renderer.render_batch_subject_cards_to_base64.assert_awaited_once()
+    service.subject_renderer.render_batch_subject_cards_to_base64.assert_awaited_once_with(
+        data_list=[{"id": 2, "name": "ok"}],
+        rpc_url="https://api.unitedpooh.top/rpc",
+        max_retries=1,
+        variant="editorial_digest",
+    )
 
 
 @pytest.mark.asyncio

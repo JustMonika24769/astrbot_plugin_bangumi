@@ -4,13 +4,20 @@ import re
 from collections import Counter
 from collections.abc import Mapping
 from contextlib import suppress
+from dataclasses import dataclass
 from typing import cast
 
 from astrbot.api import logger
 from PIL import Image, ImageDraw
 
 from ..bangumi_types import JsonValue
-from ..domain.contracts import EpisodeItem, RenderData
+from ..domain.contracts import (
+    DEFAULT_EPISODE_CARD_VARIANT,
+    EpisodeCardVariant,
+    EpisodeItem,
+    RenderData,
+    is_episode_card_variant,
+)
 from ..domain.types import SubjectType
 from .base_renderer import BaseRenderer
 from .pillow_utils import (
@@ -31,6 +38,90 @@ from .pillow_utils import (
 _EPISODE_GRID_COLUMNS = 6
 _MAX_EPISODE_GRID_ROWS = 3
 _MAX_EPISODE_GRID_ITEMS = _EPISODE_GRID_COLUMNS * _MAX_EPISODE_GRID_ROWS
+
+Color = tuple[int, int, int, int]
+
+
+@dataclass(frozen=True)
+class SubjectCardStyle:
+    surface: Color
+    card: Color
+    outline: Color
+    accent: Color
+    accent_soft: Color
+    accent_text: Color
+    title: Color
+    secondary: Color
+    body: Color
+    muted: Color
+    panel: Color
+    panel_outline: Color
+    tag_fill: Color
+    side_strip: Color | None
+    header_band: Color | None
+
+
+_SUBJECT_CARD_STYLES: dict[EpisodeCardVariant, SubjectCardStyle] = {
+    "pastel_lightbox": SubjectCardStyle(
+        surface=(255, 252, 244, 255),
+        card=(255, 255, 252, 255),
+        outline=(232, 222, 212, 255),
+        accent=(236, 96, 139, 255),
+        accent_soft=(255, 222, 233, 255),
+        accent_text=(148, 55, 91, 255),
+        title=(42, 55, 73, 255),
+        secondary=(88, 101, 118, 255),
+        body=(54, 65, 82, 255),
+        muted=(102, 112, 128, 255),
+        panel=(255, 255, 252, 255),
+        panel_outline=(232, 222, 212, 255),
+        tag_fill=(255, 255, 252, 255),
+        side_strip=(218, 244, 226, 255),
+        header_band=(198, 232, 246, 255),
+    ),
+    "editorial_digest": SubjectCardStyle(
+        surface=(238, 240, 232, 255),
+        card=(238, 240, 232, 255),
+        outline=(211, 216, 208, 255),
+        accent=(92, 115, 112, 255),
+        accent_soft=(224, 231, 225, 255),
+        accent_text=(55, 77, 73, 255),
+        title=(31, 36, 44, 255),
+        secondary=(92, 105, 112, 255),
+        body=(48, 55, 63, 255),
+        muted=(105, 128, 120, 255),
+        panel=(248, 249, 244, 255),
+        panel_outline=(204, 214, 206, 255),
+        tag_fill=(246, 248, 242, 255),
+        side_strip=(111, 137, 129, 255),
+        header_band=None,
+    ),
+    "cinematic_poster": SubjectCardStyle(
+        surface=(247, 242, 232, 255),
+        card=(255, 255, 250, 255),
+        outline=(220, 226, 218, 255),
+        accent=(236, 72, 153, 255),
+        accent_soft=(250, 222, 237, 255),
+        accent_text=(160, 47, 105, 255),
+        title=(31, 36, 44, 255),
+        secondary=(97, 108, 119, 255),
+        body=(45, 53, 65, 255),
+        muted=(97, 108, 119, 255),
+        panel=(255, 255, 250, 255),
+        panel_outline=(220, 226, 218, 255),
+        tag_fill=(255, 255, 250, 255),
+        side_strip=None,
+        header_band=(199, 231, 240, 255),
+    ),
+}
+
+
+def _normalize_subject_variant(
+    variant: EpisodeCardVariant | None,
+) -> EpisodeCardVariant:
+    if is_episode_card_variant(variant):
+        return variant
+    return DEFAULT_EPISODE_CARD_VARIANT
 
 
 def _process_images(data: RenderData) -> None:
@@ -344,7 +435,9 @@ def _build_subject_summary(data: RenderData) -> str:
 def _draw_subject_card_image(
     data: RenderData,
     cover_image: Image.Image | None,
+    variant: EpisodeCardVariant = DEFAULT_EPISODE_CARD_VARIANT,
 ) -> str:
+    style = _SUBJECT_CARD_STYLES[_normalize_subject_variant(variant)]
     raw_episode_list = data.get("episode_list")
     episode_items: list[Mapping[str, object]] = []
     if isinstance(raw_episode_list, list):
@@ -361,7 +454,7 @@ def _draw_subject_card_image(
     width, height = 2400, 1674 + episode_y_shift
     primary_title, secondary_title = _extract_subject_titles(data)
 
-    canvas = Image.new("RGBA", (width, height), (0, 0, 0, 0))
+    canvas = Image.new("RGBA", (width, height), style.surface)
     card_box = (0, 0, width, height)
     add_shadow(
         canvas,
@@ -375,16 +468,30 @@ def _draw_subject_card_image(
     draw.rounded_rectangle(
         (0, 0, width - 1, height - 1),
         radius=60,
-        fill=(255, 255, 255, 255),
-        outline=(250, 250, 250, 255),
+        fill=style.card,
+        outline=style.outline,
         width=1,
     )
+    if style.header_band:
+        draw.rounded_rectangle(
+            (0, 0, width - 1, 228),
+            radius=60,
+            fill=style.header_band,
+        )
+        draw.rectangle((0, 112, width, 228), fill=style.header_band)
+    if style.side_strip:
+        draw.rounded_rectangle(
+            (0, 0, 92, height - 1),
+            radius=60,
+            fill=style.side_strip,
+        )
+        draw.rectangle((0, 0, 92, height), fill=style.side_strip)
 
     decoration = Image.new("RGBA", (width, height), (0, 0, 0, 0))
     decoration_draw = ImageDraw.Draw(decoration)
     decoration_draw.ellipse(
         (2097, -150, 2547, 300),
-        fill=(255, 243, 224, 150),
+        fill=(*style.accent_soft[:3], 150),
     )
     canvas.alpha_composite(decoration)
     draw = ImageDraw.Draw(canvas)
@@ -402,13 +509,13 @@ def _draw_subject_card_image(
         cover_card = Image.new(
             "RGBA",
             (cover_box[2] - cover_box[0], cover_box[3] - cover_box[1]),
-            (240, 240, 240, 255),
+            style.accent_soft,
         )
         cover_draw = ImageDraw.Draw(cover_card)
         cover_draw.rounded_rectangle(
             (0, 0, cover_card.width - 1, cover_card.height - 1),
             radius=36,
-            fill=(240, 240, 240, 255),
+            fill=style.accent_soft,
         )
     else:
         cover_card = fit_cover(
@@ -436,14 +543,10 @@ def _draw_subject_card_image(
         draw.rounded_rectangle(
             (badge_box[0], badge_box[1], badge_box[2] + 60, badge_box[3] + 60),
             radius=54,
-            fill=(251, 140, 0, 255),
+            fill=style.accent,
         )
-        draw.rectangle(
-            (badge_box[0] + 54, 0, width, badge_box[3]), fill=(251, 140, 0, 255)
-        )
-        draw.rectangle(
-            (badge_box[0], 0, width, badge_box[1] + 54), fill=(251, 140, 0, 255)
-        )
+        draw.rectangle((badge_box[0] + 54, 0, width, badge_box[3]), fill=style.accent)
+        draw.rectangle((badge_box[0], 0, width, badge_box[1] + 54), fill=style.accent)
         day_font = get_font(72, bold=True)
         sub_font = get_font(27, bold=True)
         day_w, _ = measure_text(draw, air_weekday, day_font)
@@ -469,7 +572,7 @@ def _draw_subject_card_image(
         (right_x, 80, 2180, 196),
         primary_title,
         title_font,
-        (26, 26, 26, 255),
+        style.title,
         max_lines=1,
         line_spacing=0,
     )
@@ -479,20 +582,20 @@ def _draw_subject_card_image(
             (right_x, 209, 2180, 268),
             secondary_title,
             subtitle_font,
-            (133, 144, 166, 255),
+            style.secondary,
             max_lines=1,
         )
 
     score_text, rank_text, total_text = _extract_rating_metrics(data)
-    draw.text((789, 350), "★", font=star_font, fill=(251, 140, 0, 255))
-    draw.text((876, 333), score_text, font=score_font, fill=(251, 140, 0, 255))
+    draw.text((789, 350), "★", font=star_font, fill=style.accent)
+    draw.text((876, 333), score_text, font=score_font, fill=style.accent)
     rank_width = max(168, measure_text(draw, rank_text, meta_font)[0] + 72)
     draw.rounded_rectangle(
         (1064, 337, 1064 + rank_width, 407),
         radius=24,
-        fill=(255, 243, 224, 255),
+        fill=style.accent_soft,
     )
-    draw.text((1096, 352), rank_text, font=meta_font, fill=(230, 81, 0, 255))
+    draw.text((1096, 352), rank_text, font=meta_font, fill=style.accent_text)
     count_label = f"{total_text.replace(',', '')} 人评分"
     count_width = measure_text(draw, count_label, meta_font)[0] + 84
     badge_right = width - 75
@@ -503,20 +606,18 @@ def _draw_subject_card_image(
         draw.rounded_rectangle(
             collection_box,
             radius=37,
-            fill=(245, 245, 245, 255),
+            fill=style.panel,
         )
         draw.text(
             (collection_box[0] + 42, 351),
             collection_label,
             font=meta_font,
-            fill=(133, 144, 166, 255),
+            fill=style.muted,
         )
         badge_right = collection_box[0] - 24
     count_box = (badge_right - count_width, 334, badge_right, 408)
-    draw.rounded_rectangle(count_box, radius=37, fill=(245, 245, 245, 255))
-    draw.text(
-        (count_box[0] + 42, 351), count_label, font=meta_font, fill=(133, 144, 166, 255)
-    )
+    draw.rounded_rectangle(count_box, radius=37, fill=style.panel)
+    draw.text((count_box[0] + 42, 351), count_label, font=meta_font, fill=style.muted)
 
     tags = _extract_tags(data)
     tag_x = right_x
@@ -531,9 +632,9 @@ def _draw_subject_card_image(
             (tag_x, tag_y),
             tag,
             tag_font,
-            fill=(255, 255, 255, 255),
-            text_fill=(133, 144, 166, 255),
-            outline=(224, 224, 224, 255),
+            fill=style.tag_fill,
+            text_fill=style.secondary,
+            outline=style.panel_outline,
             padding_x=36,
             padding_y=16,
         )
@@ -543,21 +644,21 @@ def _draw_subject_card_image(
     for x in range(right_x, 2325, 22):
         draw.line(
             (x, summary_top, min(x + 10, 2325), summary_top),
-            fill=(234, 234, 234, 255),
+            fill=style.panel_outline,
             width=3,
         )
     draw.text(
         (right_x, summary_top + 69),
         "简介",
         font=summary_label_font,
-        fill=(38, 38, 38, 255),
+        fill=style.title,
     )
     draw_text_block(
         draw,
         (right_x, summary_top + 164, 2300, 1138),
         _build_subject_summary(data),
         summary_font,
-        (74, 74, 74, 255),
+        style.body,
         max_lines=3,
         line_spacing=24,
     )
@@ -573,27 +674,21 @@ def _draw_subject_card_image(
             shadow_color=(0, 0, 0, 18),
         )
         draw = ImageDraw.Draw(canvas)
-        draw.rounded_rectangle(ep_box, radius=36, fill=(255, 255, 255, 255))
+        draw.rounded_rectangle(ep_box, radius=36, fill=style.panel)
         aired_count = sum(1 for item in episode_items if item.get("aired") is True)
-        draw.text((105, 1045), "放送进度", font=small_font, fill=(153, 153, 153, 255))
+        draw.text((105, 1045), "放送进度", font=small_font, fill=style.muted)
         progress = f"{aired_count} / {len(episode_items)}"
         progress_w, _ = measure_text(draw, progress, small_font)
         draw.text(
-            (672 - progress_w, 1045), progress, font=small_font, fill=(251, 140, 0, 255)
+            (672 - progress_w, 1045), progress, font=small_font, fill=style.accent
         )
         cell_x = 105
         cell_y = 1102
         cell_size = 84
         for item in visible_episode_items:
-            fill = (
-                (255, 152, 0, 255)
-                if item.get("aired") is True
-                else (232, 232, 232, 255)
-            )
+            fill = style.accent if item.get("aired") is True else style.accent_soft
             text_fill = (
-                (255, 255, 255, 255)
-                if item.get("aired") is True
-                else (102, 102, 102, 255)
+                (255, 255, 255, 255) if item.get("aired") is True else style.muted
             )
             draw.rounded_rectangle(
                 (cell_x, cell_y, cell_x + cell_size, cell_y + cell_size),
@@ -628,14 +723,14 @@ def _draw_subject_card_image(
             shadow_color=(0, 0, 0, 18),
         )
         draw = ImageDraw.Draw(canvas)
-        draw.rounded_rectangle(chart_box, radius=36, fill=(255, 255, 255, 255))
+        draw.rounded_rectangle(chart_box, radius=36, fill=style.panel)
         title = "评分分布"
         title_w, _ = measure_text(draw, title, small_font)
         draw.text(
             ((chart_box[0] + chart_box[2] - title_w) // 2, 1296 + episode_y_shift),
             title,
             font=small_font,
-            fill=(153, 153, 153, 255),
+            fill=style.muted,
         )
         max_count = max(rating_counts.values()) or 1
         bar_area = (105, 1352 + episode_y_shift, 675, 1490 + episode_y_shift)
@@ -645,7 +740,7 @@ def _draw_subject_card_image(
             count = rating_counts[value]
             bar_height = max(6, int((count / max_count) * (bar_area[3] - bar_area[1])))
             x = bar_area[0] + index * (bar_width + gap)
-            color = (255, 224, 178, 255) if value < 8 else (251, 140, 0, 255)
+            color = style.accent_soft if value < 8 else style.accent
             draw.rounded_rectangle(
                 (x, bar_area[3] - bar_height, x + bar_width, bar_area[3]),
                 radius=6,
@@ -653,7 +748,7 @@ def _draw_subject_card_image(
             )
         draw.line(
             (105, 1498 + episode_y_shift, 675, 1498 + episode_y_shift),
-            fill=(238, 238, 238, 255),
+            fill=style.panel_outline,
             width=3,
         )
         for label, x in (("1", 105), ("5", 357), ("10", 639)):
@@ -661,7 +756,7 @@ def _draw_subject_card_image(
                 (x, 1522 + episode_y_shift),
                 label,
                 font=get_font(27),
-                fill=(204, 204, 204, 255),
+                fill=style.muted,
             )
 
     footer_y = 1495 + episode_y_shift
@@ -669,56 +764,46 @@ def _draw_subject_card_image(
     platform = _stringify_value(data.get("platform"))
     if date_text:
         date_box = (789, footer_y, 1125, footer_y + 63)
-        draw.rounded_rectangle(date_box, radius=18, fill=(249, 249, 249, 255))
+        draw.rounded_rectangle(date_box, radius=18, fill=style.panel)
         icon_x = 820
         icon_y = footer_y + 17
         draw.rounded_rectangle(
             (icon_x, icon_y + 6, icon_x + 36, icon_y + 39),
             radius=4,
-            outline=(153, 153, 153, 255),
+            outline=style.muted,
             width=3,
         )
-        draw.rectangle(
-            (icon_x, icon_y + 6, icon_x + 36, icon_y + 16), fill=(153, 153, 153, 255)
-        )
+        draw.rectangle((icon_x, icon_y + 6, icon_x + 36, icon_y + 16), fill=style.muted)
         draw.line(
             (icon_x + 9, icon_y, icon_x + 9, icon_y + 10),
-            fill=(153, 153, 153, 255),
+            fill=style.muted,
             width=3,
         )
         draw.line(
             (icon_x + 27, icon_y, icon_x + 27, icon_y + 10),
-            fill=(153, 153, 153, 255),
+            fill=style.muted,
             width=3,
         )
-        draw.text(
-            (885, footer_y + 12), date_text, font=footer_font, fill=(153, 153, 153, 255)
-        )
+        draw.text((885, footer_y + 12), date_text, font=footer_font, fill=style.muted)
     if platform:
         platform_box = (1197, footer_y, 1375, footer_y + 63)
-        draw.rounded_rectangle(platform_box, radius=18, fill=(249, 249, 249, 255))
+        draw.rounded_rectangle(platform_box, radius=18, fill=style.panel)
         tv_x = 1228
         tv_y = footer_y + 18
         draw.rounded_rectangle(
             (tv_x, tv_y + 4, tv_x + 38, tv_y + 35),
             radius=5,
-            outline=(153, 153, 153, 255),
+            outline=style.muted,
             width=3,
         )
-        draw.line(
-            (tv_x + 10, tv_y, tv_x + 19, tv_y + 7), fill=(153, 153, 153, 255), width=3
-        )
-        draw.line(
-            (tv_x + 28, tv_y, tv_x + 19, tv_y + 7), fill=(153, 153, 153, 255), width=3
-        )
+        draw.line((tv_x + 10, tv_y, tv_x + 19, tv_y + 7), fill=style.muted, width=3)
+        draw.line((tv_x + 28, tv_y, tv_x + 19, tv_y + 7), fill=style.muted, width=3)
         draw.line(
             (tv_x + 13, tv_y + 40, tv_x + 25, tv_y + 40),
-            fill=(153, 153, 153, 255),
+            fill=style.muted,
             width=3,
         )
-        draw.text(
-            (1293, footer_y + 12), platform, font=footer_font, fill=(153, 153, 153, 255)
-        )
+        draw.text((1293, footer_y + 12), platform, font=footer_font, fill=style.muted)
     subject_id = _stringify_value(data.get("id"))
     if subject_id:
         id_label = f"ID: {subject_id}"
@@ -727,7 +812,7 @@ def _draw_subject_card_image(
             (width - 75 - id_w, footer_y + 14),
             id_label,
             font=footer_font,
-            fill=(190, 190, 190, 255),
+            fill=style.muted,
         )
 
     # Browser locator screenshots keep a faint antialiased edge around the card.
@@ -741,20 +826,27 @@ def _draw_subject_card_image(
 
 
 class SubjectRenderer(BaseRenderer):
-    async def _render_subject_card_pillow(self, render_data: RenderData) -> str:
+    async def _render_subject_card_pillow(
+        self,
+        render_data: RenderData,
+        variant: EpisodeCardVariant = DEFAULT_EPISODE_CARD_VARIANT,
+    ) -> str:
         cover_source = _stringify_value(render_data.get("image_url"))
         cover_image = await load_image_source(cover_source, self._session)
         return await asyncio.to_thread(
             _draw_subject_card_image,
             render_data,
             cover_image,
+            variant,
         )
 
     async def _render_subject_card_pillow_with_placeholder(
-        self, render_data: RenderData
+        self,
+        render_data: RenderData,
+        variant: EpisodeCardVariant = DEFAULT_EPISODE_CARD_VARIANT,
     ) -> str:
         try:
-            return await self._render_subject_card_pillow(render_data)
+            return await self._render_subject_card_pillow(render_data, variant)
         except Exception as e:
             logger.warning(f"[+] Pillow 条目卡片渲染失败,使用纯 PIL 退避卡片: {e}")
             fallback_data = render_data.copy()
@@ -763,6 +855,7 @@ class SubjectRenderer(BaseRenderer):
                 _draw_subject_card_image,
                 fallback_data,
                 None,
+                variant,
             )
 
     async def render_subject_card(
@@ -773,24 +866,52 @@ class SubjectRenderer(BaseRenderer):
         wait_time: int = 0,
         max_retries: int = 3,
         timeout: int = 30000,
+        variant: EpisodeCardVariant | None = None,
     ) -> str | None:
         render_data = preprocess_data(data)
+        subject_variant = _normalize_subject_variant(variant)
         if self.render_mode == "pillow":
-            return await self._render_subject_card_pillow_with_placeholder(render_data)
+            return await self._render_subject_card_pillow_with_placeholder(
+                render_data,
+                subject_variant,
+            )
+
+        pillow_payload: str | None = None
+
+        async def pillow_fallback() -> str | None:
+            nonlocal pillow_payload
+            if pillow_payload is None:
+                pillow_payload = (
+                    await self._render_subject_card_pillow_with_placeholder(
+                        render_data,
+                        subject_variant,
+                    )
+                )
+            return pillow_payload
+
+        pillow_payload = await pillow_fallback()
+        carrier_data = cast(
+            RenderData,
+            {
+                "pillow_card_data_uri": f"data:image/png;base64,{pillow_payload}",
+                "subject_variant": subject_variant,
+                "title": _stringify_value(render_data.get("name_cn"))
+                or _stringify_value(render_data.get("name"))
+                or "Subject Card",
+            },
+        )
 
         return await self.render(
-            template_path="subject/subject.html",
-            render_data=render_data,
-            selector="#card",
+            template_path="subject/subject_carrier.html",
+            render_data=carrier_data,
+            selector="#subject-card",
             sub_dir="subject",
             rpc_url=rpc_url,
             headless=headless,
             max_retries=max_retries,
             wait_time=wait_time,
             timeout=timeout,
-            pillow_fallback=lambda: self._render_subject_card_pillow_with_placeholder(
-                render_data
-            ),
+            pillow_fallback=pillow_fallback,
         )
 
     async def render_batch_subject_cards_to_base64(
@@ -802,8 +923,10 @@ class SubjectRenderer(BaseRenderer):
         max_retries: int = 3,
         timeout: int = 30000,
         max_concurrency: int = 3,
+        variant: EpisodeCardVariant | None = None,
     ) -> list[str]:
         semaphore = asyncio.Semaphore(max_concurrency)
+        subject_variant = _normalize_subject_variant(variant)
 
         async def _limited_render(data: RenderData) -> str | None:
             async with semaphore:
@@ -814,6 +937,7 @@ class SubjectRenderer(BaseRenderer):
                     wait_time=wait_time,
                     max_retries=max_retries,
                     timeout=timeout,
+                    variant=subject_variant,
                 )
 
         tasks = [_limited_render(data) for data in data_list]

@@ -1,7 +1,11 @@
+import base64
+import io
 from unittest.mock import AsyncMock
 
 import pytest
+from PIL import Image
 
+from astrbot_plugin_bangumi.src.domain import EPISODE_CARD_VARIANTS
 from astrbot_plugin_bangumi.src.render import SubjectRenderer
 from astrbot_plugin_bangumi.tests.render.image_assertions import assert_png_image
 
@@ -69,6 +73,55 @@ async def test_render_subject_card_pillow_returns_base64() -> None:
 
     assert base64_image is not None
     assert_png_image(base64_image, (2400, 1674), require_non_blank=True)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("variant", EPISODE_CARD_VARIANTS)
+async def test_render_subject_card_pillow_renders_all_named_variants(
+    variant: str,
+) -> None:
+    renderer = SubjectRenderer(render_mode="pillow")
+
+    base64_image = await renderer.render_subject_card(
+        build_subject_data(), variant=variant
+    )
+
+    assert base64_image is not None
+    assert_png_image(base64_image, (2400, 1674), require_non_blank=True)
+
+
+@pytest.mark.asyncio
+async def test_render_subject_card_default_variant_matches_cinematic() -> None:
+    renderer = SubjectRenderer(render_mode="pillow")
+
+    default_image = await renderer.render_subject_card(build_subject_data())
+    cinematic_image = await renderer.render_subject_card(
+        build_subject_data(), variant="cinematic_poster"
+    )
+
+    assert default_image == cinematic_image
+
+
+@pytest.mark.asyncio
+async def test_render_subject_card_variants_are_visually_distinct() -> None:
+    renderer = SubjectRenderer(render_mode="pillow")
+
+    fingerprints: set[tuple[tuple[int, ...], tuple[int, ...], tuple[int, ...]]] = set()
+    for variant in EPISODE_CARD_VARIANTS:
+        payload = await renderer.render_subject_card(
+            build_subject_data(), variant=variant
+        )
+        assert payload is not None
+        image = Image.open(io.BytesIO(base64.b64decode(payload))).convert("RGBA")
+        fingerprints.add(
+            (
+                image.getpixel((120, 96)),
+                image.getpixel((2300, 80)),
+                image.getpixel((1120, 360)),
+            )
+        )
+
+    assert len(fingerprints) == len(EPISODE_CARD_VARIANTS)
 
 
 @pytest.mark.asyncio

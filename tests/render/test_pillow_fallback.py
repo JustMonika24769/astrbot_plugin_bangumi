@@ -19,7 +19,10 @@ async def test_subject_pillow_failure_uses_pure_pil_fallback(
         AsyncMock(side_effect=RuntimeError("image failed")),
     )
 
-    base64_image = await renderer.render_subject_card(build_subject_data())
+    base64_image = await renderer.render_subject_card(
+        build_subject_data(),
+        variant="editorial_digest",
+    )
 
     assert base64_image is not None
     assert base64_image != "html"

@@ -362,14 +362,14 @@ class BangumiPlugin(Star):  # type: ignore[misc]
     async def episode_card_template(
         self, event: AstrMessageEvent, template: str = ""
     ) -> AsyncGenerator[object, None]:
-        """查看或切换订阅更新的单集卡片模板。"""
+        """查看或切换搜索结果、单集更新和长文本响应的图片卡片风格。"""
         options = self._format_episode_card_template_options()
         if not template.strip():
             current = self.config_manager.get_episode_card_template()
             label = EPISODE_CARD_TEMPLATE_LABELS[current]
             yield await self._result_for_text(
                 event,
-                f"当前单集卡片模板: {current} - {label}\n"
+                f"当前图片卡片风格: {current} - {label}\n"
                 f"{options}\n"
                 "发送 `/bgm模板 3` 或 `/bgm模板 cinematic_poster` 切换。",
             )
@@ -379,7 +379,7 @@ class BangumiPlugin(Star):  # type: ignore[misc]
         if resolved is None:
             yield await self._result_for_text(
                 event,
-                f"❌ 未知单集卡片模板: {template}\n"
+                f"❌ 未知图片卡片风格: {template}\n"
                 f"{options}\n"
                 "可使用序号 1/2/3 或模板名切换。",
             )
@@ -389,7 +389,7 @@ class BangumiPlugin(Star):  # type: ignore[misc]
         self.config_manager.save_config()
         yield await self._result_for_text(
             event,
-            "✅ 已切换单集卡片模板为 "
+            "✅ 已切换图片卡片风格为 "
             f"{resolved} - {EPISODE_CARD_TEMPLATE_LABELS[resolved]}",
         )
 
