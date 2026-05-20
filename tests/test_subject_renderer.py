@@ -7,6 +7,7 @@ from PIL import Image
 
 from astrbot_plugin_bangumi.src.domain import EPISODE_CARD_VARIANTS
 from astrbot_plugin_bangumi.src.render import SubjectRenderer
+from astrbot_plugin_bangumi.src.render.subject_renderer import _SUBJECT_CARD_STYLES
 from astrbot_plugin_bangumi.tests.render.image_assertions import assert_png_image
 
 DATA_URI = (
@@ -122,6 +123,36 @@ async def test_render_subject_card_variants_are_visually_distinct() -> None:
         )
 
     assert len(fingerprints) == len(EPISODE_CARD_VARIANTS)
+
+
+@pytest.mark.asyncio
+async def test_render_subject_card_weekday_badge_is_square() -> None:
+    renderer = SubjectRenderer(render_mode="pillow")
+
+    payload = await renderer.render_subject_card(
+        build_subject_data(), variant="cinematic_poster"
+    )
+
+    assert payload is not None
+    image = Image.open(io.BytesIO(base64.b64decode(payload))).convert("RGBA")
+    accent = _SUBJECT_CARD_STYLES["cinematic_poster"].accent
+    coords = [
+        (x, y)
+        for y in range(0, 220)
+        for x in range(2180, 2400)
+        if image.getpixel((x, y)) == accent
+    ]
+    assert coords
+    left = min(x for x, _ in coords)
+    top = min(y for _, y in coords)
+    right = max(x for x, _ in coords)
+    bottom = max(y for _, y in coords)
+
+    badge_width = right - left + 1
+    badge_height = bottom - top + 1
+    assert 168 <= badge_width <= 172
+    assert 168 <= badge_height <= 172
+    assert abs(badge_width - badge_height) <= 2
 
 
 @pytest.mark.asyncio

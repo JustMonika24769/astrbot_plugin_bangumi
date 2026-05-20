@@ -66,9 +66,9 @@ _SUBJECT_CARD_STYLES: dict[EpisodeCardVariant, SubjectCardStyle] = {
         surface=(255, 252, 244, 255),
         card=(255, 255, 252, 255),
         outline=(232, 222, 212, 255),
-        accent=(236, 96, 139, 255),
-        accent_soft=(255, 222, 233, 255),
-        accent_text=(148, 55, 91, 255),
+        accent=(231, 126, 116, 255),
+        accent_soft=(255, 229, 224, 255),
+        accent_text=(146, 73, 66, 255),
         title=(42, 55, 73, 255),
         secondary=(88, 101, 118, 255),
         body=(54, 65, 82, 255),
@@ -76,16 +76,16 @@ _SUBJECT_CARD_STYLES: dict[EpisodeCardVariant, SubjectCardStyle] = {
         panel=(255, 255, 252, 255),
         panel_outline=(232, 222, 212, 255),
         tag_fill=(255, 255, 252, 255),
-        side_strip=(218, 244, 226, 255),
-        header_band=(198, 232, 246, 255),
+        side_strip=(221, 243, 229, 255),
+        header_band=(206, 236, 242, 255),
     ),
     "editorial_digest": SubjectCardStyle(
         surface=(238, 240, 232, 255),
         card=(238, 240, 232, 255),
         outline=(211, 216, 208, 255),
-        accent=(92, 115, 112, 255),
-        accent_soft=(224, 231, 225, 255),
-        accent_text=(55, 77, 73, 255),
+        accent=(111, 134, 121, 255),
+        accent_soft=(229, 237, 228, 255),
+        accent_text=(63, 83, 74, 255),
         title=(31, 36, 44, 255),
         secondary=(92, 105, 112, 255),
         body=(48, 55, 63, 255),
@@ -93,16 +93,16 @@ _SUBJECT_CARD_STYLES: dict[EpisodeCardVariant, SubjectCardStyle] = {
         panel=(248, 249, 244, 255),
         panel_outline=(204, 214, 206, 255),
         tag_fill=(246, 248, 242, 255),
-        side_strip=(111, 137, 129, 255),
+        side_strip=(139, 160, 148, 255),
         header_band=None,
     ),
     "cinematic_poster": SubjectCardStyle(
         surface=(247, 242, 232, 255),
         card=(255, 255, 250, 255),
         outline=(220, 226, 218, 255),
-        accent=(236, 72, 153, 255),
-        accent_soft=(250, 222, 237, 255),
-        accent_text=(160, 47, 105, 255),
+        accent=(223, 112, 132, 255),
+        accent_soft=(249, 226, 231, 255),
+        accent_text=(143, 66, 82, 255),
         title=(31, 36, 44, 255),
         secondary=(97, 108, 119, 255),
         body=(45, 53, 65, 255),
@@ -111,7 +111,7 @@ _SUBJECT_CARD_STYLES: dict[EpisodeCardVariant, SubjectCardStyle] = {
         panel_outline=(220, 226, 218, 255),
         tag_fill=(255, 255, 250, 255),
         side_strip=None,
-        header_band=(199, 231, 240, 255),
+        header_band=(207, 234, 239, 255),
     ),
 }
 
@@ -539,27 +539,26 @@ def _draw_subject_card_image(
 
     air_weekday = _stringify_value(data.get("air_weekday"))
     if air_weekday:
-        badge_box = (2229, 0, width, 168)
+        badge_size = 172
+        badge_box = (width - badge_size, 0, width, badge_size)
         draw.rounded_rectangle(
-            (badge_box[0], badge_box[1], badge_box[2] + 60, badge_box[3] + 60),
-            radius=54,
+            badge_box,
+            radius=42,
             fill=style.accent,
         )
-        draw.rectangle((badge_box[0] + 54, 0, width, badge_box[3]), fill=style.accent)
-        draw.rectangle((badge_box[0], 0, width, badge_box[1] + 54), fill=style.accent)
-        day_font = get_font(72, bold=True)
-        sub_font = get_font(27, bold=True)
+        day_font = get_font(66, bold=True)
+        sub_font = get_font(25, bold=True)
         day_w, _ = measure_text(draw, air_weekday, day_font)
         sub_w, _ = measure_text(draw, "曜日", sub_font)
         center_x = (badge_box[0] + badge_box[2]) // 2
         draw.text(
-            (center_x - day_w // 2, 26),
+            (center_x - day_w // 2, 22),
             air_weekday,
             font=day_font,
             fill=(255, 255, 255, 255),
         )
         draw.text(
-            (center_x - sub_w // 2, 107),
+            (center_x - sub_w // 2, 100),
             "曜日",
             font=sub_font,
             fill=(252, 252, 252, 255),
