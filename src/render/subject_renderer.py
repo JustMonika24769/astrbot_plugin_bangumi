@@ -42,6 +42,7 @@ _SUBJECT_COVER_BOX = (75, 78, 705, 969)
 _SUBJECT_LEFT_PANEL_RIGHT = _SUBJECT_COVER_BOX[2] + _SUBJECT_COVER_BOX[0]
 _SUBJECT_RIGHT_X = _SUBJECT_LEFT_PANEL_RIGHT + 60
 _SUBJECT_TITLE_PANEL_BOTTOM = 300
+_SUBJECT_TOP_ORB_BOX = (2097, -150, 2547, 300)
 
 Color = tuple[int, int, int, int]
 
@@ -63,6 +64,7 @@ class SubjectCardStyle:
     tag_fill: Color
     side_strip: Color | None
     header_band: Color | None
+    top_orb: Color
 
 
 _SUBJECT_CARD_STYLES: dict[EpisodeCardVariant, SubjectCardStyle] = {
@@ -82,6 +84,7 @@ _SUBJECT_CARD_STYLES: dict[EpisodeCardVariant, SubjectCardStyle] = {
         tag_fill=(255, 255, 252, 255),
         side_strip=(221, 243, 229, 255),
         header_band=(206, 236, 242, 255),
+        top_orb=(255, 218, 226, 135),
     ),
     "editorial_digest": SubjectCardStyle(
         surface=(238, 240, 232, 255),
@@ -99,6 +102,7 @@ _SUBJECT_CARD_STYLES: dict[EpisodeCardVariant, SubjectCardStyle] = {
         tag_fill=(246, 248, 242, 255),
         side_strip=(139, 160, 148, 255),
         header_band=(226, 236, 226, 255),
+        top_orb=(203, 222, 209, 150),
     ),
     "cinematic_poster": SubjectCardStyle(
         surface=(253, 247, 238, 255),
@@ -116,6 +120,7 @@ _SUBJECT_CARD_STYLES: dict[EpisodeCardVariant, SubjectCardStyle] = {
         tag_fill=(255, 255, 250, 255),
         side_strip=(255, 241, 226, 255),
         header_band=(255, 231, 213, 255),
+        top_orb=(245, 196, 164, 150),
     ),
 }
 
@@ -555,8 +560,8 @@ def _draw_subject_card_image(
     decoration = Image.new("RGBA", (width, height), (0, 0, 0, 0))
     decoration_draw = ImageDraw.Draw(decoration)
     decoration_draw.ellipse(
-        (2097, -150, 2547, 300),
-        fill=(*style.accent_soft[:3], 150),
+        _SUBJECT_TOP_ORB_BOX,
+        fill=style.top_orb,
     )
     if resolved_variant == "cinematic_poster":
         decoration_draw.ellipse(

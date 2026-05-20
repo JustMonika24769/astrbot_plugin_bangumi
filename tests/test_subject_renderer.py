@@ -13,6 +13,7 @@ from astrbot_plugin_bangumi.src.render.subject_renderer import (
     _SUBJECT_LEFT_PANEL_RIGHT,
     _SUBJECT_RIGHT_X,
     _SUBJECT_TITLE_PANEL_BOTTOM,
+    _SUBJECT_TOP_ORB_BOX,
 )
 from astrbot_plugin_bangumi.tests.render.image_assertions import assert_png_image
 
@@ -217,6 +218,29 @@ async def test_render_subject_card_aligns_cover_panel_and_title_band() -> None:
         image.getpixel((_SUBJECT_RIGHT_X, _SUBJECT_TITLE_PANEL_BOTTOM + 16))
         == style.card
     )
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("variant", ["editorial_digest", "cinematic_poster"])
+async def test_render_subject_card_keeps_top_right_translucent_orb(
+    variant: str,
+) -> None:
+    renderer = SubjectRenderer(render_mode="pillow")
+
+    payload = await renderer.render_subject_card(build_subject_data(), variant=variant)
+
+    assert payload is not None
+    image = Image.open(io.BytesIO(base64.b64decode(payload))).convert("RGBA")
+    style = _SUBJECT_CARD_STYLES[variant]
+    assert style.header_band is not None
+    orb_left, _, orb_right, _ = _SUBJECT_TOP_ORB_BOX
+    orb_sample_x = orb_left + 40
+    orb_sample_y = 100
+    band_sample_x = orb_left - 220
+
+    assert orb_sample_x < orb_right
+    assert image.getpixel((band_sample_x, orb_sample_y)) == style.header_band
+    assert image.getpixel((orb_sample_x, orb_sample_y)) != style.header_band
 
 
 @pytest.mark.asyncio
