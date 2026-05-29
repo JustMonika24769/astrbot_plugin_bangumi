@@ -9,8 +9,6 @@ import astrbot.api.message_components as Comp
 from astrbot.api import logger
 from astrbot.api.all import AstrBotConfig
 from astrbot.api.event import AstrMessageEvent, MessageChain, filter
-
-# 导入配置与管理
 from astrbot.api.star import Context, Star, StarTools
 from astrbot.core.utils.session_waiter import (
     SessionController,
@@ -18,8 +16,13 @@ from astrbot.core.utils.session_waiter import (
     session_waiter,
 )
 
+from .src.adapters import (
+    AstrBotResponseMapper,
+    SqlAlchemySubscriptionStore,
+    StarToolsGroupNotifier,
+)
 from .src.api import BangumiService
-from .src.app import SearchService, SubscriptionService
+from .src.app import AppResponse, SearchService, SubscriptionService
 from .src.config import ConfigManager
 from .src.db import BangumiRepository
 from .src.domain import (
@@ -29,6 +32,7 @@ from .src.domain import (
     EpisodeCardVariant,
     SubjectType,
 )
+from .src.render import CalendarRenderer, EpisodeRenderer, SubjectRenderer
 from .src.utils import EnvManager, SchedulerManager
 
 EPISODE_CARD_TEMPLATE_LABELS: dict[EpisodeCardVariant, str] = {
@@ -73,10 +77,12 @@ class BangumiPlugin(Star):  # type: ignore[misc]
 
         self.session: aiohttp.ClientSession | None = None
         self.storage: BangumiRepository | None = None
+        self.subscription_store: SqlAlchemySubscriptionStore | None = None
         self.service: BangumiService | None = None
         self.subscription_service: SubscriptionService | None = None
         self.search_service: SearchService | None = None
         self.env_manager: EnvManager | None = None
+        self.response_mapper = AstrBotResponseMapper()
 
     async def initialize(self) -> None:
         """
@@ -113,20 +119,31 @@ class BangumiPlugin(Star):  # type: ignore[misc]
 
         # 4. 初始化业务逻辑服务 (Dependency Injection)
         if self.service:
-            # 搜索服务
+            render_mode = self.config_manager.get_render_mode()
             self.search_service = SearchService(
-                service=self.service,
-                config_manager=self.config_manager,
-                session=self.session,
+                bangumi_api=self.service,
+                render_config=self.config_manager,
+                subject_renderer=SubjectRenderer(
+                    session=self.session,
+                    render_mode=render_mode,
+                ),
+                calendar_renderer=CalendarRenderer(
+                    session=self.session,
+                    render_mode=render_mode,
+                ),
             )
 
-            # 订阅服务
             if self.storage:
+                self.subscription_store = SqlAlchemySubscriptionStore(self.storage)
                 self.subscription_service = SubscriptionService(
-                    repository=self.storage,
-                    service=self.service,
-                    config_manager=self.config_manager,
-                    session=self.session,
+                    store=self.subscription_store,
+                    api=self.service,
+                    render_config=self.config_manager,
+                    renderer=EpisodeRenderer(
+                        session=self.session,
+                        render_mode=render_mode,
+                    ),
+                    notifier=StarToolsGroupNotifier(),
                 )
 
         # 5. 其他初始化流程
@@ -233,6 +250,11 @@ class BangumiPlugin(Star):  # type: ignore[misc]
             stripped.startswith("/") or normalized_token == "追番"
         )
 
+    def _event_result_from_response(
+        self, event: AstrMessageEvent, response: AppResponse
+    ) -> object:
+        return self.response_mapper.to_event_result(event, response)
+
     @filter.command("bgm")  # type: ignore[untyped-decorator]
     async def search(
         self, event: AstrMessageEvent, query: str, top_k: int = 1
@@ -241,10 +263,12 @@ class BangumiPlugin(Star):  # type: ignore[misc]
         if not self.search_service:
             yield event.plain_result("❌ 搜索服务未就绪")
             return
-        async for result in self.search_service.handle_subject_search(
-            event, query, top_k, subject_type=None
-        ):
-            yield result
+        response = await self.search_service.handle_subject_search(
+            query=query,
+            top_k=top_k,
+            subject_type=None,
+        )
+        yield self._event_result_from_response(event, response)
 
     @filter.command("bgm番剧")  # type: ignore[untyped-decorator]
     async def search_anime(
@@ -254,14 +278,13 @@ class BangumiPlugin(Star):  # type: ignore[misc]
         if not self.search_service:
             yield event.plain_result("❌ 搜索服务未就绪")
             return
-        async for result in self.search_service.handle_subject_search(
-            event,
-            query,
-            top_k,
+        response = await self.search_service.handle_subject_search(
+            query=query,
+            top_k=top_k,
             subject_type=[SubjectType.ANIME.value],
             subject_tags=[CommonTag.TV.value],
-        ):
-            yield result
+        )
+        yield self._event_result_from_response(event, response)
 
     @filter.command("bgm剧场版")  # type: ignore[untyped-decorator]
     async def search_movie(
@@ -271,14 +294,13 @@ class BangumiPlugin(Star):  # type: ignore[misc]
         if not self.search_service:
             yield event.plain_result("❌ 搜索服务未就绪")
             return
-        async for result in self.search_service.handle_subject_search(
-            event,
-            query,
-            top_k,
+        response = await self.search_service.handle_subject_search(
+            query=query,
+            top_k=top_k,
             subject_type=[SubjectType.ANIME.value],
             subject_tags=[CommonTag.MOVIE.value],
-        ):
-            yield result
+        )
+        yield self._event_result_from_response(event, response)
 
     @filter.command("bgm漫画")  # type: ignore[untyped-decorator]
     async def search_manga(
@@ -288,14 +310,13 @@ class BangumiPlugin(Star):  # type: ignore[misc]
         if not self.search_service:
             yield event.plain_result("❌ 搜索服务未就绪")
             return
-        async for result in self.search_service.handle_subject_search(
-            event,
-            query,
-            top_k,
+        response = await self.search_service.handle_subject_search(
+            query=query,
+            top_k=top_k,
             subject_type=[SubjectType.BOOK.value],
             subject_tags=[CommonTag.MANGA.value],
-        ):
-            yield result
+        )
+        yield self._event_result_from_response(event, response)
 
     @filter.command("calendar")  # type: ignore[untyped-decorator]
     async def calendar(self, event: AstrMessageEvent) -> AsyncGenerator[object, None]:
@@ -303,16 +324,16 @@ class BangumiPlugin(Star):  # type: ignore[misc]
         if not self.search_service:
             yield event.plain_result("❌ 搜索服务未就绪")
             return
-        async for result in self.search_service.handle_calendar(event):
-            yield result
+        response = await self.search_service.handle_calendar()
+        yield self._event_result_from_response(event, response)
 
     @filter.command("today")  # type: ignore[untyped-decorator]
     async def today(self, event: AstrMessageEvent) -> AsyncGenerator[object, None]:
         if not self.search_service:
             yield event.plain_result("❌ 搜索服务未就绪")
             return
-        async for result in self.search_service.handle_today(event):
-            yield result
+        response = await self.search_service.handle_today()
+        yield self._event_result_from_response(event, response)
 
     @filter.command("bgm模板")  # type: ignore[untyped-decorator]
     async def episode_card_template(

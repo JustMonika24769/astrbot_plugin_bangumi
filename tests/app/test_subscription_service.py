@@ -1,9 +1,9 @@
-from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
 from astrbot_plugin_bangumi.src.app import SubscriptionService
+from astrbot_plugin_bangumi.src.app.ports import MonitoredSubjectRecord
 from astrbot_plugin_bangumi.src.domain.exceptions import DatabaseError
 from astrbot_plugin_bangumi.src.domain.schemas import Episode
 
@@ -41,11 +41,47 @@ def mock_config_manager() -> MagicMock:
     return config_manager
 
 
+@pytest.fixture
+def mock_renderer() -> MagicMock:
+    renderer = MagicMock()
+    renderer.render_episode = AsyncMock(return_value=None)
+    return renderer
+
+
+@pytest.fixture
+def mock_notifier() -> MagicMock:
+    notifier = MagicMock()
+    notifier.send_episode_update = AsyncMock()
+    return notifier
+
+
+def _build_service(
+    repo: MagicMock,
+    api: MagicMock,
+    render_config: MagicMock,
+    renderer: MagicMock,
+    notifier: MagicMock,
+) -> SubscriptionService:
+    return SubscriptionService(
+        store=repo,
+        api=api,
+        render_config=render_config,
+        renderer=renderer,
+        notifier=notifier,
+    )
+
+
 @pytest.mark.asyncio
 async def test_get_subscribe_candidates_clamps_limit_and_handles_empty(
-    mock_repo: MagicMock, mock_service: MagicMock, mock_config_manager: MagicMock
+    mock_repo: MagicMock,
+    mock_service: MagicMock,
+    mock_config_manager: MagicMock,
+    mock_renderer: MagicMock,
+    mock_notifier: MagicMock,
 ) -> None:
-    service = SubscriptionService(mock_repo, mock_service, mock_config_manager)
+    service = _build_service(
+        mock_repo, mock_service, mock_config_manager, mock_renderer, mock_notifier
+    )
 
     error, candidates = await service.get_subscribe_candidates("", 100)
     assert error == "❌ 请提供要订阅的番剧关键词或ID"
@@ -63,12 +99,18 @@ async def test_get_subscribe_candidates_clamps_limit_and_handles_empty(
 
 @pytest.mark.asyncio
 async def test_subscribe_by_subject_id_handles_database_error(
-    mock_repo: MagicMock, mock_service: MagicMock, mock_config_manager: MagicMock
+    mock_repo: MagicMock,
+    mock_service: MagicMock,
+    mock_config_manager: MagicMock,
+    mock_renderer: MagicMock,
+    mock_notifier: MagicMock,
 ) -> None:
     mock_service.get_subject_details.return_value = {"id": 1, "name": "A", "eps": "12"}
     mock_service.get_calendar.return_value = [{"items": [{"id": 1}]}]
     mock_repo.subscribe_subject.side_effect = DatabaseError("db down")
-    service = SubscriptionService(mock_repo, mock_service, mock_config_manager)
+    service = _build_service(
+        mock_repo, mock_service, mock_config_manager, mock_renderer, mock_notifier
+    )
 
     result = await service.subscribe_by_subject_id("group", "1")
 
@@ -77,9 +119,15 @@ async def test_subscribe_by_subject_id_handles_database_error(
 
 @pytest.mark.asyncio
 async def test_unsubscribe_empty_query(
-    mock_repo: MagicMock, mock_service: MagicMock, mock_config_manager: MagicMock
+    mock_repo: MagicMock,
+    mock_service: MagicMock,
+    mock_config_manager: MagicMock,
+    mock_renderer: MagicMock,
+    mock_notifier: MagicMock,
 ) -> None:
-    service = SubscriptionService(mock_repo, mock_service, mock_config_manager)
+    service = _build_service(
+        mock_repo, mock_service, mock_config_manager, mock_renderer, mock_notifier
+    )
 
     result = await service.unsubscribe("group", "  ")
 
@@ -89,9 +137,13 @@ async def test_unsubscribe_empty_query(
 
 @pytest.mark.asyncio
 async def test_check_updates_updates_new_episode_and_notifies(
-    mock_repo: MagicMock, mock_service: MagicMock, mock_config_manager: MagicMock
+    mock_repo: MagicMock,
+    mock_service: MagicMock,
+    mock_config_manager: MagicMock,
+    mock_renderer: MagicMock,
+    mock_notifier: MagicMock,
 ) -> None:
-    subject = SimpleNamespace(subject_id="1", name="番", current_episode=1)
+    subject = MonitoredSubjectRecord(subject_id="1", name="番", current_episode=1)
     episode = Episode(
         id=10,
         subject_id=1,
@@ -105,7 +157,9 @@ async def test_check_updates_updates_new_episode_and_notifies(
     mock_repo.get_monitored_subjects.return_value = [subject]
     mock_service.get_latest_episode.return_value = episode
     mock_service.get_subject_base64image.return_value = None
-    service = SubscriptionService(mock_repo, mock_service, mock_config_manager)
+    service = _build_service(
+        mock_repo, mock_service, mock_config_manager, mock_renderer, mock_notifier
+    )
     service._notify_subscribers = AsyncMock()
 
     await service.check_updates()
@@ -116,14 +170,20 @@ async def test_check_updates_updates_new_episode_and_notifies(
 
 @pytest.mark.asyncio
 async def test_notify_subscribers_skips_without_groups(
-    mock_repo: MagicMock, mock_service: MagicMock, mock_config_manager: MagicMock
+    mock_repo: MagicMock,
+    mock_service: MagicMock,
+    mock_config_manager: MagicMock,
+    mock_renderer: MagicMock,
+    mock_notifier: MagicMock,
 ) -> None:
-    service = SubscriptionService(mock_repo, mock_service, mock_config_manager)
-    service.renderer.render_episode = AsyncMock()
+    service = _build_service(
+        mock_repo, mock_service, mock_config_manager, mock_renderer, mock_notifier
+    )
 
     await service._notify_subscribers(_episode(), "1", "番")
 
-    service.renderer.render_episode.assert_not_called()
+    mock_renderer.render_episode.assert_not_called()
+    mock_notifier.send_episode_update.assert_not_called()
 
 
 @pytest.mark.asyncio
@@ -131,28 +191,53 @@ async def test_notify_subscribers_passes_configured_episode_template(
     mock_repo: MagicMock,
     mock_service: MagicMock,
     mock_config_manager: MagicMock,
-    monkeypatch: pytest.MonkeyPatch,
+    mock_renderer: MagicMock,
+    mock_notifier: MagicMock,
 ) -> None:
     mock_repo.get_subject_subscribers.return_value = ["group"]
     mock_config_manager.get_episode_card_template.return_value = "pastel_lightbox"
-    send_message_by_id = AsyncMock()
-    monkeypatch.setattr(
-        "astrbot_plugin_bangumi.src.app.subscription_service.StarTools.send_message_by_id",
-        send_message_by_id,
+    mock_renderer.render_episode = AsyncMock(return_value="image")
+    service = _build_service(
+        mock_repo, mock_service, mock_config_manager, mock_renderer, mock_notifier
     )
-    service = SubscriptionService(mock_repo, mock_service, mock_config_manager)
-    service.renderer.render_episode = AsyncMock(return_value="image")
     episode = _episode()
 
     await service._notify_subscribers(episode, "1", "番")
 
-    service.renderer.render_episode.assert_awaited_once_with(
+    mock_renderer.render_episode.assert_awaited_once_with(
         episode,
         rpc_url="rpc",
         max_retries=1,
         variant="pastel_lightbox",
     )
-    send_message_by_id.assert_awaited_once()
+    mock_notifier.send_episode_update.assert_awaited_once_with(
+        group_id="group",
+        image_base64="image",
+        fallback_text="🔔 番剧《番》更新啦!\n第 2 集:第二集",
+    )
+
+
+@pytest.mark.asyncio
+async def test_notify_subscribers_sends_fallback_when_render_fails(
+    mock_repo: MagicMock,
+    mock_service: MagicMock,
+    mock_config_manager: MagicMock,
+    mock_renderer: MagicMock,
+    mock_notifier: MagicMock,
+) -> None:
+    mock_repo.get_subject_subscribers.return_value = ["group"]
+    mock_renderer.render_episode = AsyncMock(side_effect=RuntimeError("render down"))
+    service = _build_service(
+        mock_repo, mock_service, mock_config_manager, mock_renderer, mock_notifier
+    )
+
+    await service._notify_subscribers(_episode(), "1", "番")
+
+    mock_notifier.send_episode_update.assert_awaited_once_with(
+        group_id="group",
+        image_base64=None,
+        fallback_text="🔔 番剧《番》更新啦!\n第 2 集:第二集",
+    )
 
 
 def _episode() -> Episode:

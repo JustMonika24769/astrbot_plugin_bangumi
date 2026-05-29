@@ -8,6 +8,20 @@ import yaml
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 ASTROBOT_IMPORT_RULE = "AstrBot package-loading import rule"
 TOP_LEVEL_SRC_PREFIX = "src" + "."
+APP_IMPORT_BOUNDARY_BANNED_ROOTS = {
+    "astrbot": "depends on AstrBot framework",
+    "sqlalchemy": "depends on SQLAlchemy",
+    "src.db": "depends on concrete database implementation",
+    "src.render": "depends on concrete render implementation",
+    "astrbot_plugin_bangumi.src.db": "depends on concrete database implementation",
+    "astrbot_plugin_bangumi.src.render": "depends on concrete render implementation",
+}
+DOMAIN_IMPORT_BOUNDARY_BANNED_ROOTS = {
+    "aiohttp": "depends on HTTP client",
+    "astrbot": "depends on AstrBot framework",
+    "jinja2": "depends on template engine",
+    "sqlalchemy": "depends on SQLAlchemy",
+}
 
 
 def _python_files_under(*relative_roots: str) -> list[Path]:
@@ -26,6 +40,26 @@ def _is_top_level_src_module(module_name: str | None) -> bool:
     return module_name == "src" or bool(
         module_name and module_name.startswith(TOP_LEVEL_SRC_PREFIX)
     )
+
+
+def _module_matches_root(module_name: str, root: str) -> bool:
+    return module_name == root or module_name.startswith(root + ".")
+
+
+def _resolve_import_from_module(file_path: Path, node: ast.ImportFrom) -> str | None:
+    if node.level == 0:
+        return node.module
+
+    relative_module_path = file_path.relative_to(PROJECT_ROOT).with_suffix("")
+    package_parts = list(relative_module_path.parts[:-1])
+    base_length = len(package_parts) - node.level + 1
+    if base_length < 0:
+        return node.module
+
+    resolved_parts = package_parts[:base_length]
+    if node.module:
+        resolved_parts.extend(node.module.split("."))
+    return ".".join(resolved_parts)
 
 
 def _find_direct_internal_imports(file_path: Path) -> list[str]:
@@ -50,6 +84,39 @@ def _find_direct_internal_imports(file_path: Path) -> list[str]:
                     f"uses top-level {node.module} import",
                 )
             )
+    return violations
+
+
+def _find_banned_imports(
+    file_path: Path, banned_roots: dict[str, str], boundary_name: str
+) -> list[str]:
+    violations: list[str] = []
+    tree = ast.parse(file_path.read_text(), filename=str(file_path))
+    for node in ast.walk(tree):
+        imported_modules: list[str] = []
+        if isinstance(node, ast.Import):
+            imported_modules.extend(alias.name for alias in node.names)
+        elif isinstance(node, ast.ImportFrom):
+            base_module = _resolve_import_from_module(file_path, node)
+            if base_module:
+                imported_modules.append(base_module)
+                imported_modules.extend(
+                    f"{base_module}.{alias.name}"
+                    for alias in node.names
+                    if alias.name != "*"
+                )
+
+        for module_name in imported_modules:
+            for banned_root, reason in banned_roots.items():
+                if _module_matches_root(module_name, banned_root):
+                    violations.append(
+                        _format_location(
+                            file_path,
+                            node.lineno,
+                            f"{boundary_name}: imports {module_name} ({reason})",
+                        )
+                    )
+                    break
     return violations
 
 
@@ -158,6 +225,41 @@ def test_tests_and_scripts_use_package_imports_for_plugin_internals() -> None:
         f"{ASTROBOT_IMPORT_RULE}: tests and scripts must use "
         "astrbot_plugin_bangumi.src package paths instead of top-level src imports "
         "or monkeypatch targets:\n" + "\n".join(violations)
+    )
+
+
+def test_app_import_boundary_excludes_framework_db_and_render_details() -> None:
+    violations: list[str] = []
+    for file_path in _python_files_under("src/app"):
+        violations.extend(
+            _find_banned_imports(
+                file_path,
+                APP_IMPORT_BOUNDARY_BANNED_ROOTS,
+                "App import boundary",
+            )
+        )
+
+    assert not violations, (
+        "App layer must depend on app/domain contracts instead of AstrBot, "
+        "SQLAlchemy, database implementations, or render implementations:\n"
+        + "\n".join(violations)
+    )
+
+
+def test_domain_import_boundary_excludes_external_details() -> None:
+    violations: list[str] = []
+    for file_path in _python_files_under("src/domain"):
+        violations.extend(
+            _find_banned_imports(
+                file_path,
+                DOMAIN_IMPORT_BOUNDARY_BANNED_ROOTS,
+                "Domain import boundary",
+            )
+        )
+
+    assert not violations, (
+        "Domain layer must stay independent from framework, HTTP, database, "
+        "and template-engine dependencies:\n" + "\n".join(violations)
     )
 
 

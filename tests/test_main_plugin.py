@@ -4,6 +4,8 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
+from astrbot_plugin_bangumi.src.app import AppText
+
 BangumiPlugin = importlib.import_module("astrbot_plugin_bangumi.main").BangumiPlugin
 
 
@@ -84,7 +86,8 @@ def test_build_proxy_url_preserves_scheme_and_existing_port() -> None:
 async def test_search_anime_dispatches_type_and_tag() -> None:
     plugin = BangumiPlugin.__new__(BangumiPlugin)
     plugin.search_service = MagicMock()
-    plugin.search_service.handle_subject_search = _async_gen_mock("ok")
+    plugin.search_service.handle_subject_search = AsyncMock(return_value=AppText("ok"))
+    plugin.response_mapper = _response_mapper()
     event = _event()
 
     results = [
@@ -92,22 +95,27 @@ async def test_search_anime_dispatches_type_and_tag() -> None:
     ]
 
     assert results == ["ok"]
-    plugin.search_service.handle_subject_search.assert_called_once_with(
-        event, "key", 2, subject_type=[2], subject_tags=["TV"]
+    plugin.search_service.handle_subject_search.assert_awaited_once_with(
+        query="key", top_k=2, subject_type=[2], subject_tags=["TV"]
     )
+    plugin.response_mapper.to_event_result.assert_called_once_with(event, AppText("ok"))
 
 
 @pytest.mark.asyncio
 async def test_today_dispatches_to_search_service() -> None:
     plugin = BangumiPlugin.__new__(BangumiPlugin)
     plugin.search_service = MagicMock()
-    plugin.search_service.handle_today = _async_gen_mock("today")
+    plugin.search_service.handle_today = AsyncMock(return_value=AppText("today"))
+    plugin.response_mapper = _response_mapper()
     event = _event()
 
     results = [result async for result in BangumiPlugin.today(plugin, event)]
 
     assert results == ["today"]
-    plugin.search_service.handle_today.assert_called_once_with(event)
+    plugin.search_service.handle_today.assert_awaited_once_with()
+    plugin.response_mapper.to_event_result.assert_called_once_with(
+        event, AppText("today")
+    )
 
 
 @pytest.mark.asyncio
@@ -193,8 +201,11 @@ def _event(group_id: str = "group") -> MagicMock:
     return event
 
 
-def _async_gen_mock(value: object) -> MagicMock:
-    async def gen(*args: object, **kwargs: object):
-        yield value
-
-    return MagicMock(side_effect=gen)
+def _response_mapper() -> MagicMock:
+    mapper = MagicMock()
+    mapper.to_event_result = MagicMock(
+        side_effect=lambda _event, response: response.text
+        if isinstance(response, AppText)
+        else response
+    )
+    return mapper
