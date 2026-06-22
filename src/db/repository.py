@@ -458,6 +458,33 @@ class BangumiRepository:
         finally:
             session.close()
 
+    def get_subject_name(self, subject_id: str) -> str:
+        """
+        获取番剧名称
+
+        Args:
+            subject_id: 番剧 ID
+
+        Returns:
+            番剧名称，未找到返回 "未知番剧"
+
+        Raises:
+            DatabaseError: 数据库操作异常
+        """
+        session = self.Session()
+        try:
+            subject = (
+                session.query(BangumiSubject)
+                .filter_by(subject_id=str(subject_id))
+                .first()
+            )
+            return subject.name if subject and subject.name else "未知番剧"
+        except Exception as e:
+            logger.error(f"获取番剧名称失败: {e}")
+            return "未知番剧"
+        finally:
+            session.close()
+
     def get_all_subscribed_groups(self) -> list[str]:
         """
         获取所有拥有订阅的群组 ID

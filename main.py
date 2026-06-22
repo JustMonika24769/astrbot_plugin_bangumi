@@ -551,15 +551,16 @@ class BangumiPlugin(Star):  # type: ignore[misc]
         result = await self.subscription_service.unsubscribe(group_id, query)
         yield await self._result_for_text(event, result)
 
-    @filter.command("追番时间")  # type: ignore[untyped-decorator]
-    async def set_broadcast_time(
-        self, event: AstrMessageEvent, name_or_id: str, time: str = ""
+    @filter.command("放送时间")  # type: ignore[untyped-decorator]
+    async def show_broadcast_time(
+        self, event: AstrMessageEvent, name_or_id: str = "", time: str = ""
     ) -> AsyncGenerator[object, None]:
-        """设置或查询番剧的广播时间。
+        """查询或设置番剧的放送时间。
         用法:
-        /追番时间 <番剧名/ID> HH:MM  - 设置广播时间(CST)
-        /追番时间 <番剧名/ID>         - 查询当前设置
-        /追番时间 <番剧名/ID> 清空     - 清除设置(恢复当天0点通知)
+        /放送时间                      - 显示本群所有已订阅番剧的放送时间
+        /放送时间 <番剧名/ID> HH:MM    - 设置放送时间(CST)
+        /放送时间 <番剧名/ID>           - 查询单部番剧的当前设置
+        /放送时间 <番剧名/ID> 清空      - 清除设置(恢复当天0点通知)
         """
         if not self.storage or not self.subscription_service:
             yield event.plain_result("❌ 服务未就绪")
@@ -568,6 +569,31 @@ class BangumiPlugin(Star):  # type: ignore[misc]
         group_id = self._resolve_session_key(event)
         if not group_id:
             yield event.plain_result("❌ 无法获取群组ID")
+            return
+
+        # 无参数:显示本群所有已订阅番剧的放送时间
+        if not name_or_id.strip():
+            try:
+                subject_ids = self.storage.get_subscriptions(group_id)
+            except Exception as e:
+                logger.error(f"获取订阅列表失败: {e}")
+                yield event.plain_result("❌ 查询订阅数据时出错,请稍后重试")
+                return
+
+            if not subject_ids:
+                yield event.plain_result("📺 本群暂无订阅番剧\n发送 `/追番 <番剧名>` 来订阅吧")
+                return
+
+            lines = ["📺 本群已订阅番剧放送时间:"]
+            for sid in subject_ids:
+                try:
+                    bt = self.storage.get_subject_broadcast_time(sid)
+                except Exception:
+                    bt = None
+                name = self.storage.get_subject_name(sid)
+                time_str = bt or "未设置"
+                lines.append(f"  {name} (ID: {sid}) [{time_str}]")
+            yield event.plain_result("\n".join(lines))
             return
 
         # 在本地订阅中查找
@@ -610,13 +636,13 @@ class BangumiPlugin(Star):  # type: ignore[misc]
             if bt:
                 yield event.plain_result(
                     f"📺 《{subject.name}》播出时间: {bt} (CST)\n"
-                    "可发送 `/追番时间 <番剧> HH:MM` 修改"
+                    "可发送 `/放送时间 <番剧> HH:MM` 修改"
                 )
             else:
                 yield event.plain_result(
                     f"📺 《{subject.name}》未设定播出时间\n"
                     "将按播出日期当天0点触发通知\n"
-                    "可发送 `/追番时间 <番剧> HH:MM` 设置 (如 22:00)"
+                    "可发送 `/放送时间 <番剧> HH:MM` 设置 (如 22:00)"
                 )
             return
 
