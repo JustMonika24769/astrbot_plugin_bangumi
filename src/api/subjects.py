@@ -173,9 +173,9 @@ class SubjectsService(BaseBangumiService):
         # 解析并校验数据
         episodes = self._parse_episodes(raw_list)
 
-        # 获取今天的日期用于比较
-        today = datetime.date.today()
+        # 获取今天的日期用于比较（统一使用 CST 时区，和 broadcast_time 一致）
         now = datetime.datetime.now(datetime.timezone(datetime.timedelta(hours=8)))
+        today = now.date()
 
         # 逆序查找:从最后一集向前找第一个符合条件的
         for episode in reversed(episodes):

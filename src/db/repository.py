@@ -6,18 +6,19 @@
 """
 
 import os
+from collections.abc import Sequence
 from dataclasses import dataclass
 from difflib import SequenceMatcher
 
 from astrbot.api import logger
-from sqlalchemy import create_engine, or_
+from sqlalchemy import Engine, create_engine, or_
 from sqlalchemy.orm import joinedload, scoped_session, sessionmaker
 
 from ..domain.exceptions import DatabaseError
 from .models import BangumiSubject, Base, Subscription
 
 
-def _has_column(engine, table_name: str, column_name: str) -> bool:
+def _has_column(engine: Engine, table_name: str, column_name: str) -> bool:
     """检查表是否已有指定列"""
     from sqlalchemy import inspect
 
@@ -68,7 +69,7 @@ class BangumiRepository:
             raise DatabaseError(f"初始化数据库失败: {e}") from e
 
     @staticmethod
-    def _run_migrations(engine) -> None:
+    def _run_migrations(engine: Engine) -> None:
         """运行数据库迁移,为已有表添加新列"""
         try:
             if not _has_column(engine, "bangumi_subjects", "broadcast_time"):
@@ -392,7 +393,7 @@ class BangumiRepository:
         except Exception as e:
             logger.error(f"设置广播时间失败: {e}")
             session.rollback()
-            return False
+            raise DatabaseError(f"设置广播时间失败: {e}") from e
         finally:
             session.close()
 
@@ -418,7 +419,7 @@ class BangumiRepository:
             return subject.broadcast_time
         except Exception as e:
             logger.error(f"获取广播时间失败: {e}")
-            return None
+            raise DatabaseError(f"获取广播时间失败: {e}") from e
         finally:
             session.close()
 
@@ -431,25 +432,29 @@ class BangumiRepository:
 
         Returns:
             更新成功的数量
+
+        Raises:
+            DatabaseError: 数据库操作异常
         """
         session = self.Session()
         updated = 0
         try:
-            for subject_id, broadcast_time in mapping.items():
-                subject = (
-                    session.query(BangumiSubject)
-                    .filter_by(subject_id=str(subject_id))
-                    .first()
-                )
-                if subject:
-                    subject.broadcast_time = broadcast_time
+            ids = [str(sid) for sid in mapping]
+            subjects = (
+                session.query(BangumiSubject)
+                .filter(BangumiSubject.subject_id.in_(ids))
+                .all()
+            )
+            for subject in subjects:
+                if subject.subject_id in mapping:
+                    subject.broadcast_time = mapping[subject.subject_id]
                     updated += 1
             session.commit()
             return updated
         except Exception as e:
             logger.error(f"批量更新广播时间失败: {e}")
             session.rollback()
-            return updated
+            raise DatabaseError(f"批量更新广播时间失败: {e}") from e
         finally:
             session.close()
 

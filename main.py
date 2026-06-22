@@ -162,7 +162,7 @@ class BangumiPlugin(Star):  # type: ignore[misc]
         if self.storage:
             try:
                 await self._auto_fill_broadcast_times()
-            except (RuntimeError, ValueError, TypeError) as e:
+            except Exception as e:
                 logger.error(f"自动填充放送时间失败: {e}")
 
         logger.info("Bangumi 插件初始化流程结束")
@@ -571,9 +571,14 @@ class BangumiPlugin(Star):  # type: ignore[misc]
             return
 
         # 在本地订阅中查找
-        candidates = self.storage.find_group_subscription_candidates(
-            group_id=group_id, keyword=name_or_id, limit=5
-        )
+        try:
+            candidates = self.storage.find_group_subscription_candidates(
+                group_id=group_id, keyword=name_or_id, limit=5
+            )
+        except Exception as e:
+            logger.error(f"查询订阅候选失败: {e}")
+            yield event.plain_result("❌ 查询订阅数据时出错,请稍后重试")
+            return
         if not candidates:
             yield event.plain_result(
                 f"❌ 未找到与「{name_or_id}」匹配的本群订阅番剧"
@@ -596,7 +601,12 @@ class BangumiPlugin(Star):  # type: ignore[misc]
 
         # 无 time 参数:查询
         if not time.strip():
-            bt = self.storage.get_subject_broadcast_time(subject_id)
+            try:
+                bt = self.storage.get_subject_broadcast_time(subject_id)
+            except Exception as e:
+                logger.error(f"获取广播时间失败: {e}")
+                yield event.plain_result("❌ 查询播出时间时出错")
+                return
             if bt:
                 yield event.plain_result(
                     f"📺 《{subject.name}》播出时间: {bt} (CST)\n"
@@ -614,10 +624,14 @@ class BangumiPlugin(Star):  # type: ignore[misc]
 
         # 清除
         if time_str in ("清空", "清除", "default"):
-            self.storage.set_subject_broadcast_time(subject_id, None)
-            yield event.plain_result(
-                f"✅ 已清除《{subject.name}》的播出时间设置\n将按当天0点触发通知"
-            )
+            try:
+                self.storage.set_subject_broadcast_time(subject_id, None)
+                yield event.plain_result(
+                    f"✅ 已清除《{subject.name}》的播出时间设置\n将按当天0点触发通知"
+                )
+            except Exception as e:
+                logger.error(f"清除广播时间失败: {e}")
+                yield event.plain_result("❌ 清除播出时间时出错")
             return
 
         # 校验格式
@@ -628,12 +642,18 @@ class BangumiPlugin(Star):  # type: ignore[misc]
             )
             return
 
-        if self.storage.set_subject_broadcast_time(subject_id, time_str):
+        try:
+            ok = self.storage.set_subject_broadcast_time(subject_id, time_str)
+        except Exception as e:
+            logger.error(f"设置广播时间失败: {e}")
+            yield event.plain_result("❌ 设置播出时间时出错")
+            return
+        if ok:
             yield event.plain_result(
                 f"✅ 已设置《{subject.name}》播出时间为 {time_str} (CST)"
             )
         else:
-            yield event.plain_result("❌ 设置失败,数据库错误")
+            yield event.plain_result("❌ 设置失败,未找到该番剧记录")
 
     async def terminate(self) -> None:
         logger.info("正在清理 Bangumi 插件资源...")

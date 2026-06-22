@@ -35,6 +35,9 @@ def _parse_broadcast_time(begin_iso: str) -> str | None:
             dt_str = dt_str[:-1] + "+00:00"
 
         dt = datetime.datetime.fromisoformat(dt_str)
+        # 若为 naive datetime（无时区信息），按 UTC 处理
+        if dt.tzinfo is None:
+            dt = dt.replace(tzinfo=datetime.timezone.utc)
         cst_offset = datetime.timedelta(hours=8)
         cst_dt = dt.astimezone(datetime.timezone(cst_offset))
 
@@ -71,7 +74,16 @@ async def fetch_onair_data(
                 },
             )
 
-        async with _session.get(BGM_LIST_API) as resp:
+        assert _session is not None  # mypy: narrow Optional after None check
+
+        async with _session.get(
+            BGM_LIST_API,
+            timeout=aiohttp.ClientTimeout(total=15, connect=10),
+            headers={
+                "User-Agent": "AstrBot-BangumiPlugin/1.0",
+                "Accept": "application/json",
+            },
+        ) as resp:
             if resp.status != 200:
                 logger.warning(f"bgmlist API 返回 {resp.status}")
                 return None
