@@ -242,14 +242,19 @@ class SubscriptionService:
     async def check_updates(self) -> None:
         """
         定时任务核心逻辑:检查所有监控中的番剧是否有更新
+
+        对于设置了 broadcast_time 的番剧,仅在当前时间 >= broadcast_time
+        (且 airdate 为当天)时才会触发通知,避免深夜番在凌晨就误发通知。
         """
         subjects = self.storage.get_monitored_subjects()
         logger.info(f"开始更新 {len(subjects)} 个番剧的集数信息")
 
         for subject in subjects:
             try:
+                # 传入该番剧的广播时间,用于精确判断是否已到播出时间
+                broadcast_time = getattr(subject, "broadcast_time", None)
                 latest_episode = await self.service.get_latest_episode(
-                    int(subject.subject_id)
+                    int(subject.subject_id), broadcast_time=broadcast_time
                 )
                 if not latest_episode:
                     continue
