@@ -17,6 +17,15 @@ from ..domain.exceptions import DatabaseError
 from .models import BangumiSubject, Base, Subscription
 
 
+def _has_column(engine, table_name: str, column_name: str) -> bool:
+    """检查表是否已有指定列"""
+    from sqlalchemy import inspect
+
+    inspector = inspect(engine)
+    columns = [c["name"] for c in inspector.get_columns(table_name)]
+    return column_name in columns
+
+
 @dataclass(frozen=True)
 class _CandidateScore:
     exact_id: int
@@ -51,10 +60,31 @@ class BangumiRepository:
             engine = create_engine(f"sqlite:///{self.db_path}")
             # 创建表
             Base.metadata.create_all(engine)
+            # 迁移:为已有表添加 broadcast_time 列
+            self._run_migrations(engine)
             # 创建 session factory
             self.Session = scoped_session(sessionmaker(bind=engine))
         except Exception as e:
             raise DatabaseError(f"初始化数据库失败: {e}") from e
+
+    @staticmethod
+    def _run_migrations(engine) -> None:
+        """运行数据库迁移,为已有表添加新列"""
+        try:
+            if not _has_column(engine, "bangumi_subjects", "broadcast_time"):
+                from sqlalchemy import text
+
+                with engine.connect() as conn:
+                    conn.execute(
+                        text(
+                            "ALTER TABLE bangumi_subjects "
+                            "ADD COLUMN broadcast_time VARCHAR"
+                        )
+                    )
+                    conn.commit()
+                    logger.info("数据库迁移:已添加 broadcast_time 列")
+        except Exception as e:
+            logger.warning(f"数据库迁移失败(可能已存在): {e}")
 
     def update_subject(self, subject_id: str, **kwargs: str | int | None) -> bool:
         """
@@ -331,6 +361,95 @@ class BangumiRepository:
         except Exception as e:
             logger.error(f"获取订阅群组失败: {e}")
             raise DatabaseError(f"获取订阅群组失败: {e}") from e
+        finally:
+            session.close()
+
+    def set_subject_broadcast_time(
+        self, subject_id: str, broadcast_time: str | None
+    ) -> bool:
+        """
+        设置番剧的广播时间
+
+        Args:
+            subject_id: 番剧 ID
+            broadcast_time: 播出时间,格式 "HH:MM",如 "22:00"。设为 None 清除
+
+        Returns:
+            操作是否成功
+        """
+        session = self.Session()
+        try:
+            subject = (
+                session.query(BangumiSubject)
+                .filter_by(subject_id=str(subject_id))
+                .first()
+            )
+            if not subject:
+                return False
+            subject.broadcast_time = broadcast_time
+            session.commit()
+            return True
+        except Exception as e:
+            logger.error(f"设置广播时间失败: {e}")
+            session.rollback()
+            return False
+        finally:
+            session.close()
+
+    def get_subject_broadcast_time(self, subject_id: str) -> str | None:
+        """
+        获取番剧的广播时间
+
+        Args:
+            subject_id: 番剧 ID
+
+        Returns:
+            "HH:MM" 格式的时间,如 "22:00",未设置则返回 None
+        """
+        session = self.Session()
+        try:
+            subject = (
+                session.query(BangumiSubject)
+                .filter_by(subject_id=str(subject_id))
+                .first()
+            )
+            if not subject:
+                return None
+            return subject.broadcast_time
+        except Exception as e:
+            logger.error(f"获取广播时间失败: {e}")
+            return None
+        finally:
+            session.close()
+
+    def batch_update_broadcast_times(self, mapping: dict[str, str]) -> int:
+        """
+        批量更新番剧广播时间(从 bgmlist API 填充用)
+
+        Args:
+            mapping: {subject_id: broadcast_time} 映射,如 {"377130": "22:00"}
+
+        Returns:
+            更新成功的数量
+        """
+        session = self.Session()
+        updated = 0
+        try:
+            for subject_id, broadcast_time in mapping.items():
+                subject = (
+                    session.query(BangumiSubject)
+                    .filter_by(subject_id=str(subject_id))
+                    .first()
+                )
+                if subject:
+                    subject.broadcast_time = broadcast_time
+                    updated += 1
+            session.commit()
+            return updated
+        except Exception as e:
+            logger.error(f"批量更新广播时间失败: {e}")
+            session.rollback()
+            return updated
         finally:
             session.close()
 
