@@ -19,6 +19,7 @@ from astrbot.core.utils.session_waiter import (
 )
 
 from .src.api import BangumiService
+from .src.api.bgmlist import fetch_onair_data
 from .src.app import SearchService, SubscriptionService
 from .src.config import ConfigManager
 from .src.db import BangumiRepository
@@ -145,19 +146,54 @@ class BangumiPlugin(Star):  # type: ignore[misc]
         if not self.env_manager.is_installed():
             logger.info("本地 Playwright 环境未就绪,将优先使用 RPC 渲染(如果已配置)")
 
-        # 添加定时更新任务
+        # 添加定时更新任务(每15分钟检查一次,配合 broadcast_time 精确触发)
         if self.subscription_service:
             try:
                 self.scheduler_manager.add_job(
                     func=self.subscription_service.check_updates,
                     trigger="cron",
-                    minute=0,
+                    minute="*/15",
                 )
-                logger.info("Bangumi 插件定时更新任务已启动")
+                logger.info("Bangumi 插件定时更新任务已启动(每15分钟)")
             except (RuntimeError, ValueError, TypeError) as e:
                 logger.error(f"添加定时任务失败: {e}")
 
+        # 启动时从 bgmlist 填充已订阅番剧的放送时间
+        if self.storage:
+            try:
+                await self._auto_fill_broadcast_times()
+            except Exception as e:
+                logger.error(f"自动填充放送时间失败: {e}")
+
         logger.info("Bangumi 插件初始化流程结束")
+
+    async def _auto_fill_broadcast_times(self) -> None:
+        """
+        从 bgmlist API 获取放送时间数据,填充到已订阅的番剧记录中。
+        仅填充 broadcast_time 为空的条目,已有值的不覆盖。
+        """
+        if not self.storage:
+            return
+
+        bgmlist_data = await fetch_onair_data(session=self.session)
+        if not bgmlist_data:
+            logger.info("bgmlist API 不可用,跳过自动填充放送时间")
+            return
+
+        # 只取已订阅且 broadcast_time 为空的条目
+        subscribed = self.storage.get_monitored_subjects()
+        to_update: dict[str, str] = {}
+        for subject in subscribed:
+            subject_id = str(subject.subject_id)
+            # 如果数据库中已设置 broadcast_time,不覆盖
+            if subject.broadcast_time:
+                continue
+            if subject_id in bgmlist_data:
+                to_update[subject_id] = bgmlist_data[subject_id]
+
+        if to_update:
+            updated = self.storage.batch_update_broadcast_times(to_update)
+            logger.info(f"自动填充 {updated}/{len(to_update)} 个番剧的放送时间")
 
     # --- 命令处理区 ---
 
@@ -512,6 +548,134 @@ class BangumiPlugin(Star):  # type: ignore[misc]
 
         result = await self.subscription_service.unsubscribe(group_id, query)
         yield await self._result_for_text(event, result)
+
+    @filter.command("放送时间")  # type: ignore[untyped-decorator]
+    async def show_broadcast_time(
+        self, event: AstrMessageEvent, name_or_id: str = "", time: str = ""
+    ) -> AsyncGenerator[object, None]:
+        """查询或设置番剧的放送时间。
+        用法:
+        /放送时间                      - 显示本群所有已订阅番剧的放送时间
+        /放送时间 <番剧名/ID> HH:MM    - 设置放送时间(CST)
+        /放送时间 <番剧名/ID>           - 查询单部番剧的当前设置
+        /放送时间 <番剧名/ID> 清空      - 清除设置(恢复当天0点通知)
+        """
+        if not self.storage or not self.subscription_service:
+            yield event.plain_result("❌ 服务未就绪")
+            return
+
+        group_id = self._resolve_session_key(event)
+        if not group_id:
+            yield event.plain_result("❌ 无法获取群组ID")
+            return
+
+        # 无参数:显示本群所有已订阅番剧的放送时间
+        if not name_or_id.strip():
+            try:
+                subject_ids = self.storage.get_subscriptions(group_id)
+            except Exception as e:
+                logger.error(f"获取订阅列表失败: {e}")
+                yield event.plain_result("❌ 查询订阅数据时出错,请稍后重试")
+                return
+
+            if not subject_ids:
+                yield event.plain_result(
+                    "📺 本群暂无订阅番剧\n发送 `/追番 <番剧名>` 来订阅吧"
+                )
+                return
+
+            lines = ["📺 本群已订阅番剧放送时间:"]
+            for sid in subject_ids:
+                try:
+                    bt = self.storage.get_subject_broadcast_time(sid)
+                except Exception:
+                    bt = None
+                name = self.storage.get_subject_name(sid)
+                time_str = bt or "未设置"
+                lines.append(f"  {name} (ID: {sid}) [{time_str}]")
+            yield event.plain_result("\n".join(lines))
+            return
+
+        # 在本地订阅中查找
+        try:
+            candidates = self.storage.find_group_subscription_candidates(
+                group_id=group_id, keyword=name_or_id, limit=5
+            )
+        except Exception as e:
+            logger.error(f"查询订阅候选失败: {e}")
+            yield event.plain_result("❌ 查询订阅数据时出错,请稍后重试")
+            return
+        if not candidates:
+            yield event.plain_result(f"❌ 未找到与「{name_or_id}」匹配的本群订阅番剧")
+            return
+
+        # 多个候选展示
+        if len(candidates) > 1:
+            lines = ["⚠️ 匹配到多个已订阅番剧,请提供更精确名称或直接使用 ID:"]
+            for idx, subject in enumerate(candidates, start=1):
+                bt = subject.broadcast_time or "未设置"
+                lines.append(f"{idx}. {subject.name} (ID: {subject.subject_id}) [{bt}]")
+            yield event.plain_result("\n".join(lines))
+            return
+
+        subject = candidates[0]
+        subject_id = str(subject.subject_id)
+
+        # 无 time 参数:查询
+        if not time.strip():
+            try:
+                bt = self.storage.get_subject_broadcast_time(subject_id)
+            except Exception as e:
+                logger.error(f"获取广播时间失败: {e}")
+                yield event.plain_result("❌ 查询播出时间时出错")
+                return
+            if bt:
+                yield event.plain_result(
+                    f"📺 《{subject.name}》播出时间: {bt} (CST)\n"
+                    "可发送 `/放送时间 <番剧> HH:MM` 修改"
+                )
+            else:
+                yield event.plain_result(
+                    f"📺 《{subject.name}》未设定播出时间\n"
+                    "将按播出日期当天0点触发通知\n"
+                    "可发送 `/放送时间 <番剧> HH:MM` 设置 (如 22:00)"
+                )
+            return
+
+        time_str = time.strip()
+
+        # 清除
+        if time_str in ("清空", "清除", "default"):
+            try:
+                self.storage.set_subject_broadcast_time(subject_id, None)
+                yield event.plain_result(
+                    f"✅ 已清除《{subject.name}》的播出时间设置\n将按当天0点触发通知"
+                )
+            except Exception as e:
+                logger.error(f"清除广播时间失败: {e}")
+                yield event.plain_result("❌ 清除播出时间时出错")
+            return
+
+        # 校验格式
+        time_pattern = re.compile(r"^([01]\d|2[0-3]):([0-5]\d)$")
+        if not time_pattern.match(time_str):
+            yield event.plain_result(
+                "❌ 时间格式错误,请使用 HH:MM 格式(如 22:00、23:30)"
+            )
+            return
+
+        try:
+            ok = self.storage.set_subject_broadcast_time(subject_id, time_str)
+        except Exception as e:
+            logger.error(f"设置广播时间失败: {e}")
+            yield event.plain_result("❌ 设置播出时间时出错")
+            return
+        if ok:
+            yield event.plain_result(
+                f"✅ 已设置《{subject.name}》播出时间为 {time_str} (CST)"
+            )
+        else:
+            yield event.plain_result("❌ 设置失败,未找到该番剧记录")
 
     async def terminate(self) -> None:
         logger.info("正在清理 Bangumi 插件资源...")

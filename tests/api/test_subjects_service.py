@@ -3,6 +3,7 @@ import datetime
 import pytest
 
 from astrbot_plugin_bangumi.src.api import SubjectsService
+from astrbot_plugin_bangumi.src.api import subjects as subjects_module
 from astrbot_plugin_bangumi.src.domain.types import ImageSize
 
 
@@ -91,6 +92,68 @@ async def test_get_latest_episode_uses_aired_commented_normal_episode(
 
     assert latest is not None
     assert latest.ep == 3
+
+
+@pytest.mark.asyncio
+async def test_get_latest_episode_waits_until_broadcast_time_on_airdate(
+    service: SubjectsService,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _freeze_subjects_now(monkeypatch, 2026, 6, 28, 21, 0)
+
+    async def fake_episodes(subject_id: int) -> dict[str, object]:
+        return {
+            "data": [
+                _episode(ep=1, airdate="2026-06-21", comment=10, id_=1),
+                _episode(ep=2, airdate="2026-06-28", comment=10, id_=2),
+            ]
+        }
+
+    service.get_subject_episodes = fake_episodes
+
+    latest = await service.get_latest_episode(1, broadcast_time="22:00")
+
+    assert latest is not None
+    assert latest.ep == 1
+
+
+@pytest.mark.asyncio
+async def test_get_latest_episode_allows_today_after_broadcast_time(
+    service: SubjectsService,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _freeze_subjects_now(monkeypatch, 2026, 6, 28, 22, 1)
+
+    async def fake_episodes(subject_id: int) -> dict[str, object]:
+        return {
+            "data": [
+                _episode(ep=1, airdate="2026-06-21", comment=10, id_=1),
+                _episode(ep=2, airdate="2026-06-28", comment=10, id_=2),
+            ]
+        }
+
+    service.get_subject_episodes = fake_episodes
+
+    latest = await service.get_latest_episode(1, broadcast_time="22:00")
+
+    assert latest is not None
+    assert latest.ep == 2
+
+
+def _freeze_subjects_now(
+    monkeypatch: pytest.MonkeyPatch,
+    year: int,
+    month: int,
+    day: int,
+    hour: int,
+    minute: int,
+) -> None:
+    class FixedDateTime(datetime.datetime):
+        @classmethod
+        def now(cls, tz: datetime.tzinfo | None = None) -> "FixedDateTime":
+            return cls(year, month, day, hour, minute, tzinfo=tz)
+
+    monkeypatch.setattr(subjects_module.datetime, "datetime", FixedDateTime)
 
 
 def _episode(ep: int, airdate: str, comment: int, id_: int) -> dict[str, object]:

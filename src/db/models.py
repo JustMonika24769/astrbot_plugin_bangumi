@@ -29,6 +29,9 @@ class BangumiSubject(Base):
     current_episode: Mapped[int] = mapped_column(
         Integer, default=0
     )  # 当前已更新/已通知集数
+    broadcast_time: Mapped[str | None] = mapped_column(
+        String, nullable=True
+    )  # 播出时间,格式: HH:MM,如 "22:00"。从 bgmlist API 自动填充或手动设置
     updated_at: Mapped[datetime] = mapped_column(
         DateTime, default=func.now(), onupdate=func.now()
     )

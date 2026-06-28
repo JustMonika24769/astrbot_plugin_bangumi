@@ -151,10 +151,19 @@ class SubjectsService(BaseBangumiService):
                 return normalized
         return {"data": []}
 
-    async def get_latest_episode(self, subject_id: int) -> Episode | None:
+    async def get_latest_episode(
+        self, subject_id: int, broadcast_time: str | None = None
+    ) -> Episode | None:
         """
         从 episodes 数据中提取最新一集的信息
         最新一集的定义:已播出且有互动(评论)的普通剧集
+
+        Args:
+            subject_id: 条目 ID
+            broadcast_time: 可选。广播时间 "HH:MM"(CST),如 "22:00"。
+                           当 airdate 为当天时,若当前时间未到 broadcast_time,视为未播出。
+                           为 None 时保持原行为(只要日期匹配即视为已播出)。
+
         """
         episodes_data = await self.get_subject_episodes(subject_id)
         raw_list = episodes_data.get("data", [])
@@ -164,8 +173,9 @@ class SubjectsService(BaseBangumiService):
         # 解析并校验数据
         episodes = self._parse_episodes(raw_list)
 
-        # 获取今天的日期用于比较
-        today = datetime.date.today()
+        # 获取今天的日期用于比较（统一使用 CST 时区，和 broadcast_time 一致）
+        now = datetime.datetime.now(datetime.timezone(datetime.timedelta(hours=8)))
+        today = now.date()
 
         # 逆序查找:从最后一集向前找第一个符合条件的
         for episode in reversed(episodes):
@@ -180,6 +190,23 @@ class SubjectsService(BaseBangumiService):
                         episode.airdate, "%Y-%m-%d"
                     ).date()
                     is_aired = episode_date <= today
+
+                    # 如果是当天播出,且设置了 broadcast_time,检查是否已到播出时间
+                    if is_aired and episode_date == today and broadcast_time:
+                        try:
+                            bt_hour, bt_min = broadcast_time.split(":")
+                            bt = now.replace(
+                                hour=int(bt_hour),
+                                minute=int(bt_min),
+                                second=0,
+                                microsecond=0,
+                            )
+                            if now < bt:
+                                is_aired = False
+                        except (ValueError, TypeError) as e:
+                            logger.warning(
+                                f"解析 broadcast_time '{broadcast_time}' 失败: {e}"
+                            )
                 except ValueError:
                     # 日期格式异常时,不因为日期判定为未播出
                     pass

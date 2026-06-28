@@ -1,6 +1,10 @@
+import sqlite3
 from pathlib import Path
 
+import pytest
+
 from astrbot_plugin_bangumi.src.db import BangumiRepository
+from astrbot_plugin_bangumi.src.domain.exceptions import DatabaseError
 
 
 def _build_repository(tmp_path: Path) -> BangumiRepository:
@@ -62,6 +66,59 @@ def test_update_subject_ignores_none_values(tmp_path: Path) -> None:
     subject = repository.get_monitored_subjects()[0]
     assert str(subject.name) == "初始"
     assert int(subject.current_episode) == 2
+
+
+def test_broadcast_time_crud_and_batch_update(tmp_path: Path) -> None:
+    repository = _build_repository(tmp_path)
+    assert repository.subscribe_subject("group_1", "100", "Alpha")
+    assert repository.subscribe_subject("group_1", "200", "Beta")
+
+    assert repository.get_subject_broadcast_time("100") is None
+    assert repository.set_subject_broadcast_time("100", "22:00") is True
+    assert repository.get_subject_broadcast_time("100") == "22:00"
+    assert repository.set_subject_broadcast_time("missing", "23:00") is False
+
+    assert (
+        repository.batch_update_broadcast_times(
+            {"100": "23:30", "200": "18:00", "missing": "01:00"}
+        )
+        == 2
+    )
+    assert repository.get_subject_broadcast_time("100") == "23:30"
+    assert repository.get_subject_broadcast_time("200") == "18:00"
+    assert repository.get_subject_name("100") == "Alpha"
+    assert repository.get_subject_name("missing") == "未知番剧"
+
+
+def test_init_db_migrates_existing_database_with_missing_broadcast_time(
+    tmp_path: Path,
+) -> None:
+    db_path = tmp_path / "data" / "bangumi.db"
+    db_path.parent.mkdir(parents=True)
+    with sqlite3.connect(db_path) as conn:
+        conn.execute(
+            "CREATE TABLE bangumi_subjects ("
+            "subject_id VARCHAR PRIMARY KEY, "
+            "name VARCHAR, "
+            "air_date VARCHAR, "
+            "total_episodes INTEGER, "
+            "current_episode INTEGER, "
+            "updated_at DATETIME)"
+        )
+
+    repository = BangumiRepository(str(db_path))
+
+    assert repository.set_subject_broadcast_time("missing", "22:00") is False
+    with sqlite3.connect(db_path) as conn:
+        columns = [
+            row[1] for row in conn.execute("PRAGMA table_info(bangumi_subjects)")
+        ]
+    assert "broadcast_time" in columns
+
+
+def test_run_migrations_raises_database_error_on_schema_failure() -> None:
+    with pytest.raises(DatabaseError, match="数据库迁移失败"):
+        BangumiRepository._run_migrations(object())  # type: ignore[arg-type]
 
 
 def test_find_group_subscription_candidates_ranking_and_group_scope(
