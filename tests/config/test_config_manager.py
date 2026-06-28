@@ -1,3 +1,5 @@
+import json
+from pathlib import Path
 from unittest.mock import MagicMock
 
 from astrbot_plugin_bangumi.src.config import ConfigManager
@@ -39,6 +41,16 @@ def test_get_episode_card_template_reads_valid_config() -> None:
     assert manager.get_episode_card_template() == "editorial_digest"
 
 
+def test_get_render_mode_defaults_to_pillow() -> None:
+    assert _manager({}).get_render_mode() == "pillow"
+
+
+def test_get_render_mode_accepts_new_modes_and_legacy_html() -> None:
+    assert _manager({"render_mode": "playwright"}).get_render_mode() == "playwright"
+    assert _manager({"render_mode": "RPC"}).get_render_mode() == "rpc"
+    assert _manager({"render_mode": "html"}).get_render_mode() == "playwright"
+
+
 def test_get_episode_card_template_falls_back_to_default() -> None:
     assert _manager({}).get_episode_card_template() == "cinematic_poster"
     assert (
@@ -47,6 +59,48 @@ def test_get_episode_card_template_falls_back_to_default() -> None:
         ).get_episode_card_template()
         == "cinematic_poster"
     )
+
+
+def test_get_auto_translate_episode_summary_reads_bool_config() -> None:
+    assert _manager(
+        {"auto_translate_episode_summary": True}
+    ).get_auto_translate_episode_summary()
+    assert (
+        _manager(
+            {"auto_translate_episode_summary": False}
+        ).get_auto_translate_episode_summary()
+        is False
+    )
+
+
+def test_get_auto_translate_episode_summary_defaults_false_for_missing_or_invalid() -> (
+    None
+):
+    assert _manager({}).get_auto_translate_episode_summary() is False
+    assert (
+        _manager(
+            {"auto_translate_episode_summary": "true"}
+        ).get_auto_translate_episode_summary()
+        is False
+    )
+    assert (
+        _manager(
+            {"auto_translate_episode_summary": 1}
+        ).get_auto_translate_episode_summary()
+        is False
+    )
+
+
+def test_auto_translate_episode_summary_schema_defaults_false() -> None:
+    schema_path = Path(__file__).resolve().parents[2] / "_conf_schema.json"
+    schema = json.loads(schema_path.read_text(encoding="utf-8"))
+
+    assert schema["auto_translate_episode_summary"] == {
+        "description": "自动翻译单集简介",
+        "type": "bool",
+        "hint": "订阅更新渲染单集卡片前，使用 AstrBot 默认聊天模型将非空单集简介翻译为中文；失败时保留原文",
+        "default": False,
+    }
 
 
 def test_set_episode_card_template_updates_config_value() -> None:

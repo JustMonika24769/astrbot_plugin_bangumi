@@ -8,7 +8,7 @@ from ..domain import (
     EpisodeCardVariant,
     is_episode_card_variant,
 )
-from ..render.render_mode import RenderMode, normalize_render_mode
+from ..render.render_mode import DEFAULT_RENDER_MODE, RenderMode, normalize_render_mode
 
 
 class ConfigManager:
@@ -29,6 +29,10 @@ class ConfigManager:
             except ValueError:
                 return default
         return default
+
+    def _get_bool(self, key: str, default: bool = False) -> bool:
+        value = self.config.get(key, default)
+        return value if isinstance(value, bool) else default
 
     def get_access_token(self) -> str:
         """
@@ -71,13 +75,18 @@ class ConfigManager:
         return self._get_str("render_server_url", "https://api.unitedpooh.top/rpc")
 
     def get_render_mode(self) -> RenderMode:
-        return normalize_render_mode(self.config.get("render_mode", "html"))
+        return normalize_render_mode(
+            self.config.get("render_mode", DEFAULT_RENDER_MODE)
+        )
 
     def get_episode_card_template(self) -> EpisodeCardVariant:
         value = self.config.get("episode_card_template", DEFAULT_EPISODE_CARD_VARIANT)
         if is_episode_card_variant(value):
             return value
         return DEFAULT_EPISODE_CARD_VARIANT
+
+    def get_auto_translate_episode_summary(self) -> bool:
+        return self._get_bool("auto_translate_episode_summary", False)
 
     def set_episode_card_template(self, template: EpisodeCardVariant) -> None:
         self.config["episode_card_template"] = template

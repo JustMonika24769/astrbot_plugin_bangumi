@@ -48,15 +48,21 @@
   "render_mode": {
     "description": "图片渲染方式",
     "type": "string",
-    "hint": "html 为默认自动链路：RPC -> Playwright -> Pillow；pillow 为强制使用 Pillow",
-    "default": "html",
-    "options": ["html", "pillow"]
+    "hint": "默认 pillow；playwright 为本地浏览器渲染；rpc 为远程 RPC 渲染。旧值 html 会兼容为 playwright",
+    "default": "pillow",
+    "options": ["pillow", "playwright", "rpc"]
   },
   "episode_card_template": {
-    "description": "单集更新卡片模板",
+    "description": "图片卡片风格",
     "type": "string",
-    "hint": "1=pastel_lightbox，2=editorial_digest，3=cinematic_poster；默认使用第 3 个海报模板",
+    "hint": "用于 /bgm 搜索结果、单集更新卡片和长文本响应卡片；1=pastel_lightbox，2=editorial_digest，3=cinematic_poster；默认使用第 3 个海报模板",
     "default": "cinematic_poster",
     "options": ["pastel_lightbox", "editorial_digest", "cinematic_poster"]
+  },
+  "auto_translate_episode_summary": {
+    "description": "自动翻译单集简介",
+    "type": "bool",
+    "hint": "订阅更新渲染单集卡片前，使用 AstrBot 默认聊天模型将非空单集简介翻译为中文；失败时保留原文",
+    "default": false
   }
 }

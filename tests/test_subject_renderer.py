@@ -1,8 +1,20 @@
+import base64
+import io
 from unittest.mock import AsyncMock
 
 import pytest
+from PIL import Image, ImageChops
 
+from astrbot_plugin_bangumi.src.domain import EPISODE_CARD_VARIANTS
 from astrbot_plugin_bangumi.src.render import SubjectRenderer
+from astrbot_plugin_bangumi.src.render.subject_renderer import (
+    _SUBJECT_CARD_STYLES,
+    _SUBJECT_COVER_BOX,
+    _SUBJECT_LEFT_PANEL_RIGHT,
+    _SUBJECT_RIGHT_X,
+    _SUBJECT_TITLE_PANEL_BOTTOM,
+    _SUBJECT_TOP_ORB_BOX,
+)
 from astrbot_plugin_bangumi.tests.render.image_assertions import assert_png_image
 
 DATA_URI = (
@@ -69,6 +81,166 @@ async def test_render_subject_card_pillow_returns_base64() -> None:
 
     assert base64_image is not None
     assert_png_image(base64_image, (2400, 1674), require_non_blank=True)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("variant", EPISODE_CARD_VARIANTS)
+async def test_render_subject_card_pillow_renders_all_named_variants(
+    variant: str,
+) -> None:
+    renderer = SubjectRenderer(render_mode="pillow")
+
+    base64_image = await renderer.render_subject_card(
+        build_subject_data(), variant=variant
+    )
+
+    assert base64_image is not None
+    assert_png_image(base64_image, (2400, 1674), require_non_blank=True)
+
+
+@pytest.mark.asyncio
+async def test_render_subject_card_default_variant_matches_cinematic() -> None:
+    renderer = SubjectRenderer(render_mode="pillow")
+
+    default_image = await renderer.render_subject_card(build_subject_data())
+    cinematic_image = await renderer.render_subject_card(
+        build_subject_data(), variant="cinematic_poster"
+    )
+
+    assert default_image == cinematic_image
+
+
+@pytest.mark.asyncio
+async def test_render_subject_card_variants_are_visually_distinct() -> None:
+    renderer = SubjectRenderer(render_mode="pillow")
+
+    fingerprints: set[tuple[tuple[int, ...], tuple[int, ...], tuple[int, ...]]] = set()
+    for variant in EPISODE_CARD_VARIANTS:
+        payload = await renderer.render_subject_card(
+            build_subject_data(), variant=variant
+        )
+        assert payload is not None
+        image = Image.open(io.BytesIO(base64.b64decode(payload))).convert("RGBA")
+        fingerprints.add(
+            (
+                image.getpixel((120, 96)),
+                image.getpixel((2300, 80)),
+                image.getpixel((1120, 360)),
+            )
+        )
+
+    assert len(fingerprints) == len(EPISODE_CARD_VARIANTS)
+
+
+@pytest.mark.asyncio
+async def test_render_subject_card_pastel_and_cinematic_are_not_near_duplicates() -> (
+    None
+):
+    renderer = SubjectRenderer(render_mode="pillow")
+
+    pastel_payload = await renderer.render_subject_card(
+        build_subject_data(), variant="pastel_lightbox"
+    )
+    cinematic_payload = await renderer.render_subject_card(
+        build_subject_data(), variant="cinematic_poster"
+    )
+
+    assert pastel_payload is not None
+    assert cinematic_payload is not None
+    pastel_image = Image.open(io.BytesIO(base64.b64decode(pastel_payload))).convert(
+        "RGBA"
+    )
+    cinematic_image = Image.open(
+        io.BytesIO(base64.b64decode(cinematic_payload))
+    ).convert("RGBA")
+    diff = ImageChops.difference(pastel_image, cinematic_image).convert("L")
+    flat_data = getattr(diff, "get_flattened_data", diff.getdata)
+    changed = sum(1 for value in flat_data() if value > 8)
+    changed_ratio = changed / (diff.width * diff.height)
+
+    assert changed_ratio > 0.12
+
+
+@pytest.mark.asyncio
+async def test_render_subject_card_weekday_badge_is_square() -> None:
+    renderer = SubjectRenderer(render_mode="pillow")
+
+    payload = await renderer.render_subject_card(
+        build_subject_data(), variant="cinematic_poster"
+    )
+
+    assert payload is not None
+    image = Image.open(io.BytesIO(base64.b64decode(payload))).convert("RGBA")
+    accent = _SUBJECT_CARD_STYLES["cinematic_poster"].accent
+    coords = [
+        (x, y)
+        for y in range(0, 220)
+        for x in range(2180, 2400)
+        if image.getpixel((x, y)) == accent
+    ]
+    assert coords
+    left = min(x for x, _ in coords)
+    top = min(y for _, y in coords)
+    right = max(x for x, _ in coords)
+    bottom = max(y for _, y in coords)
+
+    badge_width = right - left + 1
+    badge_height = bottom - top + 1
+    assert 168 <= badge_width <= 172
+    assert 168 <= badge_height <= 172
+    assert abs(badge_width - badge_height) <= 2
+
+
+@pytest.mark.asyncio
+async def test_render_subject_card_aligns_cover_panel_and_title_band() -> None:
+    renderer = SubjectRenderer(render_mode="pillow")
+
+    payload = await renderer.render_subject_card(
+        build_subject_data(), variant="pastel_lightbox"
+    )
+
+    assert payload is not None
+    image = Image.open(io.BytesIO(base64.b64decode(payload))).convert("RGBA")
+    style = _SUBJECT_CARD_STYLES["pastel_lightbox"]
+    assert style.side_strip is not None
+    assert style.header_band is not None
+    cover_left, _, cover_right, _ = _SUBJECT_COVER_BOX
+    assert _SUBJECT_LEFT_PANEL_RIGHT - cover_right == cover_left
+
+    assert image.getpixel((5, 500)) == style.side_strip
+    assert image.getpixel((_SUBJECT_LEFT_PANEL_RIGHT - 10, 500)) == style.side_strip
+    assert image.getpixel((_SUBJECT_LEFT_PANEL_RIGHT + 10, 500)) == style.card
+    assert (
+        image.getpixel((_SUBJECT_RIGHT_X, _SUBJECT_TITLE_PANEL_BOTTOM - 8))
+        == style.header_band
+    )
+    assert (
+        image.getpixel((_SUBJECT_RIGHT_X, _SUBJECT_TITLE_PANEL_BOTTOM + 16))
+        == style.card
+    )
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("variant", ["editorial_digest", "cinematic_poster"])
+async def test_render_subject_card_keeps_top_right_translucent_orb(
+    variant: str,
+) -> None:
+    renderer = SubjectRenderer(render_mode="pillow")
+
+    payload = await renderer.render_subject_card(build_subject_data(), variant=variant)
+
+    assert payload is not None
+    image = Image.open(io.BytesIO(base64.b64decode(payload))).convert("RGBA")
+    style = _SUBJECT_CARD_STYLES[variant]
+    assert style.header_band is not None
+    orb_left, _, orb_right, _ = _SUBJECT_TOP_ORB_BOX
+    orb_sample_x = orb_left + 40
+    orb_sample_y = 100
+    band_sample_x = orb_left - 220
+
+    assert orb_sample_x < orb_right
+    assert image.getpixel((band_sample_x, orb_sample_y)) == style.header_band
+    assert image.getpixel((orb_sample_x, orb_sample_y)) != style.header_band
 
 
 @pytest.mark.asyncio

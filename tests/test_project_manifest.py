@@ -85,13 +85,32 @@ def _find_top_level_monkeypatch_targets(file_path: Path) -> list[str]:
     return violations
 
 
+def _commands_for_handler(main_py: str, handler_name: str) -> set[str]:
+    tree = ast.parse(main_py)
+    commands: set[str] = set()
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.AsyncFunctionDef) or node.name != handler_name:
+            continue
+        for decorator in node.decorator_list:
+            if (
+                isinstance(decorator, ast.Call)
+                and isinstance(decorator.func, ast.Attribute)
+                and decorator.func.attr == "command"
+                and decorator.args
+                and isinstance(decorator.args[0], ast.Constant)
+                and isinstance(decorator.args[0].value, str)
+            ):
+                commands.add(decorator.args[0].value)
+    return commands
+
+
 def test_metadata_declares_recommended_astrbot_fields() -> None:
     metadata = yaml.safe_load((PROJECT_ROOT / "metadata.yaml").read_text())
 
     assert metadata["name"].startswith("astrbot_plugin_")
     assert metadata["display_name"]
     assert metadata["license"] == "Apache-2.0"
-    assert metadata["astrbot_version"] == ">=4.16,<5"
+    assert metadata["astrbot_version"] == ">=4.26.2,<5"
 
 
 def test_readme_documents_registered_commands_and_dependency_behavior() -> None:
@@ -106,6 +125,22 @@ def test_readme_documents_registered_commands_and_dependency_behavior() -> None:
     assert "插件首次运行时会自动检查并安装" not in readme
 
 
+def test_bgm_search_aliases_register_on_existing_handlers() -> None:
+    main_py = (PROJECT_ROOT / "main.py").read_text()
+
+    assert _commands_for_handler(main_py, "search_anime") == {
+        "bgm番剧",
+        "bgm动漫",
+        "bgm动画",
+        "bgm番",
+        "bgm动画片",
+    }
+    assert _commands_for_handler(main_py, "search_movie") == {
+        "bgm剧场版",
+        "bgm电影",
+    }
+
+
 def test_readme_version_badge_matches_metadata_version() -> None:
     metadata = yaml.safe_load((PROJECT_ROOT / "metadata.yaml").read_text())
     readme = (PROJECT_ROOT / "README.md").read_text()
@@ -113,6 +148,23 @@ def test_readme_version_badge_matches_metadata_version() -> None:
     assert (
         f"https://img.shields.io/badge/version-{metadata['version']}-blue.svg" in readme
     )
+
+
+def test_changelog_documents_metadata_version() -> None:
+    metadata = yaml.safe_load((PROJECT_ROOT / "metadata.yaml").read_text())
+    changelog = (PROJECT_ROOT / "CHANGELOG.md").read_text()
+
+    assert f"## {metadata['version']}" in changelog
+
+
+def test_card_template_docs_include_search_results() -> None:
+    schema = json.loads((PROJECT_ROOT / "_conf_schema.json").read_text())
+    readme = (PROJECT_ROOT / "README.md").read_text()
+
+    assert "/bgm 搜索结果" in schema["episode_card_template"]["hint"]
+    assert "`episode_card_template`" in readme
+    assert "`/bgm` 搜索结果" in readme
+    assert "scripts/render_subject_variants.py" in readme
 
 
 def test_plugin_uses_metadata_instead_of_deprecated_register_decorator() -> None:
@@ -157,7 +209,8 @@ def test_tests_and_scripts_use_package_imports_for_plugin_internals() -> None:
 def test_config_schema_exposes_render_mode_options() -> None:
     schema = json.loads((PROJECT_ROOT / "_conf_schema.json").read_text())
 
-    assert schema["render_mode"]["options"] == ["html", "pillow"]
+    assert schema["render_mode"]["default"] == "pillow"
+    assert schema["render_mode"]["options"] == ["pillow", "playwright", "rpc"]
     assert schema["episode_card_template"]["default"] == "cinematic_poster"
     assert schema["episode_card_template"]["options"] == [
         "pastel_lightbox",

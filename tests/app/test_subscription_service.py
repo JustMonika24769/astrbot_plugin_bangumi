@@ -38,6 +38,7 @@ def mock_config_manager() -> MagicMock:
     config_manager.get_render_server_url.return_value = "rpc"
     config_manager.get_max_retries.return_value = 1
     config_manager.get_episode_card_template.return_value = "cinematic_poster"
+    config_manager.get_auto_translate_episode_summary.return_value = False
     return config_manager
 
 
@@ -139,6 +140,7 @@ async def test_notify_subscribers_passes_configured_episode_template(
     monkeypatch.setattr(
         "astrbot_plugin_bangumi.src.app.subscription_service.StarTools.send_message_by_id",
         send_message_by_id,
+        raising=False,
     )
     service = SubscriptionService(mock_repo, mock_service, mock_config_manager)
     service.renderer.render_episode = AsyncMock(return_value="image")
@@ -155,7 +157,114 @@ async def test_notify_subscribers_passes_configured_episode_template(
     send_message_by_id.assert_awaited_once()
 
 
-def _episode() -> Episode:
+@pytest.mark.asyncio
+async def test_notify_subscribers_translation_disabled_does_not_call_llm(
+    mock_repo: MagicMock,
+    mock_service: MagicMock,
+    mock_config_manager: MagicMock,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    mock_repo.get_subject_subscribers.return_value = ["group"]
+    context = _context_with_provider()
+    send_message_by_id = AsyncMock()
+    monkeypatch.setattr(
+        "astrbot_plugin_bangumi.src.app.subscription_service.StarTools.send_message_by_id",
+        send_message_by_id,
+        raising=False,
+    )
+    service = SubscriptionService(
+        mock_repo, mock_service, mock_config_manager, context=context
+    )
+    service.renderer.render_episode = AsyncMock(return_value="image")
+    episode = _episode(desc="Original English summary")
+
+    await service._notify_subscribers(episode, "1", "番")
+
+    context.get_using_provider.assert_not_called()
+    context.llm_generate.assert_not_awaited()
+    rendered_episode = service.renderer.render_episode.await_args.args[0]
+    assert rendered_episode.desc == "Original English summary"
+    send_message_by_id.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_notify_subscribers_translates_summary_before_rendering(
+    mock_repo: MagicMock,
+    mock_service: MagicMock,
+    mock_config_manager: MagicMock,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    mock_repo.get_subject_subscribers.return_value = ["group"]
+    mock_config_manager.get_auto_translate_episode_summary.return_value = True
+    context = _context_with_provider(completion_text="  中文简介  ")
+    send_message_by_id = AsyncMock()
+    monkeypatch.setattr(
+        "astrbot_plugin_bangumi.src.app.subscription_service.StarTools.send_message_by_id",
+        send_message_by_id,
+        raising=False,
+    )
+    service = SubscriptionService(
+        mock_repo, mock_service, mock_config_manager, context=context
+    )
+    service.renderer.render_episode = AsyncMock(return_value="image")
+    episode = _episode(desc="Original English summary")
+
+    await service._notify_subscribers(episode, "1", "番")
+
+    context.llm_generate.assert_awaited_once_with(
+        chat_provider_id="default-provider",
+        prompt="Original English summary",
+        system_prompt="Translate to chinese (output translation only):",
+    )
+    rendered_episode = service.renderer.render_episode.await_args.args[0]
+    assert rendered_episode.desc == "中文简介"
+    assert episode.desc == "Original English summary"
+    send_message_by_id.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_notify_subscribers_keeps_original_summary_when_translation_fails(
+    mock_repo: MagicMock,
+    mock_service: MagicMock,
+    mock_config_manager: MagicMock,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    mock_repo.get_subject_subscribers.return_value = ["group"]
+    mock_config_manager.get_auto_translate_episode_summary.return_value = True
+    context = _context_with_provider()
+    context.llm_generate.side_effect = RuntimeError("llm down")
+    send_message_by_id = AsyncMock()
+    monkeypatch.setattr(
+        "astrbot_plugin_bangumi.src.app.subscription_service.StarTools.send_message_by_id",
+        send_message_by_id,
+        raising=False,
+    )
+    service = SubscriptionService(
+        mock_repo, mock_service, mock_config_manager, context=context
+    )
+    service.renderer.render_episode = AsyncMock(return_value="image")
+    episode = _episode(desc="Original English summary")
+
+    await service._notify_subscribers(episode, "1", "番")
+
+    context.llm_generate.assert_awaited_once()
+    rendered_episode = service.renderer.render_episode.await_args.args[0]
+    assert rendered_episode.desc == "Original English summary"
+    send_message_by_id.assert_awaited_once()
+
+
+def _context_with_provider(completion_text: str = "中文简介") -> MagicMock:
+    context = MagicMock()
+    provider = MagicMock()
+    provider.meta.return_value = SimpleNamespace(id="default-provider")
+    context.get_using_provider.return_value = provider
+    context.llm_generate = AsyncMock(
+        return_value=SimpleNamespace(completion_text=completion_text)
+    )
+    return context
+
+
+def _episode(desc: str = "") -> Episode:
     return Episode(
         id=10,
         subject_id=1,
@@ -164,5 +273,6 @@ def _episode() -> Episode:
         sort=2,
         name="ep2",
         name_cn="第二集",
+        desc=desc,
         comment=1,
     )

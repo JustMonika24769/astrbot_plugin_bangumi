@@ -17,7 +17,7 @@ class BaseRenderer:
     def __init__(
         self,
         session: aiohttp.ClientSession | None = None,
-        render_mode: RenderMode = "html",
+        render_mode: RenderMode = "pillow",
     ) -> None:
         """
         初始化渲染器
@@ -90,6 +90,13 @@ class BaseRenderer:
             screenshot_bytes = None
 
             if await locator.count() > 0:
+                box = await locator.bounding_box()
+                if box:
+                    viewport_width = min(max(int(box["width"]) + 8, 320), 4096)
+                    viewport_height = min(max(int(box["height"]) + 8, 240), 4096)
+                    await page.set_viewport_size(
+                        {"width": viewport_width, "height": viewport_height}
+                    )
                 screenshot_bytes = await locator.screenshot(
                     type="png",
                     omit_background=True,
@@ -234,8 +241,8 @@ class BaseRenderer:
         pillow_fallback: Callable[[], Awaitable[str | None]] | None = None,
     ) -> str | None:
         """
-        通用渲染方法:优先尝试 RPC 渲染,若失败或未配置则回退到本地
-        Playwright 渲染,最后按需回退到 Pillow 渲染
+        通用渲染方法:按配置选择 RPC 或本地 Playwright,失败后按需回退到
+        Pillow 渲染。
 
         Args:
             template_path: 模板路径
@@ -254,7 +261,12 @@ class BaseRenderer:
                 template_path, pillow_fallback
             )
 
-        if rpc_url:
+        if self.render_mode == "pillow":
+            return await self._render_with_pillow_fallback(
+                template_path, pillow_fallback
+            )
+
+        if self.render_mode == "rpc" and rpc_url:
             logger.debug(f"[+] 尝试通过 RPC 渲染: {template_path}")
             result = await self._render_via_rpc(
                 rpc_url=rpc_url,
@@ -265,7 +277,18 @@ class BaseRenderer:
             )
             if result:
                 return result
-            logger.warning(f"[-] RPC 渲染失败 ({template_path}),正在回退到本地渲染...")
+            logger.warning(f"[-] RPC 渲染失败 ({template_path}),正在回退到 Pillow...")
+            return await self._render_with_pillow_fallback(
+                template_path, pillow_fallback
+            )
+
+        if self.render_mode == "rpc" and not rpc_url:
+            logger.warning(
+                f"[-] 未配置 RPC 渲染服务器 ({template_path}),正在回退到 Pillow..."
+            )
+            return await self._render_with_pillow_fallback(
+                template_path, pillow_fallback
+            )
 
         local_result = await self._render_locally(
             html_content=html_content,

@@ -44,11 +44,15 @@ def _fail_if_pillow_branch_is_used(*args: object, **kwargs: object) -> None:
     raise AssertionError("HTML mode should not fall back to Pillow rendering")
 
 
+async def _fake_pillow_fallback() -> str:
+    return "pillow-b64"
+
+
 @pytest.mark.asyncio
 async def test_calendar_html_mode_routes_to_local_browser_path(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    renderer = CalendarRenderer(render_mode="html")
+    renderer = CalendarRenderer(render_mode="playwright")
     local_render = AsyncMock(return_value="browser-b64")
 
     monkeypatch.setattr(renderer, "_render_locally", local_render)
@@ -84,7 +88,7 @@ async def test_calendar_html_mode_routes_to_local_browser_path(
 
 @pytest.mark.asyncio
 async def test_playwright_runtime_smoke_with_inline_html() -> None:
-    renderer = BaseRenderer(render_mode="html")
+    renderer = BaseRenderer(render_mode="playwright")
 
     try:
         payload = await renderer._capture_screenshot(
@@ -101,3 +105,43 @@ async def test_playwright_runtime_smoke_with_inline_html() -> None:
     assert payload is not None
 
     assert_png_image(payload, require_non_blank=True)
+
+
+@pytest.mark.asyncio
+async def test_base_renderer_playwright_mode_skips_rpc() -> None:
+    renderer = BaseRenderer(render_mode="playwright")
+    renderer._generate_html = lambda template_path, render_data, sub_dir="": INLINE_HTML
+    renderer._render_via_rpc = AsyncMock(return_value="rpc-b64")
+    renderer._render_locally = AsyncMock(return_value="local-b64")
+
+    result = await renderer.render(
+        "inline.html",
+        {},
+        "#card",
+        rpc_url="https://example.invalid/rpc",
+        pillow_fallback=_fake_pillow_fallback,
+    )
+
+    assert result == "local-b64"
+    renderer._render_via_rpc.assert_not_awaited()
+    renderer._render_locally.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_base_renderer_rpc_mode_skips_local_on_failure() -> None:
+    renderer = BaseRenderer(render_mode="rpc")
+    renderer._generate_html = lambda template_path, render_data, sub_dir="": INLINE_HTML
+    renderer._render_via_rpc = AsyncMock(return_value=None)
+    renderer._render_locally = AsyncMock(return_value="local-b64")
+
+    result = await renderer.render(
+        "inline.html",
+        {},
+        "#card",
+        rpc_url="https://example.invalid/rpc",
+        pillow_fallback=_fake_pillow_fallback,
+    )
+
+    assert result == "pillow-b64"
+    renderer._render_via_rpc.assert_awaited_once()
+    renderer._render_locally.assert_not_awaited()

@@ -14,7 +14,7 @@ def test_get_render_mode_reads_config_value() -> None:
     assert manager.get_render_mode() == "pillow"
 
 
-def test_get_render_mode_invalid_value_falls_back_to_html() -> None:
+def test_get_render_mode_invalid_value_falls_back_to_pillow() -> None:
     config = MagicMock()
     config.get.side_effect = lambda key, default=None: {
         "render_mode": "unknown",
@@ -22,4 +22,15 @@ def test_get_render_mode_invalid_value_falls_back_to_html() -> None:
 
     manager = ConfigManager(config)
 
-    assert manager.get_render_mode() == "html"
+    assert manager.get_render_mode() == "pillow"
+
+
+def test_get_render_mode_legacy_html_maps_to_playwright() -> None:
+    config = MagicMock()
+    config.get.side_effect = lambda key, default=None: {
+        "render_mode": " html ",
+    }.get(key, default)
+
+    manager = ConfigManager(config)
+
+    assert manager.get_render_mode() == "playwright"

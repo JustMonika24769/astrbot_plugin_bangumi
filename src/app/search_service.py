@@ -1,5 +1,5 @@
 import datetime
-from collections.abc import AsyncGenerator
+from collections.abc import AsyncGenerator, Awaitable, Callable
 from typing import TYPE_CHECKING, cast
 
 import aiohttp
@@ -21,6 +21,12 @@ from ..render import CalendarRenderer, SubjectRenderer
 if TYPE_CHECKING:
     from ..api import BangumiService
 
+TextResultBuilder = Callable[[AstrMessageEvent, str], Awaitable[MessageResult]]
+
+
+async def _default_text_result(event: AstrMessageEvent, text: str) -> MessageResult:
+    return event.plain_result(text)
+
 
 class SearchService:
     def __init__(
@@ -28,9 +34,11 @@ class SearchService:
         service: "BangumiService",
         config_manager: ConfigManager,
         session: aiohttp.ClientSession | None = None,
+        text_result_builder: TextResultBuilder | None = None,
     ) -> None:
         self.service = service
         self.config_manager = config_manager
+        self._text_result_builder = text_result_builder or _default_text_result
         render_mode = self.config_manager.get_render_mode()
         self.subject_renderer = SubjectRenderer(
             session=session, render_mode=render_mode
@@ -51,7 +59,7 @@ class SearchService:
         处理条目搜索的核心流程:搜索 -> 渲染 (Base64) -> 发送
         """
         if not query:
-            yield event.plain_result("❌ 请提供搜索关键词")
+            yield await self._text_result(event, "❌ 请提供搜索关键词")
             return
 
         logger.info(f"搜索请求: {query}, type={subject_type}, top_k={top_k}")
@@ -61,7 +69,7 @@ class SearchService:
                 keyword=query, subject_type=subject_type, subject_tags=subject_tags
             )
             if not search_res or "data" not in search_res or not search_res["data"]:
-                yield event.plain_result("🔍 未找到相关条目")
+                yield await self._text_result(event, "🔍 未找到相关条目")
                 return
 
             image_components = await self._prepare_subject_images_base64(
@@ -71,11 +79,11 @@ class SearchService:
             if image_components:
                 yield event.chain_result(image_components)
             else:
-                yield event.plain_result("❌ 未能生成渲染图片")
+                yield await self._text_result(event, "❌ 未能生成渲染图片")
 
         except (BangumiApiError, RuntimeError, ValueError) as e:
             logger.error(f"SearchService.handle_subject_search 失败: {e}")
-            yield event.plain_result(f"❌ 处理失败: {e}")
+            yield await self._text_result(event, f"❌ 处理失败: {e}")
 
     async def handle_calendar(
         self, event: AstrMessageEvent
@@ -86,7 +94,7 @@ class SearchService:
         try:
             calendar_res = await self.service.get_calendar()
             if not calendar_res:
-                yield event.plain_result("❌ 未获取到放送数据")
+                yield await self._text_result(event, "❌ 未获取到放送数据")
                 return
 
             base64_image = await self.calendar_renderer.render_calendar(
@@ -98,10 +106,10 @@ class SearchService:
             if base64_image:
                 yield event.chain_result([Comp.Image.fromBase64(base64_image)])
             else:
-                yield event.plain_result("❌ 图片生成失败")
+                yield await self._text_result(event, "❌ 图片生成失败")
         except (BangumiApiError, RuntimeError, ValueError) as e:
             logger.error(f"SearchService.handle_calendar 失败: {e}")
-            yield event.plain_result(f"❌ 处理失败: {e}")
+            yield await self._text_result(event, f"❌ 处理失败: {e}")
 
     async def handle_today(
         self, event: AstrMessageEvent
@@ -112,12 +120,12 @@ class SearchService:
         try:
             calendar_res = await self.service.get_calendar()
             if not calendar_res:
-                yield event.plain_result("❌ 未获取到今日放送数据")
+                yield await self._text_result(event, "❌ 未获取到今日放送数据")
                 return
 
             today_data = self._filter_today_calendar(calendar_res)
             if not today_data:
-                yield event.plain_result("❌ 未获取到今日放送数据")
+                yield await self._text_result(event, "❌ 未获取到今日放送数据")
                 return
 
             base64_image = await self.calendar_renderer.render_calendar(
@@ -129,10 +137,13 @@ class SearchService:
             if base64_image:
                 yield event.chain_result([Comp.Image.fromBase64(base64_image)])
             else:
-                yield event.plain_result("❌ 图片生成失败")
+                yield await self._text_result(event, "❌ 图片生成失败")
         except (BangumiApiError, RuntimeError, ValueError) as e:
             logger.error(f"SearchService.handle_today 失败: {e}")
-            yield event.plain_result(f"❌ 处理失败: {e}")
+            yield await self._text_result(event, f"❌ 处理失败: {e}")
+
+    async def _text_result(self, event: AstrMessageEvent, text: str) -> MessageResult:
+        return await self._text_result_builder(event, text)
 
     @staticmethod
     def _filter_today_calendar(calendar_data: list[CalendarDay]) -> list[CalendarDay]:
@@ -178,6 +189,7 @@ class SearchService:
             data_list=cast(list[RenderData], data_list),
             rpc_url=self.config_manager.get_render_server_url(),
             max_retries=self.config_manager.get_max_retries(),
+            variant=self.config_manager.get_episode_card_template(),
         )
 
         return [Comp.Image.fromBase64(b64) for b64 in base64_list]

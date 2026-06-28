@@ -4,6 +4,8 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
+from astrbot_plugin_bangumi.src.render import ResponseRenderer
+
 BangumiPlugin = importlib.import_module("astrbot_plugin_bangumi.main").BangumiPlugin
 
 
@@ -16,14 +18,25 @@ def test_resolve_session_key_prefers_group_id() -> None:
 
 
 def test_parse_subscribe_selection() -> None:
+    assert BangumiPlugin._parse_subscribe_selection("1") == 1
+    assert BangumiPlugin._parse_subscribe_selection("  10  ") == 10
     assert BangumiPlugin._parse_subscribe_selection("/追番 2") == 2
     assert BangumiPlugin._parse_subscribe_selection("追番 3") == 3
     assert BangumiPlugin._parse_subscribe_selection("追番 abc") is None
+    assert BangumiPlugin._parse_subscribe_selection("1 abc") is None
+
+
+def test_format_subscribe_selection_hint_mentions_bare_number() -> None:
+    assert (
+        BangumiPlugin._format_subscribe_selection_hint(10)
+        == "请输入 1-10 的序号,例如 `1` 或 `/追番 1`"
+    )
 
 
 def test_should_requeue_subscribe_command() -> None:
     assert BangumiPlugin._should_requeue_subscribe_command("/bgm test") is True
     assert BangumiPlugin._should_requeue_subscribe_command("追番 巨人") is True
+    assert BangumiPlugin._should_requeue_subscribe_command("1") is False
     assert BangumiPlugin._should_requeue_subscribe_command("/追番 1") is False
     assert BangumiPlugin._should_requeue_subscribe_command("普通消息") is False
 
@@ -70,6 +83,81 @@ def test_build_proxy_url_preserves_scheme_and_existing_port() -> None:
 
 
 @pytest.mark.asyncio
+async def test_result_for_text_keeps_short_plain_text() -> None:
+    plugin = BangumiPlugin.__new__(BangumiPlugin)
+    plugin.response_renderer = MagicMock()
+    event = _event()
+
+    result = await BangumiPlugin._result_for_text(plugin, event, "短消息")
+
+    assert result == "短消息"
+    event.plain_result.assert_called_once_with("短消息")
+    event.chain_result.assert_not_called()
+    plugin.response_renderer.render_response_text.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_result_for_text_renders_long_text_as_image() -> None:
+    plugin = BangumiPlugin.__new__(BangumiPlugin)
+    plugin.config_manager = MagicMock()
+    plugin.config_manager.get_episode_card_template.return_value = "cinematic_poster"
+    plugin.config_manager.get_render_server_url.return_value = "rpc"
+    plugin.config_manager.get_max_retries.return_value = 1
+    plugin.response_renderer = ResponseRenderer.__new__(ResponseRenderer)
+    plugin.response_renderer.render_response_text = AsyncMock(return_value="b64")
+    event = _event()
+
+    result = await BangumiPlugin._result_for_text(plugin, event, "长" * 31)
+
+    assert result == event.chain_result.call_args.args[0]
+    event.plain_result.assert_not_called()
+    event.chain_result.assert_called_once()
+
+
+@pytest.mark.asyncio
+async def test_result_for_text_falls_back_to_plain_text_when_render_fails() -> None:
+    plugin = BangumiPlugin.__new__(BangumiPlugin)
+    plugin.config_manager = MagicMock()
+    plugin.config_manager.get_episode_card_template.return_value = "cinematic_poster"
+    plugin.config_manager.get_render_server_url.return_value = "rpc"
+    plugin.config_manager.get_max_retries.return_value = 1
+    plugin.response_renderer = ResponseRenderer.__new__(ResponseRenderer)
+    plugin.response_renderer.render_response_text = AsyncMock(
+        side_effect=RuntimeError("font boom")
+    )
+    event = _event()
+    long_text = "长" * 31
+
+    result = await BangumiPlugin._result_for_text(plugin, event, long_text)
+
+    assert result == long_text
+    event.plain_result.assert_called_once_with(long_text)
+    event.chain_result.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_send_text_falls_back_to_plain_text_when_render_fails() -> None:
+    plugin = BangumiPlugin.__new__(BangumiPlugin)
+    plugin.config_manager = MagicMock()
+    plugin.config_manager.get_episode_card_template.return_value = "cinematic_poster"
+    plugin.config_manager.get_render_server_url.return_value = "rpc"
+    plugin.config_manager.get_max_retries.return_value = 1
+    plugin.response_renderer = ResponseRenderer.__new__(ResponseRenderer)
+    plugin.response_renderer.render_response_text = AsyncMock(
+        side_effect=RuntimeError("draw boom")
+    )
+    event = _event()
+    event.send = AsyncMock()
+    long_text = "长" * 31
+
+    await BangumiPlugin._send_text(plugin, event, long_text)
+
+    sent_chain = event.send.await_args.args[0]
+    assert len(sent_chain.chain) == 1
+    assert sent_chain.chain[0].text == long_text
+
+
+@pytest.mark.asyncio
 async def test_search_anime_dispatches_type_and_tag() -> None:
     plugin = BangumiPlugin.__new__(BangumiPlugin)
     plugin.search_service = MagicMock()
@@ -111,7 +199,7 @@ async def test_episode_card_template_command_shows_current_template() -> None:
     ]
 
     assert len(results) == 1
-    assert "当前单集卡片模板: cinematic_poster" in results[0]
+    assert "当前图片卡片风格: cinematic_poster" in results[0]
     assert "1. pastel_lightbox" in results[0]
     assert "3. cinematic_poster" in results[0]
     plugin.config_manager.set_episode_card_template.assert_not_called()
@@ -129,7 +217,7 @@ async def test_episode_card_template_command_updates_config() -> None:
         async for result in BangumiPlugin.episode_card_template(plugin, event, "2")
     ]
 
-    assert results == ["✅ 已切换单集卡片模板为 editorial_digest - Episode digest"]
+    assert results == ["✅ 已切换图片卡片风格为 editorial_digest - Episode digest"]
     plugin.config_manager.set_episode_card_template.assert_called_once_with(
         "editorial_digest"
     )
@@ -148,7 +236,7 @@ async def test_episode_card_template_command_rejects_unknown_template() -> None:
     ]
 
     assert len(results) == 1
-    assert "❌ 未知单集卡片模板: bad" in results[0]
+    assert "❌ 未知图片卡片风格: bad" in results[0]
     plugin.config_manager.set_episode_card_template.assert_not_called()
     plugin.config_manager.save_config.assert_not_called()
 
