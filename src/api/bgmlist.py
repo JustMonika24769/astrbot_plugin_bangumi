@@ -37,7 +37,7 @@ def _parse_broadcast_time(begin_iso: str) -> str | None:
         dt = datetime.datetime.fromisoformat(dt_str)
         # 若为 naive datetime（无时区信息），按 UTC 处理
         if dt.tzinfo is None:
-            dt = dt.replace(tzinfo=datetime.timezone.utc)
+            dt = dt.replace(tzinfo=datetime.UTC)
         cst_offset = datetime.timedelta(hours=8)
         cst_dt = dt.astimezone(datetime.timezone(cst_offset))
 

@@ -6,7 +6,6 @@
 """
 
 import os
-from collections.abc import Sequence
 from dataclasses import dataclass
 from difflib import SequenceMatcher
 
@@ -85,7 +84,7 @@ class BangumiRepository:
                     conn.commit()
                     logger.info("数据库迁移:已添加 broadcast_time 列")
         except Exception as e:
-            logger.warning(f"数据库迁移失败(可能已存在): {e}")
+            raise DatabaseError(f"数据库迁移失败: {e}") from e
 
     def update_subject(self, subject_id: str, **kwargs: str | int | None) -> bool:
         """

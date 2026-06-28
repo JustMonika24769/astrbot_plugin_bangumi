@@ -193,9 +193,7 @@ class BangumiPlugin(Star):  # type: ignore[misc]
 
         if to_update:
             updated = self.storage.batch_update_broadcast_times(to_update)
-            logger.info(
-                f"自动填充 {updated}/{len(to_update)} 个番剧的放送时间"
-            )
+            logger.info(f"自动填充 {updated}/{len(to_update)} 个番剧的放送时间")
 
     # --- 命令处理区 ---
 
@@ -581,7 +579,9 @@ class BangumiPlugin(Star):  # type: ignore[misc]
                 return
 
             if not subject_ids:
-                yield event.plain_result("📺 本群暂无订阅番剧\n发送 `/追番 <番剧名>` 来订阅吧")
+                yield event.plain_result(
+                    "📺 本群暂无订阅番剧\n发送 `/追番 <番剧名>` 来订阅吧"
+                )
                 return
 
             lines = ["📺 本群已订阅番剧放送时间:"]
@@ -606,9 +606,7 @@ class BangumiPlugin(Star):  # type: ignore[misc]
             yield event.plain_result("❌ 查询订阅数据时出错,请稍后重试")
             return
         if not candidates:
-            yield event.plain_result(
-                f"❌ 未找到与「{name_or_id}」匹配的本群订阅番剧"
-            )
+            yield event.plain_result(f"❌ 未找到与「{name_or_id}」匹配的本群订阅番剧")
             return
 
         # 多个候选展示
@@ -616,9 +614,7 @@ class BangumiPlugin(Star):  # type: ignore[misc]
             lines = ["⚠️ 匹配到多个已订阅番剧,请提供更精确名称或直接使用 ID:"]
             for idx, subject in enumerate(candidates, start=1):
                 bt = subject.broadcast_time or "未设置"
-                lines.append(
-                    f"{idx}. {subject.name} (ID: {subject.subject_id}) [{bt}]"
-                )
+                lines.append(f"{idx}. {subject.name} (ID: {subject.subject_id}) [{bt}]")
             yield event.plain_result("\n".join(lines))
             return
 
