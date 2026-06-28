@@ -58,5 +58,11 @@
     "hint": "用于 /bgm 搜索结果、单集更新卡片和长文本响应卡片；1=pastel_lightbox，2=editorial_digest，3=cinematic_poster；默认使用第 3 个海报模板",
     "default": "cinematic_poster",
     "options": ["pastel_lightbox", "editorial_digest", "cinematic_poster"]
+  },
+  "auto_translate_episode_summary": {
+    "description": "自动翻译单集简介",
+    "type": "bool",
+    "hint": "订阅更新渲染单集卡片前，使用 AstrBot 默认聊天模型将非空单集简介翻译为中文；失败时保留原文",
+    "default": false
   }
 }

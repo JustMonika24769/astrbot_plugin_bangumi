@@ -14,7 +14,14 @@ from ..domain.types import ImageSize, SubjectType
 from ..render import EpisodeRenderer
 
 if TYPE_CHECKING:
+    from astrbot.api.star import Context
+
     from ..api import BangumiService
+
+
+TRANSLATE_EPISODE_SUMMARY_SYSTEM_PROMPT = (
+    "Translate to chinese (output translation only):"
+)
 
 
 class SubscriptionService:
@@ -24,10 +31,12 @@ class SubscriptionService:
         service: "BangumiService",
         config_manager: ConfigManager,
         session: aiohttp.ClientSession | None = None,
+        context: "Context | None" = None,
     ) -> None:
         self.storage = repository
         self.service = service
         self.config_manager = config_manager
+        self.context = context
         self.renderer = EpisodeRenderer(
             session=session, render_mode=self.config_manager.get_render_mode()
         )
@@ -284,8 +293,10 @@ class SubscriptionService:
         if not subscribed_groups:
             return
 
+        episode_for_render = await self._translate_episode_summary_if_enabled(episode)
+
         base64_image = await self.renderer.render_episode(
-            episode,
+            episode_for_render,
             rpc_url=self.config_manager.get_render_server_url(),
             max_retries=self.config_manager.get_max_retries(),
             variant=self.config_manager.get_episode_card_template(),
@@ -296,7 +307,7 @@ class SubscriptionService:
             chain = chain.base64_image(base64_image)
         else:
             chain = chain.message(
-                f"🔔 番剧《{subject_name}》更新啦!\n第 {episode.ep} 集:{episode.name_cn or episode.name}"
+                f"🔔 番剧《{subject_name}》更新啦!\n第 {episode_for_render.ep} 集:{episode_for_render.name_cn or episode_for_render.name}"
             )
 
         for group_id in subscribed_groups:
@@ -309,3 +320,48 @@ class SubscriptionService:
                 logger.error(
                     f"向群组 {group_id} 发送《{subject_name}》更新通知失败: {e}"
                 )
+
+    async def _translate_episode_summary_if_enabled(self, episode: Episode) -> Episode:
+        if (
+            not self.config_manager.get_auto_translate_episode_summary()
+            or not episode.desc.strip()
+        ):
+            return episode
+
+        if self.context is None:
+            logger.warning(
+                "单集简介自动翻译已开启,但 AstrBot Context 不可用,保留原简介"
+            )
+            return episode
+
+        try:
+            provider = self.context.get_using_provider()
+            if provider is None:
+                logger.warning(
+                    "单集简介自动翻译已开启,但默认 chat provider 不可用,保留原简介"
+                )
+                return episode
+
+            provider_meta = provider.meta()
+            provider_id = getattr(provider_meta, "id", None)
+            if not isinstance(provider_id, str) or not provider_id:
+                logger.warning(
+                    "单集简介自动翻译已开启,但默认 chat provider id 不可用,保留原简介"
+                )
+                return episode
+
+            response = await self.context.llm_generate(
+                chat_provider_id=provider_id,
+                prompt=episode.desc,
+                system_prompt=TRANSLATE_EPISODE_SUMMARY_SYSTEM_PROMPT,
+            )
+        except Exception as e:
+            logger.error(f"单集简介自动翻译失败,保留原简介: {e}")
+            return episode
+
+        translated_text = getattr(response, "completion_text", "").strip()
+        if not translated_text:
+            logger.warning("单集简介自动翻译返回空文本,保留原简介")
+            return episode
+
+        return episode.model_copy(update={"desc": translated_text})

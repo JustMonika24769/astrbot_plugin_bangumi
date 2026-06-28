@@ -65,6 +65,7 @@
 | `render_server_url` | string | `https://api.unitedpooh.top/rpc` | 远程渲染图片的 RPC 服务器地址 |
 | `render_mode` | string | `pillow` | 渲染模式;可选 `pillow`、`playwright`、`rpc`;旧配置值 `html` 会兼容为 `playwright` |
 | `episode_card_template` | string | `cinematic_poster` | 图片卡片风格;影响 `/bgm` 搜索结果、单集更新和长文本响应;可选 `pastel_lightbox`、`editorial_digest`、`cinematic_poster`,第三个为默认 |
+| `auto_translate_episode_summary` | bool | `false` | 订阅更新渲染单集卡片前,使用 AstrBot 默认聊天模型将非空单集简介翻译为中文;无默认模型、返回空文本或翻译失败时保留原文 |
 
 ### Access Token 获取
 
@@ -103,7 +104,7 @@ python scripts/render_response_previews.py
 
 ### 单集卡片预览
 
-单集更新卡片、搜索结果卡片和长文本响应卡片保留三种候选风格:`pastel_lightbox`、`editorial_digest`、`cinematic_poster`。默认使用第三个 `cinematic_poster`,也可以在 `_conf_schema.json` 的 `episode_card_template` 中配置,或通过 `/bgm模板 1`、`/bgm模板 2`、`/bgm模板 3` 指令切换。三种模板都会通过 Pillow 输出,HTML 链路会内嵌同一张 Pillow 预渲染图片以保持像素级对齐。可用本地脚本从 Bangumi API 拉取真实条目与剧集数据,生成真实数据对比图:
+单集更新卡片、搜索结果卡片和长文本响应卡片保留三种候选风格:`pastel_lightbox`、`editorial_digest`、`cinematic_poster`。默认使用第三个 `cinematic_poster`,也就是当前海报式单集卡片;也可以在 `_conf_schema.json` 的 `episode_card_template` 中配置,或通过 `/bgm模板 1`、`/bgm模板 2`、`/bgm模板 3` 指令切换。订阅更新卡片可通过 `auto_translate_episode_summary=true` 在渲染前调用 AstrBot 默认聊天模型翻译非空单集简介,系统提示词固定为 `Translate to chinese (output translation only):`,单集简介会作为用户提示词单独传入;翻译不可用、返回空文本或失败时会继续使用 Bangumi 原简介。预览脚本只验证 Bangumi 原始数据的渲染效果,不会调用 AstrBot 聊天模型。三种模板都会通过 Pillow 输出,HTML 链路会内嵌同一张 Pillow 预渲染图片以保持像素级对齐。可用本地脚本从 Bangumi API 拉取真实条目与剧集数据,生成真实数据对比图:
 
 ```bash
 python scripts/render_episode_variants.py

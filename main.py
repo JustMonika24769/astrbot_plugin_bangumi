@@ -134,6 +134,7 @@ class BangumiPlugin(Star):  # type: ignore[misc]
                     service=self.service,
                     config_manager=self.config_manager,
                     session=self.session,
+                    context=self.context,
                 )
 
         # 5. 其他初始化流程
