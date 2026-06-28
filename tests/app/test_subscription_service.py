@@ -140,6 +140,7 @@ async def test_notify_subscribers_passes_configured_episode_template(
     monkeypatch.setattr(
         "astrbot_plugin_bangumi.src.app.subscription_service.StarTools.send_message_by_id",
         send_message_by_id,
+        raising=False,
     )
     service = SubscriptionService(mock_repo, mock_service, mock_config_manager)
     service.renderer.render_episode = AsyncMock(return_value="image")
@@ -169,6 +170,7 @@ async def test_notify_subscribers_translation_disabled_does_not_call_llm(
     monkeypatch.setattr(
         "astrbot_plugin_bangumi.src.app.subscription_service.StarTools.send_message_by_id",
         send_message_by_id,
+        raising=False,
     )
     service = SubscriptionService(
         mock_repo, mock_service, mock_config_manager, context=context
@@ -199,6 +201,7 @@ async def test_notify_subscribers_translates_summary_before_rendering(
     monkeypatch.setattr(
         "astrbot_plugin_bangumi.src.app.subscription_service.StarTools.send_message_by_id",
         send_message_by_id,
+        raising=False,
     )
     service = SubscriptionService(
         mock_repo, mock_service, mock_config_manager, context=context
@@ -234,6 +237,7 @@ async def test_notify_subscribers_keeps_original_summary_when_translation_fails(
     monkeypatch.setattr(
         "astrbot_plugin_bangumi.src.app.subscription_service.StarTools.send_message_by_id",
         send_message_by_id,
+        raising=False,
     )
     service = SubscriptionService(
         mock_repo, mock_service, mock_config_manager, context=context

@@ -6,6 +6,7 @@
 - **搜索结果三风格**: `/bgm`、`/bgm番剧`、`/bgm剧场版`、`/bgm漫画` 的条目搜索结果卡片同步支持 `pastel_lightbox`、`editorial_digest`、`cinematic_poster` 三种风格,并复用 `/bgm模板` 和 `episode_card_template` 配置。
 - **搜索卡预览**: 新增真实数据搜索结果卡片预览脚本,用于审核三种风格在真实 Bangumi 条目上的可读性和差异度。
 - **单集简介自动翻译**: 新增 `auto_translate_episode_summary` 配置,订阅更新渲染单集卡片前可调用 AstrBot 默认聊天模型将非空单集简介翻译为中文;无默认模型、返回空文本或翻译失败时保留 Bangumi 原简介。
+- **AstrBot 版本要求**: 插件元数据最低 AstrBot 版本调整为 `>=4.26.2`,与订阅更新主动发送消息能力保持一致。
 
 ## v1.4.0
 

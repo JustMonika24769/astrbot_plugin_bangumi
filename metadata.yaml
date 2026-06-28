@@ -5,7 +5,7 @@ version: v1.4.1
 author: united_pooh
 license: Apache-2.0
 repo: https://github.com/united-pooh/astrbot_plugin_bangumi
-astrbot_version: ">=4.16,<5"
+astrbot_version: ">=4.26.2,<5"
 tags:
   - bangumi
   - 追番

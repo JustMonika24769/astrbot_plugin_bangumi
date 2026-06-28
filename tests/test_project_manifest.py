@@ -110,7 +110,7 @@ def test_metadata_declares_recommended_astrbot_fields() -> None:
     assert metadata["name"].startswith("astrbot_plugin_")
     assert metadata["display_name"]
     assert metadata["license"] == "Apache-2.0"
-    assert metadata["astrbot_version"] == ">=4.16,<5"
+    assert metadata["astrbot_version"] == ">=4.26.2,<5"
 
 
 def test_readme_documents_registered_commands_and_dependency_behavior() -> None:
