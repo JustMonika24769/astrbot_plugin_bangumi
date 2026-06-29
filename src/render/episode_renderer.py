@@ -17,12 +17,14 @@ from .pillow_utils import (
     add_shadow,
     blend_color,
     create_placeholder_image,
+    draw_centered_text,
     draw_pill,
     draw_text_block,
     fit_cover,
     get_font,
     get_image_accent,
     image_to_base64,
+    line_height,
     load_image_source,
     measure_text,
     wrap_text,
@@ -186,7 +188,7 @@ def _draw_cinematic_poster(
 
     episode_label = _format_episode_label(render_data)
     ep_font = get_font(168, bold=True)
-    title_font = get_font(144, bold=True)
+    title_font = get_font(132, bold=True)
     meta_font = get_font(51, bold=True)
     desc_font = get_font(51)
 
@@ -194,12 +196,38 @@ def _draw_cinematic_poster(
     right = 84
     content_top_padding = 96
     content_bottom_padding = 84
-    title_row_height = 174
-    title_row_margin_bottom = 36
-    metadata_height = 78
-    metadata_margin_bottom = 60
-    description_line_step = 87
+    title_line_spacing = 14
+    title_row_margin_bottom = 42
+    metadata_height = line_height(draw, meta_font)
+    metadata_margin_bottom = 56
+    description_line_spacing = 34
     description_margin_bottom = 72
+
+    ep_width, _ = measure_text(draw, episode_label, ep_font)
+    title_x = left + ep_width + 21
+    title_lines = wrap_text(
+        draw,
+        primary_title,
+        title_font,
+        width - right - title_x,
+        2,
+    )
+    title_max_lines = (
+        1 if len(title_lines) > 1 and len(title_lines[-1].strip()) <= 2 else 2
+    )
+    if title_max_lines == 1:
+        title_lines = wrap_text(
+            draw,
+            primary_title,
+            title_font,
+            width - right - title_x,
+            1,
+        )
+    title_text_height = (
+        len(title_lines) * line_height(draw, title_font)
+        + max(0, len(title_lines) - 1) * title_line_spacing
+    )
+    title_row_height = max(line_height(draw, ep_font), title_text_height)
 
     description = _stringify_value(render_data.get("desc"))
     description_lines = wrap_text(
@@ -209,7 +237,10 @@ def _draw_cinematic_poster(
         width - left - right,
         3,
     )
-    description_height = len(description_lines) * description_line_step
+    description_height = (
+        len(description_lines) * line_height(draw, desc_font)
+        + max(0, len(description_lines) - 1) * description_line_spacing
+    )
     description_block_height = (
         description_height + description_margin_bottom if description_lines else 0
     )
@@ -224,17 +255,15 @@ def _draw_cinematic_poster(
     )
     header_y = height - content_height + content_top_padding
 
-    ep_width, _ = measure_text(draw, episode_label, ep_font)
     draw.text((left, header_y), episode_label, font=ep_font, fill=(236, 72, 153, 255))
-    title_x = left + ep_width + 21
     draw_text_block(
         draw,
         (title_x, header_y + 15, width - right, header_y + title_row_height),
         primary_title,
         title_font,
         (255, 255, 255, 255),
-        max_lines=1,
-        line_spacing=0,
+        max_lines=title_max_lines,
+        line_spacing=title_line_spacing,
     )
     meta_text = "   |   ".join(_format_metadata(render_data))
     metadata_y = header_y + title_row_height + title_row_margin_bottom
@@ -249,7 +278,7 @@ def _draw_cinematic_poster(
             desc_font,
             (216, 216, 216, 255),
             max_lines=3,
-            line_spacing=34,
+            line_spacing=description_line_spacing,
         )
     return canvas
 
@@ -347,7 +376,15 @@ def _draw_editorial_digest(
     meta_y = y
     meta_parts = _format_metadata(render_data, prefer_airdate=True)
     meta_x = text_left
+    meta_padding_x = 30
+    meta_padding_y = 16
+    meta_row_height = 0
     for meta in meta_parts:
+        preview_width = measure_text(draw, meta, meta_font)[0] + meta_padding_x * 2
+        if meta_x > text_left and meta_x + preview_width > text_right:
+            meta_x = text_left
+            meta_y += meta_row_height + 22
+            meta_row_height = 0
         width_used = draw_pill(
             draw,
             (meta_x, meta_y),
@@ -355,12 +392,16 @@ def _draw_editorial_digest(
             meta_font,
             fill=(*blend_color(accent, 0.82, (255, 255, 255)), 255),
             text_fill=ink,
-            padding_x=30,
-            padding_y=16,
+            padding_x=meta_padding_x,
+            padding_y=meta_padding_y,
             outline=(*blend_color(accent, 0.48, (165, 165, 165)), 255),
         )
+        meta_row_height = max(
+            meta_row_height,
+            measure_text(draw, meta, meta_font)[1] + meta_padding_y * 2,
+        )
         meta_x += width_used + 24
-    y += 128
+    y = meta_y + meta_row_height + 58
 
     description = _stringify_value(render_data.get("desc"))
     if description:
@@ -450,14 +491,23 @@ def _draw_pastel_lightbox(
     desc_font = get_font(50)
 
     draw.text((116, 124), "PASTEL LIGHTBOX", font=label_font, fill=ink)
+    airdate_text = _format_airdate_parts(render_data)[0]
+    airdate_width, _ = measure_text(draw, airdate_text, label_font)
     draw.text(
-        (width - 552, 124),
-        _format_airdate_parts(render_data)[0],
+        (width - 116 - airdate_width, 124),
+        airdate_text,
         font=label_font,
         fill=(88, 101, 118, 255),
     )
-    draw.rounded_rectangle((116, 1648, 680, 1840), radius=36, fill=(*blush, 255))
-    draw.text((152, 1666), episode_label, font=ep_font, fill=(255, 255, 252, 255))
+    ep_box = (116, 1648, 680, 1840)
+    draw.rounded_rectangle(ep_box, radius=36, fill=(*blush, 255))
+    draw_centered_text(
+        draw,
+        ep_box,
+        episode_label,
+        ep_font,
+        (255, 255, 252, 255),
+    )
     draw.text(
         (720, 1716), "soft daylight edition", font=meta_font, fill=(88, 101, 118, 255)
     )

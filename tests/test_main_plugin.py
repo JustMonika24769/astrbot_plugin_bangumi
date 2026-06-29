@@ -53,6 +53,23 @@ def test_normalize_episode_card_template_accepts_names_and_order() -> None:
     assert BangumiPlugin._normalize_episode_card_template("unknown") is None
 
 
+def test_bgm_help_query_aliases() -> None:
+    assert BangumiPlugin._is_bgm_help_query("help") is True
+    assert BangumiPlugin._is_bgm_help_query(" 帮助 ") is True
+    assert BangumiPlugin._is_bgm_help_query("?") is True
+    assert BangumiPlugin._is_bgm_help_query("葬送的芙莉莲") is False
+
+
+def test_build_bgm_help_text_lists_commands() -> None:
+    help_text = BangumiPlugin._build_bgm_help_text()
+
+    assert "Bangumi 指令帮助" in help_text
+    assert "/bgm <关键词> [数量]" in help_text
+    assert "/bgm help" in help_text
+    assert "/追番 <番剧名>" in help_text
+    assert "/放送时间 [番剧名/ID] [HH:MM|清空]" in help_text
+
+
 def test_build_proxy_url_requires_host_and_port() -> None:
     assert BangumiPlugin._build_proxy_url("", "7890") is None
     assert BangumiPlugin._build_proxy_url("127.0.0.1", "") is None
@@ -172,6 +189,35 @@ async def test_search_anime_dispatches_type_and_tag() -> None:
     plugin.search_service.handle_subject_search.assert_called_once_with(
         event, "key", 2, subject_type=[2], subject_tags=["TV"]
     )
+
+
+@pytest.mark.asyncio
+async def test_search_empty_query_shows_bgm_help_without_service() -> None:
+    plugin = BangumiPlugin.__new__(BangumiPlugin)
+    plugin.search_service = None
+    plugin.response_renderer = MagicMock()
+    event = _event()
+
+    results = [result async for result in BangumiPlugin.search(plugin, event)]
+
+    assert len(results) == 1
+    assert "/bgm help" in results[0]
+    event.plain_result.assert_called_once()
+
+
+@pytest.mark.asyncio
+async def test_search_help_query_shows_bgm_help_without_searching() -> None:
+    plugin = BangumiPlugin.__new__(BangumiPlugin)
+    plugin.search_service = MagicMock()
+    plugin.search_service.handle_subject_search = _async_gen_mock("search")
+    plugin.response_renderer = MagicMock()
+    event = _event()
+
+    results = [result async for result in BangumiPlugin.search(plugin, event, "help")]
+
+    assert len(results) == 1
+    assert "/bgm <关键词> [数量]" in results[0]
+    plugin.search_service.handle_subject_search.assert_not_called()
 
 
 @pytest.mark.asyncio

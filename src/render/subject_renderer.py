@@ -22,8 +22,10 @@ from ..domain.types import SubjectType
 from .base_renderer import BaseRenderer
 from .pillow_utils import (
     add_shadow,
+    draw_centered_text,
     draw_pill,
     draw_text_block,
+    ellipsize_text,
     fit_cover,
     get_font,
     image_to_base64,
@@ -665,12 +667,13 @@ def _draw_subject_card_image(
     draw.text((right_x + 87, 333), score_text, font=score_font, fill=style.accent)
     rank_width = max(168, measure_text(draw, rank_text, meta_font)[0] + 72)
     rank_x = right_x + 275
+    rank_box = (rank_x, 337, rank_x + rank_width, 407)
     draw.rounded_rectangle(
-        (rank_x, 337, rank_x + rank_width, 407),
+        rank_box,
         radius=24,
         fill=style.accent_soft,
     )
-    draw.text((rank_x + 32, 352), rank_text, font=meta_font, fill=style.accent_text)
+    draw_centered_text(draw, rank_box, rank_text, meta_font, style.accent_text)
     count_label = f"{total_text.replace(',', '')} 人评分"
     count_width = measure_text(draw, count_label, meta_font)[0] + 84
     badge_right = width - 75
@@ -683,39 +686,51 @@ def _draw_subject_card_image(
             radius=37,
             fill=style.panel,
         )
-        draw.text(
-            (collection_box[0] + 42, 351),
+        draw_centered_text(
+            draw,
+            collection_box,
             collection_label,
-            font=meta_font,
-            fill=style.muted,
+            meta_font,
+            style.muted,
         )
         badge_right = collection_box[0] - 24
     count_box = (badge_right - count_width, 334, badge_right, 408)
     draw.rounded_rectangle(count_box, radius=37, fill=style.panel)
-    draw.text((count_box[0] + 42, 351), count_label, font=meta_font, fill=style.muted)
+    draw_centered_text(draw, count_box, count_label, meta_font, style.muted)
 
     tags = _extract_tags(data)
     tag_x = right_x
     tag_y = 474
+    tag_rows = 1
+    tag_right = 2175
+    tag_gap = 24
+    tag_padding_x = 36
+    tag_padding_y = 16
     for tag in tags:
-        preview_width = measure_text(draw, tag, tag_font)[0] + 72
-        if tag_x + preview_width > 2175 and tag_y == 474:
+        preview_width = measure_text(draw, tag, tag_font)[0] + tag_padding_x * 2
+        if tag_x > right_x and tag_x + preview_width > tag_right:
             tag_x = right_x
-            tag_y = 552
+            tag_y += 78
+            tag_rows += 1
+        if tag_rows > 2:
+            break
+
+        available_text_width = max(48, tag_right - tag_x - tag_padding_x * 2)
+        visible_tag = ellipsize_text(draw, tag, tag_font, available_text_width)
         pill_width = draw_pill(
             draw,
             (tag_x, tag_y),
-            tag,
+            visible_tag,
             tag_font,
             fill=style.tag_fill,
             text_fill=style.secondary,
             outline=style.panel_outline,
-            padding_x=36,
-            padding_y=16,
+            padding_x=tag_padding_x,
+            padding_y=tag_padding_y,
         )
-        tag_x += pill_width + 24
+        tag_x += pill_width + tag_gap
 
-    summary_top = 628 if tag_y == 474 else 704
+    summary_top = 628 if tag_rows == 1 else 704
     for x in range(right_x, 2325, 22):
         draw.line(
             (x, summary_top, min(x + 10, 2325), summary_top),
@@ -771,15 +786,13 @@ def _draw_subject_card_image(
                 fill=fill,
             )
             label = str(item.get("ep") or "")
-            label_w, label_h = measure_text(draw, label, get_font(33, bold=True))
-            draw.text(
-                (
-                    cell_x + (cell_size - label_w) // 2,
-                    cell_y + (cell_size - label_h) // 2 - 4,
-                ),
+            cell_font = get_font(33, bold=True)
+            draw_centered_text(
+                draw,
+                (cell_x, cell_y, cell_x + cell_size, cell_y + cell_size),
                 label,
-                font=get_font(33, bold=True),
-                fill=text_fill,
+                cell_font,
+                text_fill,
             )
             cell_x += cell_size + 12
             if cell_x + cell_size > 675:
