@@ -9,6 +9,7 @@ from PIL import Image, ImageDraw
 from astrbot_plugin_bangumi.src.render import pillow_utils
 from astrbot_plugin_bangumi.src.render.pillow_utils import (
     create_placeholder_image,
+    draw_pill,
     ellipsize_text,
     get_font,
     is_visually_blank,
@@ -46,6 +47,48 @@ def test_ellipsize_text_shortens_overlong_copy() -> None:
     assert result.endswith("...")
     assert result != text
     assert measure_text(draw, result, font)[0] <= 120
+
+
+def test_draw_pill_centers_hash_tag_text() -> None:
+    image = Image.new("RGBA", (220, 120), (0, 0, 0, 0))
+    draw = ImageDraw.Draw(image)
+    font = get_font(36, bold=True)
+    pill_x = 10
+    pill_y = 12
+    text = "#tag"
+
+    pill_width = draw_pill(
+        draw,
+        (pill_x, pill_y),
+        text,
+        font,
+        fill=(255, 255, 255, 255),
+        text_fill=(0, 0, 0, 255),
+        padding_x=36,
+        padding_y=16,
+    )
+
+    _, text_height = measure_text(draw, text, font)
+    pill_height = text_height + 32
+    text_pixels = [
+        (x, y)
+        for y in range(image.height)
+        for x in range(image.width)
+        if image.getpixel((x, y))[3] > 0 and image.getpixel((x, y))[0] < 128
+    ]
+    assert text_pixels
+
+    left = min(x for x, _ in text_pixels)
+    top = min(y for _, y in text_pixels)
+    right = max(x for x, _ in text_pixels)
+    bottom = max(y for _, y in text_pixels)
+    text_center_x = (left + right + 1) / 2
+    text_center_y = (top + bottom + 1) / 2
+    pill_center_x = pill_x + pill_width / 2
+    pill_center_y = pill_y + pill_height / 2
+
+    assert abs(text_center_x - pill_center_x) <= 1.5
+    assert abs(text_center_y - pill_center_y) <= 1.5
 
 
 def test_create_placeholder_image_is_non_blank_and_sized() -> None:

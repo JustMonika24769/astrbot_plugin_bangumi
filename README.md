@@ -1,7 +1,7 @@
 <div align="center">
 
 # Bangumi 搜索插件使用指南
-[![version](https://img.shields.io/badge/version-v1.4.1-blue.svg)](https://github.com/united-pooh/astrbot_plugin_bangumi)
+[![version](https://img.shields.io/badge/version-v1.4.2-blue.svg)](https://github.com/united-pooh/astrbot_plugin_bangumi)
 [![License](https://img.shields.io/badge/license-Apache%202.0-green.svg)](LICENSE-2.0)
 [![AstrBot](https://img.shields.io/badge/AstrBot-%3E%3D4.26.2-orange.svg)](https://github.com/Soulter/AstrBot)
 [![Python](https://img.shields.io/badge/python-3.12%2B-blue.svg)](https://www.python.org/)
@@ -22,7 +22,8 @@
 
 | 命令 | 功能 | 参数 | 示例 |
 |:-----|:-----|:-----|:-----|
-| `/bgm` | 全类别搜索 | `<关键词\|ID> [top_k]` | `/bgm 进击的巨人 3` |
+| `/bgm` | 全类别搜索;空参数或 `help` 显示指令帮助 | `<关键词\|ID\|help> [top_k]` | `/bgm 进击的巨人 3` |
+| `/bgm help` | 查看 Bangumi 指令帮助 | 无 | `/bgm help` |
 | `/bgm番剧` | 仅搜索 TV 动画 | `<关键词\|ID> [top_k]` | `/bgm番剧 命运石之门` |
 | `/bgm动漫` | `/bgm番剧` 的别名 | `<关键词\|ID> [top_k]` | `/bgm动漫 命运石之门` |
 | `/bgm动画` | `/bgm番剧` 的别名 | `<关键词\|ID> [top_k]` | `/bgm动画 命运石之门` |
@@ -33,6 +34,8 @@
 | `/bgm漫画` | 仅搜索漫画条目 | `<关键词\|ID> [top_k]` | `/bgm漫画 迷宫饭` |
 
 > `top_k`(可选):返回结果数量,默认为 `1`
+
+> 分类命令请使用连续形式,例如 `/bgm番剧 命运石之门`;不要在 `bgm` 和分类词之间加空格。
 
 ### 2. 放送与订阅
 
@@ -91,7 +94,7 @@
 python scripts/render_subject_variants.py
 ```
 
-生成结果会写入本地忽略目录 `rendered_images/subject-card-v1.4.1/`,用于用户审核前的可读性自检。
+生成结果会写入本地忽略目录 `rendered_images/subject-card-v1.4.2/`,用于用户审核前的可读性自检。
 
 ### 长文本响应卡片
 
@@ -101,7 +104,7 @@ python scripts/render_subject_variants.py
 python scripts/render_response_previews.py
 ```
 
-生成结果会写入本地忽略目录 `rendered_images/response-card-v1.4.0/`,用于用户审核前的可读性自检。
+生成结果会写入本地忽略目录 `rendered_images/response-card-v1.4.2/`,用于用户审核前的可读性自检。
 
 ### 单集卡片预览
 

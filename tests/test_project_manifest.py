@@ -85,6 +85,35 @@ def _find_top_level_monkeypatch_targets(file_path: Path) -> list[str]:
     return violations
 
 
+def _string_literals_from_node(node: ast.AST) -> set[str]:
+    if isinstance(node, ast.Constant) and isinstance(node.value, str):
+        return {node.value}
+    if isinstance(node, ast.Set | ast.List | ast.Tuple):
+        return {
+            elt.value
+            for elt in node.elts
+            if isinstance(elt, ast.Constant) and isinstance(elt.value, str)
+        }
+    return set()
+
+
+def _command_names_from_decorator(decorator: ast.expr) -> set[str]:
+    if not (
+        isinstance(decorator, ast.Call)
+        and isinstance(decorator.func, ast.Attribute)
+        and decorator.func.attr == "command"
+    ):
+        return set()
+
+    commands: set[str] = set()
+    if decorator.args:
+        commands.update(_string_literals_from_node(decorator.args[0]))
+    for keyword in decorator.keywords:
+        if keyword.arg == "alias":
+            commands.update(_string_literals_from_node(keyword.value))
+    return commands
+
+
 def _commands_for_handler(main_py: str, handler_name: str) -> set[str]:
     tree = ast.parse(main_py)
     commands: set[str] = set()
@@ -92,16 +121,51 @@ def _commands_for_handler(main_py: str, handler_name: str) -> set[str]:
         if not isinstance(node, ast.AsyncFunctionDef) or node.name != handler_name:
             continue
         for decorator in node.decorator_list:
-            if (
+            commands.update(_command_names_from_decorator(decorator))
+    return commands
+
+
+def _command_decorator_count_for_handler(main_py: str, handler_name: str) -> int:
+    tree = ast.parse(main_py)
+    count = 0
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.AsyncFunctionDef) or node.name != handler_name:
+            continue
+        for decorator in node.decorator_list:
+            if _command_names_from_decorator(decorator):
+                count += 1
+    return count
+
+
+def _registered_commands(main_py: str) -> set[str]:
+    tree = ast.parse(main_py)
+    commands: set[str] = set()
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.AsyncFunctionDef):
+            continue
+        for decorator in node.decorator_list:
+            commands.update(_command_names_from_decorator(decorator))
+    return commands
+
+
+def _command_aliases_for_handler(main_py: str, handler_name: str) -> set[str]:
+    tree = ast.parse(main_py)
+    aliases: set[str] = set()
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.AsyncFunctionDef) or node.name != handler_name:
+            continue
+        for decorator in node.decorator_list:
+            if not (
                 isinstance(decorator, ast.Call)
                 and isinstance(decorator.func, ast.Attribute)
                 and decorator.func.attr == "command"
-                and decorator.args
-                and isinstance(decorator.args[0], ast.Constant)
-                and isinstance(decorator.args[0].value, str)
             ):
-                commands.add(decorator.args[0].value)
-    return commands
+                continue
+            for keyword in decorator.keywords:
+                if keyword.arg != "alias":
+                    continue
+                aliases.update(_string_literals_from_node(keyword.value))
+    return aliases
 
 
 def test_metadata_declares_recommended_astrbot_fields() -> None:
@@ -117,17 +181,20 @@ def test_readme_documents_registered_commands_and_dependency_behavior() -> None:
     main_py = (PROJECT_ROOT / "main.py").read_text()
     readme = (PROJECT_ROOT / "README.md").read_text()
 
-    commands = set(re.findall(r'@filter\.command\("([^"]+)"\)', main_py))
+    commands = _registered_commands(main_py)
     readme_commands = set(re.findall(r"^\| `/([^`]+)` \|", readme, re.MULTILINE))
+    documented_invocations = {"bgm help"}
 
     assert commands
-    assert readme_commands == commands
+    assert commands <= readme_commands
+    assert readme_commands - commands == documented_invocations
     assert "插件首次运行时会自动检查并安装" not in readme
 
 
 def test_bgm_search_aliases_register_on_existing_handlers() -> None:
     main_py = (PROJECT_ROOT / "main.py").read_text()
 
+    assert _command_decorator_count_for_handler(main_py, "search_anime") == 1
     assert _commands_for_handler(main_py, "search_anime") == {
         "bgm番剧",
         "bgm动漫",
@@ -135,10 +202,25 @@ def test_bgm_search_aliases_register_on_existing_handlers() -> None:
         "bgm番",
         "bgm动画片",
     }
+    assert _command_decorator_count_for_handler(main_py, "search_movie") == 1
     assert _commands_for_handler(main_py, "search_movie") == {
         "bgm剧场版",
         "bgm电影",
     }
+
+
+def test_bgm_category_aliases_are_contiguous_commands() -> None:
+    main_py = (PROJECT_ROOT / "main.py").read_text()
+
+    assert _command_aliases_for_handler(main_py, "search_anime") == {
+        "bgm动漫",
+        "bgm动画",
+        "bgm番",
+        "bgm动画片",
+    }
+    assert _command_aliases_for_handler(main_py, "search_movie") == {"bgm电影"}
+    for command_name in _registered_commands(main_py):
+        assert " " not in command_name
 
 
 def test_readme_version_badge_matches_metadata_version() -> None:

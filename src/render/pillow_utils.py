@@ -243,8 +243,31 @@ def measure_text(
     return int(right - left), int(bottom - top)
 
 
+def _measure_text_bbox(
+    draw: ImageDraw.ImageDraw, text: str, font: FontType
+) -> tuple[int, int, int, int]:
+    left, top, right, bottom = draw.textbbox((0, 0), text, font=font)
+    return int(left), int(top), int(right), int(bottom)
+
+
 def line_height(draw: ImageDraw.ImageDraw, font: FontType) -> int:
     return measure_text(draw, "Hg国", font)[1]
+
+
+def draw_centered_text(
+    draw: ImageDraw.ImageDraw,
+    box: Rect,
+    text: str,
+    font: FontType,
+    fill: RGBColor | RGBAColor,
+) -> tuple[int, int]:
+    text_left, text_top, text_right, text_bottom = _measure_text_bbox(draw, text, font)
+    text_width = text_right - text_left
+    text_height = text_bottom - text_top
+    x = box[0] + (box[2] - box[0] - text_width) // 2 - text_left
+    y = box[1] + (box[3] - box[1] - text_height) // 2 - text_top
+    draw.text((x, y), text, font=font, fill=fill)
+    return text_width, text_height
 
 
 def wrap_text(
@@ -339,14 +362,20 @@ def draw_pill(
     padding_y: int = 9,
     outline: RGBColor | RGBAColor | None = None,
 ) -> int:
-    text_width, text_height = measure_text(draw, text, font)
+    text_left, text_top, text_right, text_bottom = _measure_text_bbox(draw, text, font)
+    text_width = text_right - text_left
+    text_height = text_bottom - text_top
     pill_width = text_width + padding_x * 2
     pill_height = text_height + padding_y * 2
     radius = pill_height // 2
     rect = (xy[0], xy[1], xy[0] + pill_width, xy[1] + pill_height)
     draw.rounded_rectangle(rect, radius=radius, fill=fill, outline=outline, width=1)
-    draw.text(
-        (xy[0] + padding_x, xy[1] + padding_y - 1), text, font=font, fill=text_fill
+    draw_centered_text(
+        draw,
+        rect,
+        text,
+        font,
+        text_fill,
     )
     return pill_width
 

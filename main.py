@@ -244,6 +244,29 @@ class BangumiPlugin(Star):  # type: ignore[misc]
             )
         return "\n".join(lines)
 
+    @staticmethod
+    def _is_bgm_help_query(query: str) -> bool:
+        return query.strip().lower() in {"help", "帮助", "指令", "commands", "?"}
+
+    @staticmethod
+    def _build_bgm_help_text() -> str:
+        return "\n".join(
+            [
+                "📚 Bangumi 指令帮助",
+                "/bgm <关键词> [数量] - 全类别搜索条目",
+                "/bgm番剧 <关键词> [数量] - 搜索 TV 动画",
+                "/bgm电影 <关键词> [数量] - 搜索剧场版动画",
+                "/bgm漫画 <关键词> [数量] - 搜索漫画",
+                "/calendar - 查看每日放送表",
+                "/today - 查看今日更新",
+                "/追番 <番剧名> - 订阅番剧更新",
+                "/弃坑 <番剧名/ID> - 取消本群订阅",
+                "/放送时间 [番剧名/ID] [HH:MM|清空] - 查看或设置精确放送时间",
+                "/bgm模板 [序号|模板名] - 查看或切换图片卡片风格",
+                "/bgm help - 查看本帮助",
+            ]
+        )
+
     async def _render_response_text_base64(self, text: str) -> str | None:
         response_renderer = getattr(self, "response_renderer", None)
         if not isinstance(response_renderer, ResponseRenderer):
@@ -311,22 +334,26 @@ class BangumiPlugin(Star):  # type: ignore[misc]
 
     @filter.command("bgm")  # type: ignore[untyped-decorator]
     async def search(
-        self, event: AstrMessageEvent, query: str, top_k: int = 1
+        self, event: AstrMessageEvent, query: str = "", top_k: int = 1
     ) -> AsyncGenerator[object, None]:
         """全类别搜索 Bangumi 条目。"""
+        normalized_query = query.strip()
+        if not normalized_query or self._is_bgm_help_query(normalized_query):
+            yield await self._result_for_text(event, self._build_bgm_help_text())
+            return
+
         if not self.search_service:
             yield await self._result_for_text(event, "❌ 搜索服务未就绪")
             return
         async for result in self.search_service.handle_subject_search(
-            event, query, top_k, subject_type=None
+            event, normalized_query, top_k, subject_type=None
         ):
             yield result
 
-    @filter.command("bgm动画片")  # type: ignore[untyped-decorator]
-    @filter.command("bgm动画")  # type: ignore[untyped-decorator]
-    @filter.command("bgm动漫")  # type: ignore[untyped-decorator]
-    @filter.command("bgm番")  # type: ignore[untyped-decorator]
-    @filter.command("bgm番剧")  # type: ignore[untyped-decorator]
+    @filter.command(  # type: ignore[untyped-decorator]
+        "bgm番剧",
+        alias={"bgm动漫", "bgm动画", "bgm番", "bgm动画片"},
+    )
     async def search_anime(
         self, event: AstrMessageEvent, query: str, top_k: int = 1
     ) -> AsyncGenerator[object, None]:
@@ -343,8 +370,10 @@ class BangumiPlugin(Star):  # type: ignore[misc]
         ):
             yield result
 
-    @filter.command("bgm电影")  # type: ignore[untyped-decorator]
-    @filter.command("bgm剧场版")  # type: ignore[untyped-decorator]
+    @filter.command(  # type: ignore[untyped-decorator]
+        "bgm剧场版",
+        alias={"bgm电影"},
+    )
     async def search_movie(
         self, event: AstrMessageEvent, query: str, top_k: int = 1
     ) -> AsyncGenerator[object, None]:
