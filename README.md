@@ -54,6 +54,29 @@
 - **每日放送**:渲染精美的每日放送时刻表
 - **自动追番**:订阅后自动监控集数更新并实时推送通知
 
+## 🖼️ 渲染效果示例
+
+以下 demo 图片随仓库提交,未下载插件也可以直接在 GitHub 预览当前渲染效果。
+
+### 搜索结果卡片(`/bgm`)
+
+| Pastel Lightbox | Editorial Digest | Cinematic Poster |
+|:---:|:---:|:---:|
+| <img src="docs/render-examples/subject-pastel-lightbox.png" alt="Pastel Lightbox 搜索结果卡片示例" width="260"> | <img src="docs/render-examples/subject-editorial-digest.png" alt="Editorial Digest 搜索结果卡片示例" width="260"> | <img src="docs/render-examples/subject-cinematic-poster.png" alt="Cinematic Poster 搜索结果卡片示例" width="260"> |
+
+### 单集更新卡片
+
+| Pastel Lightbox | Editorial Digest | Cinematic Poster |
+|:---:|:---:|:---:|
+| <img src="docs/render-examples/episode-pastel-lightbox.png" alt="Pastel Lightbox 单集更新卡片示例" width="220"> | <img src="docs/render-examples/episode-editorial-digest.png" alt="Editorial Digest 单集更新卡片示例" width="220"> | <img src="docs/render-examples/episode-cinematic-poster.png" alt="Cinematic Poster 单集更新卡片示例" width="220"> |
+
+### 长文本响应卡片
+
+| Pastel Lightbox | Editorial Digest | Cinematic Poster |
+|:---:|:---:|:---:|
+| <img src="docs/render-examples/response-pastel-lightbox.png" alt="Pastel Lightbox 长文本响应卡片示例" width="240"> | <img src="docs/render-examples/response-editorial-digest.png" alt="Editorial Digest 长文本响应卡片示例" width="240"> | <img src="docs/render-examples/response-cinematic-poster.png" alt="Cinematic Poster 长文本响应卡片示例" width="240"> |
+
+
 ## 🛠️ 配置参数
 
 在 AstrBot 的管理面板或配置文件中设置:
