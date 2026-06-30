@@ -21,6 +21,7 @@ from ..domain.contracts import (
 from ..domain.types import SubjectType
 from .base_renderer import BaseRenderer
 from .pillow_utils import (
+    FontType,
     add_shadow,
     draw_centered_text,
     draw_pill,
@@ -31,15 +32,27 @@ from .pillow_utils import (
     image_to_base64,
     load_image_source,
     measure_text,
+    measure_text_block,
     select_image_url,
 )
 from .pillow_utils import (
     stringify_value as _stringify_value,
 )
 
-_EPISODE_GRID_COLUMNS = 6
-_MAX_EPISODE_GRID_ROWS = 3
+_EPISODE_GRID_COLUMNS = 7
+_EPISODE_GRID_CELL_SIZE = 72
+_EPISODE_GRID_CELL_GAP = 10
+_MAX_EPISODE_GRID_ROWS = 4
 _MAX_EPISODE_GRID_ITEMS = _EPISODE_GRID_COLUMNS * _MAX_EPISODE_GRID_ROWS
+_SUBJECT_CARD_BASE_HEIGHT = 1638
+_SUBJECT_EPISODE_ROW_SHIFT = _EPISODE_GRID_CELL_SIZE + _EPISODE_GRID_CELL_GAP
+_SUBJECT_SCORE_TABLE_BOTTOM = 1578
+_SUBJECT_FOOTER_HEIGHT = 63
+_SUBJECT_FOOTER_BOTTOM_GAP = 20
+_SUBJECT_SUMMARY_FOOTER_GAP = 72
+_SUBJECT_BOTTOM_PADDING = 80
+_SUBJECT_TAG_START_Y = 494
+_SUBJECT_TAG_ROW_GAP = 100
 _SUBJECT_COVER_BOX = (75, 78, 705, 969)
 _SUBJECT_LEFT_PANEL_RIGHT = _SUBJECT_COVER_BOX[2] + _SUBJECT_COVER_BOX[0]
 _SUBJECT_RIGHT_X = _SUBJECT_LEFT_PANEL_RIGHT + 60
@@ -67,6 +80,17 @@ class SubjectCardStyle:
     side_strip: Color | None
     header_band: Color | None
     top_orb: Color
+
+
+@dataclass(frozen=True)
+class EpisodeGridLayout:
+    columns: int
+    rows: int
+    cell_size: int
+    gap: int
+    font_size: int
+    radius: int
+    y_shift: int
 
 
 _SUBJECT_CARD_STYLES: dict[EpisodeCardVariant, SubjectCardStyle] = {
@@ -125,6 +149,37 @@ _SUBJECT_CARD_STYLES: dict[EpisodeCardVariant, SubjectCardStyle] = {
         top_orb=(245, 196, 164, 150),
     ),
 }
+
+
+def _resolve_episode_grid_layout(visible_count: int) -> EpisodeGridLayout:
+    if visible_count <= 0:
+        return EpisodeGridLayout(
+            columns=_EPISODE_GRID_COLUMNS,
+            rows=0,
+            cell_size=_EPISODE_GRID_CELL_SIZE,
+            gap=_EPISODE_GRID_CELL_GAP,
+            font_size=30,
+            radius=16,
+            y_shift=0,
+        )
+
+    columns = _EPISODE_GRID_COLUMNS
+    cell_size = _EPISODE_GRID_CELL_SIZE
+    gap = _EPISODE_GRID_CELL_GAP
+    font_size = 30
+    radius = 16
+
+    rows = (visible_count + columns - 1) // columns
+    rows = min(rows, _MAX_EPISODE_GRID_ROWS)
+    return EpisodeGridLayout(
+        columns=columns,
+        rows=rows,
+        cell_size=cell_size,
+        gap=gap,
+        font_size=font_size,
+        radius=radius,
+        y_shift=max(0, rows - 1) * _SUBJECT_EPISODE_ROW_SHIFT,
+    )
 
 
 def _draw_left_panel(
@@ -503,6 +558,83 @@ def _build_subject_summary(data: RenderData) -> str:
     return re.sub(r"\s+", " ", summary).strip()
 
 
+def _measure_subject_tag_pill(
+    draw: ImageDraw.ImageDraw,
+    tag: str,
+    tag_font: FontType,
+    *,
+    tag_x: int,
+    tag_right: int,
+    tag_padding_x: int,
+) -> tuple[str, int]:
+    available_text_width = max(48, tag_right - tag_x - tag_padding_x * 2)
+    visible_tag = ellipsize_text(draw, tag, tag_font, available_text_width)
+    pill_width = measure_text(draw, visible_tag, tag_font)[0] + tag_padding_x * 2
+    return visible_tag, pill_width
+
+
+def _layout_subject_tag_pill(
+    draw: ImageDraw.ImageDraw,
+    tag: str,
+    tag_font: FontType,
+    *,
+    right_x: int,
+    tag_x: int,
+    tag_right: int,
+    tag_padding_x: int,
+) -> tuple[int, str, int, bool]:
+    visible_tag, pill_width = _measure_subject_tag_pill(
+        draw,
+        tag,
+        tag_font,
+        tag_x=tag_x,
+        tag_right=tag_right,
+        tag_padding_x=tag_padding_x,
+    )
+    if tag_x > right_x and tag_x + pill_width > tag_right:
+        tag_x = right_x
+        visible_tag, pill_width = _measure_subject_tag_pill(
+            draw,
+            tag,
+            tag_font,
+            tag_x=tag_x,
+            tag_right=tag_right,
+            tag_padding_x=tag_padding_x,
+        )
+        return tag_x, visible_tag, pill_width, True
+    return tag_x, visible_tag, pill_width, False
+
+
+def _measure_subject_tag_rows(
+    draw: ImageDraw.ImageDraw,
+    tags: list[str],
+    tag_font: FontType,
+    *,
+    right_x: int,
+    tag_right: int,
+    tag_padding_x: int,
+    tag_gap: int,
+) -> int:
+    tag_x = right_x
+    tag_rows = 1
+    for tag in tags:
+        tag_x, _, pill_width, wrapped = _layout_subject_tag_pill(
+            draw,
+            tag,
+            tag_font,
+            right_x=right_x,
+            tag_x=tag_x,
+            tag_right=tag_right,
+            tag_padding_x=tag_padding_x,
+        )
+        if wrapped:
+            tag_rows += 1
+        if tag_rows > 2:
+            return 2
+        tag_x += pill_width + tag_gap
+    return tag_rows
+
+
 def _draw_subject_card_image(
     data: RenderData,
     cover_image: Image.Image | None,
@@ -515,15 +647,51 @@ def _draw_subject_card_image(
     if isinstance(raw_episode_list, list):
         episode_items = [item for item in raw_episode_list if isinstance(item, Mapping)]
     visible_episode_items = episode_items[:_MAX_EPISODE_GRID_ITEMS]
-    episode_rows = (
-        (len(visible_episode_items) + _EPISODE_GRID_COLUMNS - 1)
-        // _EPISODE_GRID_COLUMNS
-        if visible_episode_items
-        else 0
-    )
-    episode_y_shift = max(0, episode_rows - 1) * 96
+    episode_grid = _resolve_episode_grid_layout(len(visible_episode_items))
+    episode_y_shift = episode_grid.y_shift
 
-    width, height = 2400, 1674 + episode_y_shift
+    width = 2400
+    right_x = _SUBJECT_RIGHT_X
+    tag_font = get_font(36, bold=True)
+    summary_font = get_font(45)
+    probe_draw = ImageDraw.Draw(Image.new("RGBA", (1, 1)))
+    tags = _extract_tags(data)
+    tag_right = 2175
+    tag_gap = 24
+    tag_padding_x = 36
+    tag_rows = _measure_subject_tag_rows(
+        probe_draw,
+        tags,
+        tag_font,
+        right_x=right_x,
+        tag_right=tag_right,
+        tag_padding_x=tag_padding_x,
+        tag_gap=tag_gap,
+    )
+    summary_top = 628 if tag_rows == 1 else 704
+    summary_text = _build_subject_summary(data)
+    _, full_summary_height = measure_text_block(
+        probe_draw,
+        summary_text,
+        summary_font,
+        2300 - right_x,
+        max_lines=None,
+        line_spacing=24,
+    )
+    summary_text_y = summary_top + 164
+    summary_bottom = summary_text_y + full_summary_height
+    left_height = _SUBJECT_CARD_BASE_HEIGHT + episode_y_shift
+    left_footer_y = (
+        _SUBJECT_SCORE_TABLE_BOTTOM
+        + episode_y_shift
+        - _SUBJECT_FOOTER_HEIGHT
+        - _SUBJECT_FOOTER_BOTTOM_GAP
+    )
+    footer_y = max(left_footer_y, summary_bottom + _SUBJECT_SUMMARY_FOOTER_GAP)
+    height = max(
+        left_height,
+        footer_y + _SUBJECT_FOOTER_HEIGHT + _SUBJECT_BOTTOM_PADDING,
+    )
     primary_title, secondary_title = _extract_subject_titles(data)
 
     canvas = Image.new("RGBA", (width, height), style.surface)
@@ -608,9 +776,7 @@ def _draw_subject_card_image(
     score_font = get_font(108, bold=True)
     star_font = get_font(78, bold=True)
     meta_font = get_font(39, bold=True)
-    tag_font = get_font(36, bold=True)
     summary_label_font = get_font(42, bold=True)
-    summary_font = get_font(45)
     footer_font = get_font(39)
     small_font = get_font(30, bold=True)
 
@@ -640,8 +806,6 @@ def _draw_subject_card_image(
             font=sub_font,
             fill=(252, 252, 252, 255),
         )
-
-    right_x = _SUBJECT_RIGHT_X
 
     draw_text_block(
         draw,
@@ -698,25 +862,26 @@ def _draw_subject_card_image(
     draw.rounded_rectangle(count_box, radius=37, fill=style.panel)
     draw_centered_text(draw, count_box, count_label, meta_font, style.muted)
 
-    tags = _extract_tags(data)
     tag_x = right_x
-    tag_y = 474
-    tag_rows = 1
-    tag_right = 2175
-    tag_gap = 24
-    tag_padding_x = 36
+    tag_y = _SUBJECT_TAG_START_Y
     tag_padding_y = 16
+    rendered_tag_rows = 1
     for tag in tags:
-        preview_width = measure_text(draw, tag, tag_font)[0] + tag_padding_x * 2
-        if tag_x > right_x and tag_x + preview_width > tag_right:
-            tag_x = right_x
-            tag_y += 78
-            tag_rows += 1
-        if tag_rows > 2:
+        tag_x, visible_tag, _, wrapped = _layout_subject_tag_pill(
+            draw,
+            tag,
+            tag_font,
+            right_x=right_x,
+            tag_x=tag_x,
+            tag_right=tag_right,
+            tag_padding_x=tag_padding_x,
+        )
+        if wrapped:
+            tag_y += _SUBJECT_TAG_ROW_GAP
+            rendered_tag_rows += 1
+        if rendered_tag_rows > 2:
             break
 
-        available_text_width = max(48, tag_right - tag_x - tag_padding_x * 2)
-        visible_tag = ellipsize_text(draw, tag, tag_font, available_text_width)
         pill_width = draw_pill(
             draw,
             (tag_x, tag_y),
@@ -730,7 +895,6 @@ def _draw_subject_card_image(
         )
         tag_x += pill_width + tag_gap
 
-    summary_top = 628 if tag_rows == 1 else 704
     for x in range(right_x, 2325, 22):
         draw.line(
             (x, summary_top, min(x + 10, 2325), summary_top),
@@ -745,11 +909,11 @@ def _draw_subject_card_image(
     )
     draw_text_block(
         draw,
-        (right_x, summary_top + 164, 2300, 1138),
-        _build_subject_summary(data),
+        (right_x, summary_text_y, 2300, footer_y - _SUBJECT_SUMMARY_FOOTER_GAP),
+        summary_text,
         summary_font,
         style.body,
-        max_lines=3,
+        max_lines=None,
         line_spacing=24,
     )
 
@@ -774,7 +938,9 @@ def _draw_subject_card_image(
         )
         cell_x = 105
         cell_y = 1102
-        cell_size = 84
+        cell_size = episode_grid.cell_size
+        cell_gap = episode_grid.gap
+        cell_font = get_font(episode_grid.font_size, bold=True)
         for item in visible_episode_items:
             fill = style.accent if item.get("aired") is True else style.accent_soft
             text_fill = (
@@ -782,11 +948,10 @@ def _draw_subject_card_image(
             )
             draw.rounded_rectangle(
                 (cell_x, cell_y, cell_x + cell_size, cell_y + cell_size),
-                radius=18,
+                radius=episode_grid.radius,
                 fill=fill,
             )
             label = str(item.get("ep") or "")
-            cell_font = get_font(33, bold=True)
             draw_centered_text(
                 draw,
                 (cell_x, cell_y, cell_x + cell_size, cell_y + cell_size),
@@ -794,10 +959,10 @@ def _draw_subject_card_image(
                 cell_font,
                 text_fill,
             )
-            cell_x += cell_size + 12
+            cell_x += cell_size + cell_gap
             if cell_x + cell_size > 675:
                 cell_x = 105
-                cell_y += cell_size + 12
+                cell_y += cell_size + cell_gap
 
     rating_counts = _extract_rating_counts(data)
     if rating_counts:
@@ -847,7 +1012,6 @@ def _draw_subject_card_image(
                 fill=style.muted,
             )
 
-    footer_y = 1495 + episode_y_shift
     date_text = _stringify_value(data.get("date"))
     platform = _stringify_value(data.get("platform"))
     if date_text:
