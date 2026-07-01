@@ -1,7 +1,7 @@
 <div align="center">
 
 # Bangumi 搜索插件使用指南
-[![version](https://img.shields.io/badge/version-v1.5.1-blue.svg)](https://github.com/united-pooh/astrbot_plugin_bangumi)
+[![version](https://img.shields.io/badge/version-v1.5.3-blue.svg)](https://github.com/united-pooh/astrbot_plugin_bangumi)
 [![License](https://img.shields.io/badge/license-Apache%202.0-green.svg)](LICENSE-2.0)
 [![AstrBot](https://img.shields.io/badge/AstrBot-%3E%3D4.26.2-orange.svg)](https://github.com/Soulter/AstrBot)
 [![Python](https://img.shields.io/badge/python-3.12%2B-blue.svg)](https://www.python.org/)
@@ -62,19 +62,19 @@
 
 | Pastel Lightbox | Editorial Digest | Cinematic Poster |
 |:---:|:---:|:---:|
-| <img src="docs/render-examples/subject-pastel-lightbox.png" alt="Pastel Lightbox 搜索结果卡片示例" width="260"> | <img src="docs/render-examples/subject-editorial-digest.png" alt="Editorial Digest 搜索结果卡片示例" width="260"> | <img src="docs/render-examples/subject-cinematic-poster.png" alt="Cinematic Poster 搜索结果卡片示例" width="260"> |
+| <img src="https://raw.githubusercontent.com/united-pooh/astrbot_plugin_bangumi/main/docs/render-examples/subject-pastel-lightbox.png" alt="Pastel Lightbox 搜索结果卡片示例" width="260"> | <img src="https://raw.githubusercontent.com/united-pooh/astrbot_plugin_bangumi/main/docs/render-examples/subject-editorial-digest.png" alt="Editorial Digest 搜索结果卡片示例" width="260"> | <img src="https://raw.githubusercontent.com/united-pooh/astrbot_plugin_bangumi/main/docs/render-examples/subject-cinematic-poster.png" alt="Cinematic Poster 搜索结果卡片示例" width="260"> |
 
 ### 单集更新卡片
 
 | Pastel Lightbox | Editorial Digest | Cinematic Poster |
 |:---:|:---:|:---:|
-| <img src="docs/render-examples/episode-pastel-lightbox.png" alt="Pastel Lightbox 单集更新卡片示例" width="220"> | <img src="docs/render-examples/episode-editorial-digest.png" alt="Editorial Digest 单集更新卡片示例" width="220"> | <img src="docs/render-examples/episode-cinematic-poster.png" alt="Cinematic Poster 单集更新卡片示例" width="220"> |
+| <img src="https://raw.githubusercontent.com/united-pooh/astrbot_plugin_bangumi/main/docs/render-examples/episode-pastel-lightbox.png" alt="Pastel Lightbox 单集更新卡片示例" width="220"> | <img src="https://raw.githubusercontent.com/united-pooh/astrbot_plugin_bangumi/main/docs/render-examples/episode-editorial-digest.png" alt="Editorial Digest 单集更新卡片示例" width="220"> | <img src="https://raw.githubusercontent.com/united-pooh/astrbot_plugin_bangumi/main/docs/render-examples/episode-cinematic-poster.png" alt="Cinematic Poster 单集更新卡片示例" width="220"> |
 
 ### 长文本响应卡片
 
 | Pastel Lightbox | Editorial Digest | Cinematic Poster |
 |:---:|:---:|:---:|
-| <img src="docs/render-examples/response-pastel-lightbox.png" alt="Pastel Lightbox 长文本响应卡片示例" width="240"> | <img src="docs/render-examples/response-editorial-digest.png" alt="Editorial Digest 长文本响应卡片示例" width="240"> | <img src="docs/render-examples/response-cinematic-poster.png" alt="Cinematic Poster 长文本响应卡片示例" width="240"> |
+| <img src="https://raw.githubusercontent.com/united-pooh/astrbot_plugin_bangumi/main/docs/render-examples/response-pastel-lightbox.png" alt="Pastel Lightbox 长文本响应卡片示例" width="240"> | <img src="https://raw.githubusercontent.com/united-pooh/astrbot_plugin_bangumi/main/docs/render-examples/response-editorial-digest.png" alt="Editorial Digest 长文本响应卡片示例" width="240"> | <img src="https://raw.githubusercontent.com/united-pooh/astrbot_plugin_bangumi/main/docs/render-examples/response-cinematic-poster.png" alt="Cinematic Poster 长文本响应卡片示例" width="240"> |
 
 
 ## 🛠️ 配置参数
@@ -117,7 +117,7 @@
 python scripts/render_subject_variants.py
 ```
 
-生成结果会写入本地忽略目录 `rendered_images/subject-card-v1.5.1/`,用于用户审核前的可读性自检。
+生成结果会写入本地忽略目录 `rendered_images/subject-card-v1.5.3/`,用于用户审核前的可读性自检。
 
 ### 长文本响应卡片
 
@@ -127,7 +127,7 @@ python scripts/render_subject_variants.py
 python scripts/render_response_previews.py
 ```
 
-生成结果会写入本地忽略目录 `rendered_images/response-card-v1.5.1/`,用于用户审核前的可读性自检。
+生成结果会写入本地忽略目录 `rendered_images/response-card-v1.5.3/`,用于用户审核前的可读性自检。
 
 ### 单集卡片预览
 
