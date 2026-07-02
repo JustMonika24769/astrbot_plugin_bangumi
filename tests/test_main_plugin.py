@@ -165,6 +165,7 @@ async def test_initialize_passes_single_proxy_url_to_render_chain(
     )
     assert search_service_cls.call_args.kwargs["proxy_url"] == proxy_url
     assert subscription_service_cls.call_args.kwargs["proxy_url"] == proxy_url
+    env_manager.start_font_download.assert_called_once_with(proxy_url=proxy_url)
 
 
 @pytest.mark.asyncio

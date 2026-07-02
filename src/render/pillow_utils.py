@@ -1,14 +1,16 @@
 import asyncio
 import base64
+import importlib
 import io
 import re
+import shutil
+import subprocess
 import threading
-import zipfile
 from collections.abc import Mapping, Sequence
 from functools import lru_cache
 from pathlib import Path
+from typing import Any, cast
 from urllib.parse import urlparse
-from urllib.request import urlopen
 
 import aiohttp
 from astrbot.api import logger
@@ -30,19 +32,25 @@ _MAX_FONT_BYTES = 64 * 1024 * 1024
 _BLANK_THRESHOLD = 246
 
 _DATA_URI_PATTERN = re.compile(r"^data:image/[^;]+;base64,(?P<data>.+)$", re.DOTALL)
-_SMILEY_SANS_FILENAME = "SmileySans-Oblique.otf"
-_SMILEY_SANS_DOWNLOAD_URL = (
-    "https://github.com/atelier-anchor/smiley-sans/releases/download/"
-    "v2.0.1/smiley-sans-v2.0.1.zip"
+_RESOURCE_HAN_ROUNDED_CN_REGULAR_FILENAME = "ResourceHanRoundedCN-Regular.ttf"
+_RESOURCE_HAN_ROUNDED_CN_BOLD_FILENAME = "ResourceHanRoundedCN-Bold.ttf"
+_RESOURCE_HAN_ROUNDED_CN_ARCHIVE_FILENAME = "RHR-CN-0.990.7z"
+_RESOURCE_HAN_ROUNDED_CN_ARCHIVE_URL = (
+    "https://github.com/CyanoHao/Resource-Han-Rounded/releases/download/"
+    "v0.990/RHR-CN-0.990.7z"
 )
-_FONT_DOWNLOAD_SOURCES = (
+_ZEN_MARU_GOTHIC_REGULAR_FILENAME = "ZenMaruGothic-Regular.ttf"
+_ZEN_MARU_GOTHIC_BOLD_FILENAME = "ZenMaruGothic-Bold.ttf"
+_DIRECT_FONT_DOWNLOAD_SOURCES = (
     (
-        "NotoSansCJKsc-Regular.otf",
-        "https://github.com/notofonts/noto-cjk/raw/main/Sans/OTF/SimplifiedChinese/NotoSansCJKsc-Regular.otf",
+        _ZEN_MARU_GOTHIC_REGULAR_FILENAME,
+        "https://raw.githubusercontent.com/googlefonts/zen-marugothic/main/"
+        "fonts/ttf/ZenMaruGothic-Regular.ttf",
     ),
     (
-        "NotoSansCJKsc-Bold.otf",
-        "https://github.com/notofonts/noto-cjk/raw/main/Sans/OTF/SimplifiedChinese/NotoSansCJKsc-Bold.otf",
+        _ZEN_MARU_GOTHIC_BOLD_FILENAME,
+        "https://raw.githubusercontent.com/googlefonts/zen-marugothic/main/"
+        "fonts/ttf/ZenMaruGothic-Bold.ttf",
     ),
 )
 _font_dir: Path | None = None
@@ -69,15 +77,38 @@ _BOLD_FONT_CANDIDATES = (
     (Path("C:/Windows/Fonts/msyhbd.ttc"), 0),
     (Path("C:/Windows/Fonts/msyh.ttc"), 0),
 )
+_JAPANESE_REGULAR_FONT_CANDIDATES = (
+    (Path("/System/Library/Fonts/ヒラギノ角ゴシック W3.ttc"), 0),
+    (Path("/System/Library/Fonts/Hiragino Sans GB.ttc"), 0),
+    (Path("/System/Library/Fonts/PingFang.ttc"), 0),
+    (Path("/System/Library/Fonts/Supplemental/Arial Unicode.ttf"), 0),
+    (Path("/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc"), 0),
+    (Path("/usr/share/fonts/truetype/noto/NotoSansCJK-Regular.ttc"), 0),
+)
+_JAPANESE_BOLD_FONT_CANDIDATES = (
+    (Path("/System/Library/Fonts/ヒラギノ角ゴシック W6.ttc"), 0),
+    (Path("/System/Library/Fonts/Hiragino Sans GB.ttc"), 2),
+    (Path("/System/Library/Fonts/PingFang.ttc"), 0),
+    (Path("/System/Library/Fonts/Supplemental/Arial Unicode.ttf"), 0),
+    (Path("/usr/share/fonts/opentype/noto/NotoSansCJK-Bold.ttc"), 0),
+    (Path("/usr/share/fonts/truetype/noto/NotoSansCJK-Bold.ttc"), 0),
+)
+_JAPANESE_HINT_PATTERN = re.compile(r"[\u3040-\u30ff\uff66-\uff9f]")
+_ORIGINAL_IMAGE_DRAW_TEXT = ImageDraw.ImageDraw.text
+_ORIGINAL_IMAGE_DRAW_TEXTBBOX = ImageDraw.ImageDraw.textbbox
+_IMAGE_DRAW_TEXT_PATCHED = False
 
 
 def set_font_directory(font_dir: str | Path) -> None:
     global _font_dir
     _font_dir = Path(font_dir)
     get_font.cache_clear()
+    get_japanese_font.cache_clear()
+    get_japanese_fallback_font.cache_clear()
+    _load_font_supported_codepoints.cache_clear()
 
 
-def start_font_download(font_dir: str | Path) -> None:
+def start_font_download(font_dir: str | Path, proxy_url: str | None = None) -> None:
     global _font_download_started
     resolved_font_dir = Path(font_dir)
     set_font_directory(resolved_font_dir)
@@ -88,109 +119,180 @@ def start_font_download(font_dir: str | Path) -> None:
 
     thread = threading.Thread(
         target=_download_fonts,
-        args=(resolved_font_dir,),
+        args=(resolved_font_dir, proxy_url),
         name="BangumiPillowFontDownload",
         daemon=True,
     )
     thread.start()
 
 
-def _download_fonts(font_dir: Path) -> None:
+def _download_fonts(font_dir: Path, proxy_url: str | None = None) -> None:
     try:
         font_dir.mkdir(parents=True, exist_ok=True)
     except OSError as e:
         logger.warning(f"Pillow 字体目录创建失败,跳过字体下载: {e}")
         return
 
-    downloaded = _download_smiley_sans(font_dir)
-    for filename, url in _FONT_DOWNLOAD_SOURCES:
-        target = font_dir / filename
-        if target.exists() and target.stat().st_size > 0:
-            continue
-
-        temp_target = target.with_suffix(f"{target.suffix}.tmp")
-        try:
-            total_bytes = 0
-            with urlopen(url, timeout=30) as response, temp_target.open("wb") as file:
-                while True:
-                    chunk = response.read(1024 * 1024)
-                    if not chunk:
-                        break
-                    total_bytes += len(chunk)
-                    if total_bytes > _MAX_FONT_BYTES:
-                        raise RuntimeError(f"{filename} 超过字体下载大小限制")
-                    file.write(chunk)
-            temp_target.replace(target)
-            downloaded = True
-            logger.info(f"Pillow 字体已下载: {target}")
-        except Exception as e:
-            temp_target.unlink(missing_ok=True)
-            logger.warning(f"Pillow 字体下载失败 {filename}: {e}")
+    downloaded = _download_resource_han_rounded_cn(font_dir, proxy_url=proxy_url)
+    for filename, url in _DIRECT_FONT_DOWNLOAD_SOURCES:
+        downloaded = (
+            _download_font_file(font_dir / filename, url, proxy_url=proxy_url)
+            or downloaded
+        )
 
     if downloaded:
         get_font.cache_clear()
+        get_japanese_font.cache_clear()
+        get_japanese_fallback_font.cache_clear()
+        _load_font_supported_codepoints.cache_clear()
 
 
-def _download_smiley_sans(font_dir: Path) -> bool:
-    target = font_dir / _SMILEY_SANS_FILENAME
+async def _download_url_bytes_async(
+    url: str,
+    *,
+    proxy_url: str | None,
+) -> bytes:
+    timeout = aiohttp.ClientTimeout(total=30)
+    async with (
+        aiohttp.ClientSession(timeout=timeout, trust_env=True) as session,
+        session.get(url, proxy=proxy_url) as response,
+    ):
+        response.raise_for_status()
+        return await response.read()
+
+
+def _download_url_bytes(url: str, *, proxy_url: str | None) -> bytes:
+    return asyncio.run(_download_url_bytes_async(url, proxy_url=proxy_url))
+
+
+def _download_font_file(
+    target: Path,
+    url: str,
+    *,
+    proxy_url: str | None = None,
+) -> bool:
     if target.exists() and target.stat().st_size > 0:
         return False
 
     temp_target = target.with_suffix(f"{target.suffix}.tmp")
     try:
-        total_bytes = 0
-        archive = io.BytesIO()
-        with urlopen(_SMILEY_SANS_DOWNLOAD_URL, timeout=30) as response:
-            while True:
-                chunk = response.read(1024 * 1024)
-                if not chunk:
-                    break
-                total_bytes += len(chunk)
-                if total_bytes > _MAX_FONT_BYTES:
-                    raise RuntimeError("Smiley Sans 字体包超过下载大小限制")
-                archive.write(chunk)
-
-        archive.seek(0)
-        with zipfile.ZipFile(archive) as zip_file:
-            font_members = [
-                member
-                for member in zip_file.infolist()
-                if not member.is_dir()
-                and member.filename.lower().endswith((".otf", ".ttf"))
-                and not member.filename.lower().endswith(".woff2")
-            ]
-            preferred = next(
-                (
-                    member
-                    for member in font_members
-                    if Path(member.filename).name == _SMILEY_SANS_FILENAME
-                ),
-                font_members[0] if font_members else None,
-            )
-            if preferred is None:
-                raise RuntimeError("Smiley Sans 字体包内未找到 OTF/TTF 字体")
-            if preferred.file_size > _MAX_FONT_BYTES:
-                raise RuntimeError("Smiley Sans 字体文件超过大小限制")
-            with zip_file.open(preferred) as source, temp_target.open("wb") as file:
-                file.write(source.read())
-
+        payload = _download_url_bytes(url, proxy_url=proxy_url)
+        if len(payload) > _MAX_FONT_BYTES:
+            raise RuntimeError(f"{target.name} 超过字体下载大小限制")
+        temp_target.write_bytes(payload)
         temp_target.replace(target)
-        logger.info(f"Pillow 得意黑字体已下载: {target}")
+        logger.info(f"Pillow 字体已下载: {target}")
         return True
     except Exception as e:
         temp_target.unlink(missing_ok=True)
-        logger.warning(f"Pillow 得意黑字体下载失败,将使用默认字体退化渲染: {e}")
+        logger.warning(f"Pillow 字体下载失败 {target.name}: {e}")
         return False
+
+
+def _download_resource_han_rounded_cn(
+    font_dir: Path,
+    *,
+    proxy_url: str | None = None,
+) -> bool:
+    regular_font = font_dir / _RESOURCE_HAN_ROUNDED_CN_REGULAR_FILENAME
+    bold_font = font_dir / _RESOURCE_HAN_ROUNDED_CN_BOLD_FILENAME
+    if (
+        regular_font.exists()
+        and regular_font.stat().st_size > 0
+        and bold_font.exists()
+        and bold_font.stat().st_size > 0
+    ):
+        return False
+
+    archive_path = font_dir / _RESOURCE_HAN_ROUNDED_CN_ARCHIVE_FILENAME
+    temp_archive = archive_path.with_suffix(f"{archive_path.suffix}.tmp")
+    try:
+        payload = _download_url_bytes(
+            _RESOURCE_HAN_ROUNDED_CN_ARCHIVE_URL,
+            proxy_url=proxy_url,
+        )
+        if len(payload) > _MAX_FONT_BYTES:
+            raise RuntimeError("Resource Han Rounded CN 字体包超过下载大小限制")
+        temp_archive.write_bytes(payload)
+
+        extractor = (
+            shutil.which("bsdtar") or shutil.which("7zz") or shutil.which("7z")
+        )
+        if extractor is None:
+            raise RuntimeError("当前环境缺少 bsdtar/7z,无法解压 Resource Han Rounded CN")
+
+        if extractor.endswith("bsdtar"):
+            command = [
+                extractor,
+                "-xf",
+                str(temp_archive),
+                "-C",
+                str(font_dir),
+                _RESOURCE_HAN_ROUNDED_CN_REGULAR_FILENAME,
+                _RESOURCE_HAN_ROUNDED_CN_BOLD_FILENAME,
+            ]
+        else:
+            command = [
+                extractor,
+                "e",
+                "-y",
+                f"-o{font_dir}",
+                str(temp_archive),
+                _RESOURCE_HAN_ROUNDED_CN_REGULAR_FILENAME,
+                _RESOURCE_HAN_ROUNDED_CN_BOLD_FILENAME,
+            ]
+        subprocess.run(command, check=True, capture_output=True, text=True)
+        if not (
+            regular_font.exists()
+            and regular_font.stat().st_size > 0
+            and bold_font.exists()
+            and bold_font.stat().st_size > 0
+        ):
+            raise RuntimeError("Resource Han Rounded CN 解压后缺少所需字重")
+        logger.info(f"Pillow 字体已下载: {regular_font}")
+        logger.info(f"Pillow 字体已下载: {bold_font}")
+        return True
+    except Exception as e:
+        logger.warning(f"Resource Han Rounded CN 下载失败,将使用系统字体退化渲染: {e}")
+        return False
+    finally:
+        temp_archive.unlink(missing_ok=True)
 
 
 def _downloaded_font_candidates(bold: bool) -> tuple[tuple[Path, int], ...]:
     if _font_dir is None:
         return ()
-    filename = "NotoSansCJKsc-Bold.otf" if bold else "NotoSansCJKsc-Regular.otf"
-    return (
-        (_font_dir / _SMILEY_SANS_FILENAME, 0),
-        (_font_dir / filename, 0),
+    filename = (
+        _RESOURCE_HAN_ROUNDED_CN_BOLD_FILENAME
+        if bold
+        else _RESOURCE_HAN_ROUNDED_CN_REGULAR_FILENAME
     )
+    return ((_font_dir / filename, 0),)
+
+
+def _downloaded_japanese_font_candidates(bold: bool) -> tuple[tuple[Path, int], ...]:
+    if _font_dir is None:
+        return ()
+    primary_filename = (
+        _RESOURCE_HAN_ROUNDED_CN_BOLD_FILENAME
+        if bold
+        else _RESOURCE_HAN_ROUNDED_CN_REGULAR_FILENAME
+    )
+    fallback_filename = (
+        _ZEN_MARU_GOTHIC_BOLD_FILENAME if bold else _ZEN_MARU_GOTHIC_REGULAR_FILENAME
+    )
+    return ((_font_dir / primary_filename, 0), (_font_dir / fallback_filename, 0))
+
+
+def _downloaded_japanese_fallback_font_candidates(
+    bold: bool,
+) -> tuple[tuple[Path, int], ...]:
+    if _font_dir is None:
+        return ()
+    filename = (
+        _ZEN_MARU_GOTHIC_BOLD_FILENAME if bold else _ZEN_MARU_GOTHIC_REGULAR_FILENAME
+    )
+    return ((_font_dir / filename, 0),)
 
 
 def stringify_value(value: object) -> str:
@@ -228,6 +330,358 @@ def get_font(size: int, *, bold: bool = False) -> FontType:
         except OSError:
             continue
     return ImageFont.load_default()
+
+
+@lru_cache(maxsize=64)
+def get_japanese_font(size: int, *, bold: bool = False) -> FontType:
+    candidates = (
+        *_downloaded_japanese_font_candidates(bold),
+        *(
+            _JAPANESE_BOLD_FONT_CANDIDATES
+            if bold
+            else _JAPANESE_REGULAR_FONT_CANDIDATES
+        ),
+    )
+    for path, font_index in candidates:
+        if not path.exists():
+            continue
+        try:
+            return ImageFont.truetype(str(path), size=size, index=font_index)
+        except OSError:
+            continue
+    return get_font(size, bold=bold)
+
+
+@lru_cache(maxsize=64)
+def get_japanese_fallback_font(size: int, *, bold: bool = False) -> FontType:
+    candidates = (
+        *_downloaded_japanese_fallback_font_candidates(bold),
+        *(
+            _JAPANESE_BOLD_FONT_CANDIDATES
+            if bold
+            else _JAPANESE_REGULAR_FONT_CANDIDATES
+        ),
+    )
+    for path, font_index in candidates:
+        if not path.exists():
+            continue
+        try:
+            return ImageFont.truetype(str(path), size=size, index=font_index)
+        except OSError:
+            continue
+    return get_font(size, bold=bold)
+
+
+def is_japanese_hint_text(text: object) -> bool:
+    if not isinstance(text, str) or not text:
+        return False
+    return bool(_JAPANESE_HINT_PATTERN.search(text)) or any(
+        char in text for char in ("〜", "ー", "・")
+    )
+
+
+def _font_size(font: FontType) -> int:
+    size = getattr(font, "size", None)
+    if isinstance(size, int) and size > 0:
+        return size
+    return 24
+
+
+def _font_is_bold(font: FontType) -> bool:
+    getname = getattr(font, "getname", None)
+    if not callable(getname):
+        return False
+    try:
+        name = getname()
+    except Exception:
+        return False
+    if not isinstance(name, tuple) or len(name) < 2:
+        return False
+    style = name[1]
+    return isinstance(style, str) and "Bold" in style
+
+
+def localize_font_for_text(text: object, font: FontType | None) -> FontType | None:
+    if font is None or not is_japanese_hint_text(text):
+        return font
+    return get_japanese_font(_font_size(font), bold=_font_is_bold(font))
+
+
+def _same_font(left: FontType | None, right: FontType | None) -> bool:
+    if left is right:
+        return True
+    if left is None or right is None:
+        return False
+    return (
+        getattr(left, "path", None),
+        getattr(left, "index", None),
+        getattr(left, "size", None),
+        getattr(left, "getname", lambda: None)(),
+    ) == (
+        getattr(right, "path", None),
+        getattr(right, "index", None),
+        getattr(right, "size", None),
+        getattr(right, "getname", lambda: None)(),
+    )
+
+
+@lru_cache(maxsize=32)
+def _load_font_supported_codepoints(
+    font_path: str, font_index: int
+) -> frozenset[int] | None:
+    try:
+        tt_lib = importlib.import_module("fontTools.ttLib")
+    except ImportError:
+        return None
+
+    tt_font: object | None = None
+    try:
+        tt_font_cls = cast(Any, tt_lib).TTFont
+        tt_font = tt_font_cls(font_path, fontNumber=font_index, lazy=True)
+        best_cmap: Mapping[int, object] = cast(
+            Mapping[int, object],
+            getattr(tt_font, "getBestCmap", lambda: {})() or {},
+        )
+        codepoints = set(best_cmap.keys())
+        if not codepoints:
+            cmap_table = getattr(tt_font, "__getitem__", lambda _key: None)("cmap")
+            tables = getattr(cmap_table, "tables", ())
+            for table in tables:
+                codepoints.update(getattr(table, "cmap", {}).keys())
+        return frozenset(codepoints)
+    except Exception:
+        return None
+    finally:
+        if tt_font is not None:
+            close = getattr(tt_font, "close", None)
+            if callable(close):
+                close()
+
+
+def _font_supports_character(font: FontType, char: str) -> bool:
+    if not char or char.isspace():
+        return True
+    if not isinstance(font, ImageFont.FreeTypeFont):
+        return True
+
+    font_path = getattr(font, "path", None)
+    font_index = getattr(font, "index", None)
+    if not isinstance(font_path, str) or not isinstance(font_index, int):
+        return True
+
+    supported = _load_font_supported_codepoints(font_path, font_index)
+    if supported is None:
+        return True
+    return ord(char) in supported
+
+
+def _resolve_text_font_runs(
+    text: object, font: FontType | None
+) -> list[tuple[str, FontType]] | None:
+    if not isinstance(text, str) or not text or font is None:
+        return None
+
+    localized_font = localize_font_for_text(text, font)
+    if localized_font is None:
+        return None
+
+    fallback_font = get_japanese_fallback_font(
+        _font_size(localized_font),
+        bold=_font_is_bold(localized_font),
+    )
+    if _same_font(localized_font, fallback_font):
+        return [(text, localized_font)]
+
+    runs: list[tuple[str, FontType]] = []
+    current_font = localized_font
+    current_chars: list[str] = []
+    fallback_used = False
+
+    for char in text:
+        target_font = localized_font
+        if (
+            not _font_supports_character(localized_font, char)
+            and _font_supports_character(fallback_font, char)
+        ):
+            target_font = fallback_font
+            fallback_used = True
+
+        if not _same_font(current_font, target_font):
+            if current_chars:
+                runs.append(("".join(current_chars), current_font))
+            current_font = target_font
+            current_chars = [char]
+            continue
+        current_chars.append(char)
+
+    if current_chars:
+        runs.append(("".join(current_chars), current_font))
+
+    if not fallback_used and len(runs) == 1:
+        return [(text, localized_font)]
+    return runs
+
+
+def _supports_segmented_text_fallback(
+    text: object,
+    font: FontType | None,
+    kwargs: Mapping[str, object],
+) -> bool:
+    return (
+        isinstance(text, str)
+        and bool(text)
+        and "\n" not in text
+        and font is not None
+        and "anchor" not in kwargs
+        and "align" not in kwargs
+        and "direction" not in kwargs
+        and "features" not in kwargs
+        and "language" not in kwargs
+        and "spacing" not in kwargs
+    )
+
+
+def _draw_text_runs(
+    draw: ImageDraw.ImageDraw,
+    xy: tuple[float, float],
+    runs: Sequence[tuple[str, FontType]],
+    fill: RGBColor | RGBAColor | None,
+    *args: object,
+    **kwargs: object,
+) -> None:
+    original_text = cast(Any, _ORIGINAL_IMAGE_DRAW_TEXT)
+    current_x = float(xy[0])
+    current_y = float(xy[1])
+    for segment_text, segment_font in runs:
+        if not segment_text:
+            continue
+        original_text(
+            draw,
+            (current_x, current_y),
+            segment_text,
+            fill,
+            segment_font,
+            *args,
+            **kwargs,
+        )
+        current_x += segment_font.getlength(segment_text)
+
+
+def _textbbox_for_runs(
+    draw: ImageDraw.ImageDraw,
+    xy: tuple[float, float],
+    runs: Sequence[tuple[str, FontType]],
+    *args: object,
+    **kwargs: object,
+) -> tuple[float, float, float, float]:
+    original_textbbox = cast(Any, _ORIGINAL_IMAGE_DRAW_TEXTBBOX)
+    current_x = float(xy[0])
+    current_y = float(xy[1])
+    bounds: tuple[float, float, float, float] | None = None
+
+    for segment_text, segment_font in runs:
+        if not segment_text:
+            continue
+        segment_bounds = original_textbbox(
+            draw,
+            (current_x, current_y),
+            segment_text,
+            segment_font,
+            *args,
+            **kwargs,
+        )
+        if bounds is None:
+            bounds = segment_bounds
+        else:
+            bounds = (
+                min(bounds[0], segment_bounds[0]),
+                min(bounds[1], segment_bounds[1]),
+                max(bounds[2], segment_bounds[2]),
+                max(bounds[3], segment_bounds[3]),
+            )
+        current_x += segment_font.getlength(segment_text)
+
+    if bounds is not None:
+        return bounds
+
+    fallback_font = runs[0][1] if runs else ImageFont.load_default()
+    return cast(
+        tuple[float, float, float, float],
+        original_textbbox(
+            draw,
+            xy,
+            "",
+            fallback_font,
+            *args,
+            **kwargs,
+        ),
+    )
+
+
+def patch_image_draw_text_methods() -> None:
+    global _IMAGE_DRAW_TEXT_PATCHED
+    if _IMAGE_DRAW_TEXT_PATCHED:
+        return
+
+    original_text = cast(Any, _ORIGINAL_IMAGE_DRAW_TEXT)
+    original_textbbox = cast(Any, _ORIGINAL_IMAGE_DRAW_TEXTBBOX)
+
+    def patched_text(
+        self: ImageDraw.ImageDraw,
+        xy: tuple[float, float],
+        text: object,
+        fill: RGBColor | RGBAColor | None = None,
+        font: FontType | None = None,
+        *args: object,
+        **kwargs: object,
+    ) -> None:
+        if _supports_segmented_text_fallback(text, font, kwargs):
+            runs = _resolve_text_font_runs(text, font)
+            if runs is not None:
+                _draw_text_runs(self, xy, runs, fill, *args, **kwargs)
+                return None
+        original_text(
+            self,
+            xy,
+            cast(Any, text),
+            fill,
+            localize_font_for_text(text, font),
+            *args,
+            **kwargs,
+        )
+        return None
+
+    def patched_textbbox(
+        self: ImageDraw.ImageDraw,
+        xy: tuple[float, float],
+        text: object,
+        font: FontType | None = None,
+        *args: object,
+        **kwargs: object,
+    ) -> tuple[float, float, float, float]:
+        if _supports_segmented_text_fallback(text, font, kwargs):
+            runs = _resolve_text_font_runs(text, font)
+            if runs is not None:
+                return _textbbox_for_runs(self, xy, runs, *args, **kwargs)
+        return cast(
+            tuple[float, float, float, float],
+            original_textbbox(
+                self,
+                xy,
+                cast(Any, text),
+                localize_font_for_text(text, font),
+                *args,
+                **kwargs,
+            ),
+        )
+
+    image_draw_class = cast(Any, ImageDraw.ImageDraw)
+    image_draw_class.text = patched_text
+    image_draw_class.textbbox = patched_textbbox
+    _IMAGE_DRAW_TEXT_PATCHED = True
+
+
+patch_image_draw_text_methods()
 
 
 def image_to_base64(image: Image.Image) -> str:

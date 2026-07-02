@@ -1,6 +1,5 @@
 import base64
 import io
-import zipfile
 from pathlib import Path
 from unittest.mock import AsyncMock
 
@@ -20,9 +19,12 @@ from astrbot_plugin_bangumi.src.render.pillow_utils import (
     draw_pill,
     ellipsize_text,
     get_font,
+    get_japanese_fallback_font,
+    get_japanese_font,
     is_visually_blank,
     line_height,
     load_image_source,
+    localize_font_for_text,
     measure_text,
     measure_text_block,
     wrap_text,
@@ -183,64 +185,155 @@ def test_create_placeholder_image_is_non_blank_and_sized() -> None:
     assert not is_visually_blank(image)
 
 
-def test_smiley_sans_download_skips_existing_local_font(
+def test_downloaded_font_candidates_prioritize_resource_han_for_default_font(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    font_dir = tmp_path / "fonts"
-    font_dir.mkdir()
-    (font_dir / "SmileySans-Oblique.otf").write_bytes(b"font")
+    monkeypatch.setattr(pillow_utils, "_font_dir", tmp_path)
 
-    def fail_urlopen(*args: object, **kwargs: object) -> object:
-        raise AssertionError("existing Smiley Sans should not trigger network")
+    regular_candidates = pillow_utils._downloaded_font_candidates(bold=False)
+    bold_candidates = pillow_utils._downloaded_font_candidates(bold=True)
 
-    monkeypatch.setattr(pillow_utils, "urlopen", fail_urlopen)
+    assert regular_candidates == (
+        (tmp_path / "ResourceHanRoundedCN-Regular.ttf", 0),
+    )
+    assert bold_candidates == (
+        (tmp_path / "ResourceHanRoundedCN-Bold.ttf", 0),
+    )
 
-    assert not pillow_utils._download_smiley_sans(font_dir)
 
-
-def test_smiley_sans_download_extracts_font(
+def test_downloaded_japanese_font_candidates_prioritize_resource_han_then_zen_maru(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    archive = io.BytesIO()
-    with zipfile.ZipFile(archive, "w") as zip_file:
-        zip_file.writestr("SmileySans-Oblique.otf", b"font-bytes")
-    archive_bytes = archive.getvalue()
+    monkeypatch.setattr(pillow_utils, "_font_dir", tmp_path)
 
-    class FakeResponse:
-        def __init__(self, payload: bytes) -> None:
-            self._buffer = io.BytesIO(payload)
+    regular_candidates = pillow_utils._downloaded_japanese_font_candidates(bold=False)
+    bold_candidates = pillow_utils._downloaded_japanese_font_candidates(bold=True)
 
-        def __enter__(self) -> "FakeResponse":
-            return self
+    assert regular_candidates == (
+        (tmp_path / "ResourceHanRoundedCN-Regular.ttf", 0),
+        (tmp_path / "ZenMaruGothic-Regular.ttf", 0),
+    )
+    assert bold_candidates == (
+        (tmp_path / "ResourceHanRoundedCN-Bold.ttf", 0),
+        (tmp_path / "ZenMaruGothic-Bold.ttf", 0),
+    )
 
-        def __exit__(self, *args: object) -> None:
-            return None
 
-        def read(self, size: int = -1) -> bytes:
-            return self._buffer.read(size)
+def test_downloaded_japanese_fallback_font_candidates_prioritize_zen_maru(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(pillow_utils, "_font_dir", tmp_path)
+
+    regular_candidates = pillow_utils._downloaded_japanese_fallback_font_candidates(
+        bold=False
+    )
+    bold_candidates = pillow_utils._downloaded_japanese_fallback_font_candidates(
+        bold=True
+    )
+
+    assert regular_candidates == ((tmp_path / "ZenMaruGothic-Regular.ttf", 0),)
+    assert bold_candidates == ((tmp_path / "ZenMaruGothic-Bold.ttf", 0),)
+
+
+def test_japanese_system_candidates_prefer_hiragino_before_gb_font() -> None:
+    regular_paths = [
+        path for path, _ in pillow_utils._JAPANESE_REGULAR_FONT_CANDIDATES
+    ]
+    bold_paths = [path for path, _ in pillow_utils._JAPANESE_BOLD_FONT_CANDIDATES]
+
+    assert regular_paths.index(
+        Path("/System/Library/Fonts/ヒラギノ角ゴシック W3.ttc")
+    ) < regular_paths.index(Path("/System/Library/Fonts/Hiragino Sans GB.ttc"))
+    assert bold_paths.index(
+        Path("/System/Library/Fonts/ヒラギノ角ゴシック W6.ttc")
+    ) < bold_paths.index(Path("/System/Library/Fonts/Hiragino Sans GB.ttc"))
+
+
+def test_localize_font_for_text_switches_to_japanese_default_font(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    base_font = get_font(24, bold=True)
+    japanese_font = get_japanese_font(24, bold=True)
 
     monkeypatch.setattr(
         pillow_utils,
-        "urlopen",
-        lambda *args, **kwargs: FakeResponse(archive_bytes),
+        "get_japanese_font",
+        lambda size, *, bold=False: japanese_font,
     )
 
-    assert pillow_utils._download_smiley_sans(tmp_path)
-    assert (tmp_path / "SmileySans-Oblique.otf").read_bytes() == b"font-bytes"
+    assert localize_font_for_text("ヤニねこ", base_font) is japanese_font
+    assert localize_font_for_text("尼古喵喵", base_font) is base_font
+    assert localize_font_for_text("ゆる〜く", base_font) is japanese_font
 
 
-def test_smiley_sans_download_failure_keeps_fallback_usable(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+def test_resolve_text_font_runs_only_uses_fallback_for_missing_glyphs(
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    base_font = get_font(24)
+    fallback_font = get_japanese_fallback_font(24)
+
     monkeypatch.setattr(
         pillow_utils,
-        "urlopen",
-        lambda *args, **kwargs: (_ for _ in ()).throw(OSError("offline")),
+        "get_japanese_fallback_font",
+        lambda size, *, bold=False: fallback_font,
+    )
+    monkeypatch.setattr(
+        pillow_utils,
+        "localize_font_for_text",
+        lambda text, font: font,
+    )
+    monkeypatch.setattr(
+        pillow_utils,
+        "_font_supports_character",
+        lambda font, char: font is not base_font or char != "ŵ",
     )
 
-    assert not pillow_utils._download_smiley_sans(tmp_path)
-    assert not (tmp_path / "SmileySans-Oblique.otf.tmp").exists()
-    assert get_font(18) is not None
+    runs = pillow_utils._resolve_text_font_runs("ヤŵね", base_font)
+
+    assert runs == [
+        ("ヤ", base_font),
+        ("ŵ", fallback_font),
+        ("ね", base_font),
+    ]
+
+
+def test_default_system_candidates_prefer_chinese_font_order() -> None:
+    regular_paths = [path for path, _ in pillow_utils._REGULAR_FONT_CANDIDATES]
+    bold_paths = [path for path, _ in pillow_utils._BOLD_FONT_CANDIDATES]
+
+    assert regular_paths.index(
+        Path("/System/Library/Fonts/Hiragino Sans GB.ttc")
+    ) < regular_paths.index(Path("/System/Library/Fonts/PingFang.ttc"))
+    assert bold_paths.index(
+        Path("/System/Library/Fonts/Hiragino Sans GB.ttc")
+    ) < bold_paths.index(Path("/System/Library/Fonts/PingFang.ttc"))
+
+
+def test_download_font_file_uses_proxy_url(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    calls: list[tuple[str, str | None]] = []
+
+    def fake_download_url_bytes(url: str, *, proxy_url: str | None) -> bytes:
+        calls.append((url, proxy_url))
+        return b"font-bytes"
+
+    monkeypatch.setattr(pillow_utils, "_download_url_bytes", fake_download_url_bytes)
+
+    target = tmp_path / "ZenMaruGothic-Regular.ttf"
+
+    assert pillow_utils._download_font_file(
+        target,
+        "https://example.com/ZenMaruGothic-Regular.ttf",
+        proxy_url="http://proxy.local:7890",
+    )
+    assert target.read_bytes() == b"font-bytes"
+    assert calls == [
+        (
+            "https://example.com/ZenMaruGothic-Regular.ttf",
+            "http://proxy.local:7890",
+        )
+    ]
 
 
 class _ImageContent:

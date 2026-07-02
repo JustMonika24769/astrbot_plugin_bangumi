@@ -171,8 +171,8 @@ class EnvManager:
         """检查标记文件是否存在"""
         return os.path.exists(self.flag_file)
 
-    def start_font_download(self) -> None:
+    def start_font_download(self, proxy_url: str | None = None) -> None:
         """在后台线程预热 Pillow 所需字体,不阻塞插件初始化。"""
         from ..render.pillow_utils import start_font_download
 
-        start_font_download(self.font_dir)
+        start_font_download(self.font_dir, proxy_url=proxy_url)

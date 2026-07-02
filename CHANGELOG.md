@@ -1,5 +1,14 @@
 # Changelog
 
+## v1.5.4
+
+### 修复
+- **字体下载代理**: 将 Pillow 预热字体下载接入与 Bangumi API、渲染链路相同的 `proxy_url`,默认无本地字体的环境中也能通过统一代理拉取 `Resource Han Rounded CN` 与 `Zen Maru Gothic`。
+
+### 更新
+- **日文字体策略**: 日文文本默认优先使用 `Resource Han Rounded CN`,仅在当前字形缺失时逐字回退到 `Zen Maru Gothic`,减少整段日文直接切换字体带来的风格跳变。
+- **版本同步**: 将插件元数据、README 版本徽章、预览脚本报告版本和本地预览输出目录推进到 `v1.5.4`。
+
 ## v1.5.3
 
 ### 修复

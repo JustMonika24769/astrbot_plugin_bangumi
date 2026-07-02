@@ -45,10 +45,12 @@ def test_generate_env_from_schema_preserves_existing_values(tmp_path: Path) -> N
 def test_start_font_download_uses_background_font_dir(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    calls: list[Path] = []
+    calls: list[tuple[Path, str | None]] = []
 
-    def fake_start_font_download(font_dir: str | Path) -> None:
-        calls.append(Path(font_dir))
+    def fake_start_font_download(
+        font_dir: str | Path, proxy_url: str | None = None
+    ) -> None:
+        calls.append((Path(font_dir), proxy_url))
 
     monkeypatch.setattr(
         "astrbot_plugin_bangumi.src.render.pillow_utils.start_font_download",
@@ -56,6 +58,6 @@ def test_start_font_download_uses_background_font_dir(
     )
 
     manager = EnvManager(str(tmp_path))
-    manager.start_font_download()
+    manager.start_font_download(proxy_url="http://proxy.local:7890")
 
-    assert calls == [tmp_path / "fonts"]
+    assert calls == [(tmp_path / "fonts", "http://proxy.local:7890")]

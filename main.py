@@ -145,7 +145,7 @@ class BangumiPlugin(Star):  # type: ignore[misc]
 
         # 5. 其他初始化流程
         self.env_manager = EnvManager(plugin_data_dir)
-        self.env_manager.start_font_download()
+        self.env_manager.start_font_download(proxy_url=proxy_url)
 
         # 检查本地渲染环境
         if not self.env_manager.is_installed():

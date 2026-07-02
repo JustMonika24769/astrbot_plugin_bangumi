@@ -1,6 +1,7 @@
 playwright
 jinja2
 pillow
+fonttools
 numpy
 aiohttp
 apscheduler
