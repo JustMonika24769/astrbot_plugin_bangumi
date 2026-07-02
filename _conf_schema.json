@@ -64,5 +64,11 @@
     "type": "bool",
     "hint": "订阅更新渲染单集卡片前，使用 AstrBot 默认聊天模型将非空单集简介翻译为中文；失败时保留原文",
     "default": false
+  },
+  "auto_translate_subject_summary": {
+    "description": "自动翻译番剧简介",
+    "type": "bool",
+    "hint": "/bgm 搜索结果渲染番剧卡片前，自动识别日文或中日混合简介并使用 AstrBot 默认聊天模型翻译为中文；纯中文简介会跳过，失败时保留原文",
+    "default": false
   }
 }

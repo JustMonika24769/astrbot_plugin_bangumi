@@ -17,8 +17,14 @@ from ..domain.contracts import (
 )
 from ..domain.exceptions import BangumiApiError
 from ..render import CalendarRenderer, SubjectRenderer
+from .summary_translation import (
+    summary_needs_chinese_translation,
+    translate_text_to_chinese,
+)
 
 if TYPE_CHECKING:
+    from astrbot.api.star import Context
+
     from ..api import BangumiService
 
 TextResultBuilder = Callable[[AstrMessageEvent, str], Awaitable[MessageResult]]
@@ -36,9 +42,11 @@ class SearchService:
         session: aiohttp.ClientSession | None = None,
         text_result_builder: TextResultBuilder | None = None,
         proxy_url: str | None = None,
+        context: "Context | None" = None,
     ) -> None:
         self.service = service
         self.config_manager = config_manager
+        self.context = context
         self._text_result_builder = text_result_builder or _default_text_result
         render_mode = self.config_manager.get_render_mode()
         self.subject_renderer = SubjectRenderer(
@@ -174,6 +182,10 @@ class SearchService:
             if not subject_data:
                 continue
 
+            subject_data = await self._translate_subject_summary_if_enabled(
+                subject_data
+            )
+
             try:
                 episodes_data = await self.service.get_subject_episodes(int(subject_id))
                 if episodes_data and "data" in episodes_data:
@@ -194,3 +206,25 @@ class SearchService:
         )
 
         return [Comp.Image.fromBase64(b64) for b64 in base64_list]
+
+    async def _translate_subject_summary_if_enabled(
+        self, subject_data: SubjectDetailsResponse
+    ) -> SubjectDetailsResponse:
+        if not self.config_manager.get_auto_translate_subject_summary():
+            return subject_data
+
+        summary = subject_data.get("summary", "").strip()
+        if not summary or not summary_needs_chinese_translation(summary):
+            return subject_data
+
+        translated_summary = await translate_text_to_chinese(
+            self.context,
+            summary,
+            feature_name="番剧简介自动翻译",
+        )
+        if translated_summary == summary:
+            return subject_data
+
+        translated_data = dict(subject_data)
+        translated_data["summary"] = translated_summary
+        return cast(SubjectDetailsResponse, translated_data)

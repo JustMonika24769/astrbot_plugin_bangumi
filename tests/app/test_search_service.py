@@ -1,3 +1,4 @@
+from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
@@ -24,6 +25,7 @@ def mock_config_manager() -> MagicMock:
     config_manager.get_max_retries.return_value = 1
     config_manager.get_render_mode.return_value = "html"
     config_manager.get_episode_card_template.return_value = "editorial_digest"
+    config_manager.get_auto_translate_subject_summary.return_value = False
     return config_manager
 
 
@@ -84,6 +86,67 @@ async def test_prepare_subject_images_skips_missing_details_and_tolerates_episod
         max_retries=1,
         variant="editorial_digest",
     )
+
+
+@pytest.mark.asyncio
+async def test_prepare_subject_images_translates_japanese_summary_before_rendering(
+    mock_service: MagicMock, mock_config_manager: MagicMock
+) -> None:
+    mock_config_manager.get_auto_translate_subject_summary.return_value = True
+    mock_service.get_subject_details.return_value = {
+        "id": 571784,
+        "name": "スーパーの裏でヤニ吸うふたり",
+        "summary": "社畜街道をひた走る佐々木さんの物語。",
+    }
+    mock_service.get_subject_episodes.return_value = {"data": []}
+    context = _context_with_provider(completion_text="  中文简介  ")
+    service = SearchService(mock_service, mock_config_manager, context=context)
+    service.subject_renderer.render_batch_subject_cards_to_base64 = AsyncMock(
+        return_value=["b64"]
+    )
+
+    await service._prepare_subject_images_base64([{"id": 571784}], top_k=1)
+
+    context.llm_generate.assert_awaited_once_with(
+        chat_provider_id="default-provider",
+        prompt="社畜街道をひた走る佐々木さんの物語。",
+        system_prompt="Translate to chinese (output translation only):",
+    )
+    rendered_data = (
+        service.subject_renderer.render_batch_subject_cards_to_base64.await_args.kwargs[
+            "data_list"
+        ][0]
+    )
+    assert rendered_data["summary"] == "中文简介"
+
+
+@pytest.mark.asyncio
+async def test_prepare_subject_images_keeps_chinese_summary_without_llm(
+    mock_service: MagicMock, mock_config_manager: MagicMock
+) -> None:
+    mock_config_manager.get_auto_translate_subject_summary.return_value = True
+    mock_service.get_subject_details.return_value = {
+        "id": 1,
+        "name": "中文条目",
+        "summary": "这是已经翻译好的中文简介。",
+    }
+    mock_service.get_subject_episodes.return_value = {"data": []}
+    context = _context_with_provider()
+    service = SearchService(mock_service, mock_config_manager, context=context)
+    service.subject_renderer.render_batch_subject_cards_to_base64 = AsyncMock(
+        return_value=["b64"]
+    )
+
+    await service._prepare_subject_images_base64([{"id": 1}], top_k=1)
+
+    context.get_using_provider.assert_not_called()
+    context.llm_generate.assert_not_awaited()
+    rendered_data = (
+        service.subject_renderer.render_batch_subject_cards_to_base64.await_args.kwargs[
+            "data_list"
+        ][0]
+    )
+    assert rendered_data["summary"] == "这是已经翻译好的中文简介。"
 
 
 @pytest.mark.asyncio
@@ -152,6 +215,17 @@ def _event() -> MagicMock:
     event.plain_result = MagicMock(side_effect=lambda text: text)
     event.chain_result = MagicMock(side_effect=lambda chain: chain)
     return event
+
+
+def _context_with_provider(completion_text: str = "中文简介") -> MagicMock:
+    context = MagicMock()
+    provider = MagicMock()
+    provider.meta.return_value = SimpleNamespace(id="default-provider")
+    context.get_using_provider.return_value = provider
+    context.llm_generate = AsyncMock(
+        return_value=SimpleNamespace(completion_text=completion_text)
+    )
+    return context
 
 
 class _FakeDateTime:

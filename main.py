@@ -130,6 +130,7 @@ class BangumiPlugin(Star):  # type: ignore[misc]
                 session=self.session,
                 text_result_builder=self._result_for_text,
                 proxy_url=proxy_url,
+                context=self.context,
             )
 
             # 订阅服务

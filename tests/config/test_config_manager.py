@@ -91,6 +91,36 @@ def test_get_auto_translate_episode_summary_defaults_false_for_missing_or_invali
     )
 
 
+def test_get_auto_translate_subject_summary_reads_bool_config() -> None:
+    assert _manager(
+        {"auto_translate_subject_summary": True}
+    ).get_auto_translate_subject_summary()
+    assert (
+        _manager(
+            {"auto_translate_subject_summary": False}
+        ).get_auto_translate_subject_summary()
+        is False
+    )
+
+
+def test_get_auto_translate_subject_summary_defaults_false_for_missing_or_invalid() -> (
+    None
+):
+    assert _manager({}).get_auto_translate_subject_summary() is False
+    assert (
+        _manager(
+            {"auto_translate_subject_summary": "true"}
+        ).get_auto_translate_subject_summary()
+        is False
+    )
+    assert (
+        _manager(
+            {"auto_translate_subject_summary": 1}
+        ).get_auto_translate_subject_summary()
+        is False
+    )
+
+
 def test_auto_translate_episode_summary_schema_defaults_false() -> None:
     schema_path = Path(__file__).resolve().parents[2] / "_conf_schema.json"
     schema = json.loads(schema_path.read_text(encoding="utf-8"))
@@ -99,6 +129,12 @@ def test_auto_translate_episode_summary_schema_defaults_false() -> None:
         "description": "自动翻译单集简介",
         "type": "bool",
         "hint": "订阅更新渲染单集卡片前，使用 AstrBot 默认聊天模型将非空单集简介翻译为中文；失败时保留原文",
+        "default": False,
+    }
+    assert schema["auto_translate_subject_summary"] == {
+        "description": "自动翻译番剧简介",
+        "type": "bool",
+        "hint": "/bgm 搜索结果渲染番剧卡片前，自动识别日文或中日混合简介并使用 AstrBot 默认聊天模型翻译为中文；纯中文简介会跳过，失败时保留原文",
         "default": False,
     }
 

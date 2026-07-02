@@ -88,6 +88,9 @@ class ConfigManager:
     def get_auto_translate_episode_summary(self) -> bool:
         return self._get_bool("auto_translate_episode_summary", False)
 
+    def get_auto_translate_subject_summary(self) -> bool:
+        return self._get_bool("auto_translate_subject_summary", False)
+
     def set_episode_card_template(self, template: EpisodeCardVariant) -> None:
         self.config["episode_card_template"] = template
 

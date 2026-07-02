@@ -1,4 +1,5 @@
 import base64
+import datetime
 import io
 from unittest.mock import AsyncMock
 
@@ -17,6 +18,7 @@ from astrbot_plugin_bangumi.src.render.subject_renderer import (
     _SUBJECT_TOP_ORB_BOX,
     _extract_tags,
     _measure_subject_tag_rows,
+    _parse_episode_list,
 )
 from astrbot_plugin_bangumi.tests.render.image_assertions import assert_png_image
 
@@ -78,6 +80,45 @@ def build_subject_data() -> dict[str, object]:
 
 def _decode_png_payload(payload: str) -> Image.Image:
     return Image.open(io.BytesIO(base64.b64decode(payload))).convert("RGBA")
+
+
+def test_parse_episode_list_keeps_future_airdate_unaired_even_with_comments() -> None:
+    episode_list, aired_weekdays = _parse_episode_list(
+        [
+            {
+                "ep": 1,
+                "type": 0,
+                "airdate": "2026-07-09",
+                "comment": 67,
+            },
+            {
+                "ep": 2,
+                "type": 0,
+                "airdate": "2026-07-16",
+                "comment": 43,
+            },
+        ],
+        datetime.date(2026, 7, 2),
+    )
+
+    assert episode_list == [{"ep": 1, "aired": False}, {"ep": 2, "aired": False}]
+    assert aired_weekdays == []
+
+
+def test_parse_episode_list_uses_comments_only_when_airdate_is_missing() -> None:
+    episode_list, aired_weekdays = _parse_episode_list(
+        [
+            {
+                "ep": 1,
+                "type": 0,
+                "comment": 4,
+            },
+        ],
+        datetime.date(2026, 7, 2),
+    )
+
+    assert episode_list == [{"ep": 1, "aired": True}]
+    assert aired_weekdays == []
 
 
 def _is_near_color(

@@ -314,17 +314,19 @@ def _parse_episode_list(
             continue
 
         aired = False
+        has_valid_airdate = False
         airdate_str = ep.get("airdate")
         if airdate_str:
             try:
                 airdate = datetime.datetime.strptime(airdate_str, "%Y-%m-%d").date()
+                has_valid_airdate = True
                 aired = airdate <= today
                 if aired:
                     aired_weekdays.append(airdate.isoweekday())
             except ValueError:
                 pass
 
-        if ep.get("comment", 0) > 0:
+        if not has_valid_airdate and ep.get("comment", 0) > 0:
             aired = True
 
         episode_list.append({"ep": ep.get("ep"), "aired": aired})

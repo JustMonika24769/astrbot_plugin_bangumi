@@ -2,6 +2,7 @@ from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
+from astrbot.core.message.message_event_result import MessageChain
 
 from astrbot_plugin_bangumi.src.app import SubscriptionService
 from astrbot_plugin_bangumi.src.domain.exceptions import DatabaseError
@@ -153,17 +154,13 @@ async def test_notify_subscribers_passes_configured_episode_template(
     mock_repo: MagicMock,
     mock_service: MagicMock,
     mock_config_manager: MagicMock,
-    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     mock_repo.get_subject_subscribers.return_value = ["group"]
     mock_config_manager.get_episode_card_template.return_value = "pastel_lightbox"
-    send_message_by_id = AsyncMock()
-    monkeypatch.setattr(
-        "astrbot_plugin_bangumi.src.app.subscription_service.StarTools.send_message_by_id",
-        send_message_by_id,
-        raising=False,
+    context = _context_with_provider()
+    service = SubscriptionService(
+        mock_repo, mock_service, mock_config_manager, context=context
     )
-    service = SubscriptionService(mock_repo, mock_service, mock_config_manager)
     service.renderer.render_episode = AsyncMock(return_value="image")
     episode = _episode()
 
@@ -175,7 +172,8 @@ async def test_notify_subscribers_passes_configured_episode_template(
         max_retries=1,
         variant="pastel_lightbox",
     )
-    send_message_by_id.assert_awaited_once()
+    context.send_message.assert_awaited_once()
+    assert context.send_message.await_args.args[0] == "aiocqhttp:group:group"
 
 
 @pytest.mark.asyncio
@@ -183,16 +181,9 @@ async def test_notify_subscribers_translation_disabled_does_not_call_llm(
     mock_repo: MagicMock,
     mock_service: MagicMock,
     mock_config_manager: MagicMock,
-    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     mock_repo.get_subject_subscribers.return_value = ["group"]
     context = _context_with_provider()
-    send_message_by_id = AsyncMock()
-    monkeypatch.setattr(
-        "astrbot_plugin_bangumi.src.app.subscription_service.StarTools.send_message_by_id",
-        send_message_by_id,
-        raising=False,
-    )
     service = SubscriptionService(
         mock_repo, mock_service, mock_config_manager, context=context
     )
@@ -205,7 +196,7 @@ async def test_notify_subscribers_translation_disabled_does_not_call_llm(
     context.llm_generate.assert_not_awaited()
     rendered_episode = service.renderer.render_episode.await_args.args[0]
     assert rendered_episode.desc == "Original English summary"
-    send_message_by_id.assert_awaited_once()
+    context.send_message.assert_awaited_once()
 
 
 @pytest.mark.asyncio
@@ -213,17 +204,10 @@ async def test_notify_subscribers_translates_summary_before_rendering(
     mock_repo: MagicMock,
     mock_service: MagicMock,
     mock_config_manager: MagicMock,
-    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     mock_repo.get_subject_subscribers.return_value = ["group"]
     mock_config_manager.get_auto_translate_episode_summary.return_value = True
     context = _context_with_provider(completion_text="  中文简介  ")
-    send_message_by_id = AsyncMock()
-    monkeypatch.setattr(
-        "astrbot_plugin_bangumi.src.app.subscription_service.StarTools.send_message_by_id",
-        send_message_by_id,
-        raising=False,
-    )
     service = SubscriptionService(
         mock_repo, mock_service, mock_config_manager, context=context
     )
@@ -240,7 +224,7 @@ async def test_notify_subscribers_translates_summary_before_rendering(
     rendered_episode = service.renderer.render_episode.await_args.args[0]
     assert rendered_episode.desc == "中文简介"
     assert episode.desc == "Original English summary"
-    send_message_by_id.assert_awaited_once()
+    context.send_message.assert_awaited_once()
 
 
 @pytest.mark.asyncio
@@ -248,18 +232,11 @@ async def test_notify_subscribers_keeps_original_summary_when_translation_fails(
     mock_repo: MagicMock,
     mock_service: MagicMock,
     mock_config_manager: MagicMock,
-    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     mock_repo.get_subject_subscribers.return_value = ["group"]
     mock_config_manager.get_auto_translate_episode_summary.return_value = True
     context = _context_with_provider()
     context.llm_generate.side_effect = RuntimeError("llm down")
-    send_message_by_id = AsyncMock()
-    monkeypatch.setattr(
-        "astrbot_plugin_bangumi.src.app.subscription_service.StarTools.send_message_by_id",
-        send_message_by_id,
-        raising=False,
-    )
     service = SubscriptionService(
         mock_repo, mock_service, mock_config_manager, context=context
     )
@@ -271,7 +248,24 @@ async def test_notify_subscribers_keeps_original_summary_when_translation_fails(
     context.llm_generate.assert_awaited_once()
     rendered_episode = service.renderer.render_episode.await_args.args[0]
     assert rendered_episode.desc == "Original English summary"
-    send_message_by_id.assert_awaited_once()
+    context.send_message.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_send_update_message_accepts_existing_unified_message_origin(
+    mock_repo: MagicMock, mock_service: MagicMock, mock_config_manager: MagicMock
+) -> None:
+    context = _context_with_provider()
+    service = SubscriptionService(
+        mock_repo, mock_service, mock_config_manager, context=context
+    )
+
+    await service._send_update_message(
+        "aiocqhttp:group:123456", MessageChain().message("ok")
+    )
+
+    context.send_message.assert_awaited_once()
+    assert context.send_message.await_args.args[0] == "aiocqhttp:group:123456"
 
 
 def _context_with_provider(completion_text: str = "中文简介") -> MagicMock:
@@ -279,6 +273,7 @@ def _context_with_provider(completion_text: str = "中文简介") -> MagicMock:
     provider = MagicMock()
     provider.meta.return_value = SimpleNamespace(id="default-provider")
     context.get_using_provider.return_value = provider
+    context.send_message = AsyncMock(return_value=True)
     context.llm_generate = AsyncMock(
         return_value=SimpleNamespace(completion_text=completion_text)
     )

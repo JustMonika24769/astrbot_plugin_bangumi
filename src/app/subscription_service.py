@@ -2,7 +2,6 @@ from typing import TYPE_CHECKING
 
 import aiohttp
 from astrbot.api import logger
-from astrbot.api.star import StarTools
 from astrbot.core.message.message_event_result import MessageChain
 
 from ..config import ConfigManager
@@ -12,16 +11,12 @@ from ..domain.exceptions import BangumiApiError, DatabaseError, SubscriptionErro
 from ..domain.schemas import Episode
 from ..domain.types import ImageSize, SubjectType
 from ..render import EpisodeRenderer
+from .summary_translation import translate_text_to_chinese
 
 if TYPE_CHECKING:
     from astrbot.api.star import Context
 
     from ..api import BangumiService
-
-
-TRANSLATE_EPISODE_SUMMARY_SYSTEM_PROMPT = (
-    "Translate to chinese (output translation only):"
-)
 
 
 class SubscriptionService:
@@ -320,14 +315,30 @@ class SubscriptionService:
 
         for group_id in subscribed_groups:
             try:
-                await StarTools.send_message_by_id(
-                    type="GroupMessage", id=group_id, message_chain=chain
-                )
+                await self._send_update_message(group_id, chain)
                 logger.info(f"向群组 {group_id} 发送《{subject_name}》更新通知成功")
             except Exception as e:
                 logger.error(
                     f"向群组 {group_id} 发送《{subject_name}》更新通知失败: {e}"
                 )
+
+    @staticmethod
+    def _resolve_notification_session(group_id: str) -> str:
+        if group_id.count(":") >= 2:
+            return group_id
+        return f"aiocqhttp:group:{group_id}"
+
+    async def _send_update_message(
+        self, group_id: str, message_chain: MessageChain
+    ) -> None:
+        if self.context is None:
+            raise RuntimeError("AstrBot Context 不可用,无法主动发送更新通知")
+
+        session = self._resolve_notification_session(group_id)
+        if await self.context.send_message(session, message_chain):
+            return
+
+        raise RuntimeError(f"AstrBot 主动发送未找到匹配平台: {session}")
 
     async def _translate_episode_summary_if_enabled(self, episode: Episode) -> Episode:
         if (
@@ -336,40 +347,12 @@ class SubscriptionService:
         ):
             return episode
 
-        if self.context is None:
-            logger.warning(
-                "单集简介自动翻译已开启,但 AstrBot Context 不可用,保留原简介"
-            )
-            return episode
-
-        try:
-            provider = self.context.get_using_provider()
-            if provider is None:
-                logger.warning(
-                    "单集简介自动翻译已开启,但默认 chat provider 不可用,保留原简介"
-                )
-                return episode
-
-            provider_meta = provider.meta()
-            provider_id = getattr(provider_meta, "id", None)
-            if not isinstance(provider_id, str) or not provider_id:
-                logger.warning(
-                    "单集简介自动翻译已开启,但默认 chat provider id 不可用,保留原简介"
-                )
-                return episode
-
-            response = await self.context.llm_generate(
-                chat_provider_id=provider_id,
-                prompt=episode.desc,
-                system_prompt=TRANSLATE_EPISODE_SUMMARY_SYSTEM_PROMPT,
-            )
-        except Exception as e:
-            logger.error(f"单集简介自动翻译失败,保留原简介: {e}")
-            return episode
-
-        translated_text = getattr(response, "completion_text", "").strip()
-        if not translated_text:
-            logger.warning("单集简介自动翻译返回空文本,保留原简介")
+        translated_text = await translate_text_to_chinese(
+            self.context,
+            episode.desc,
+            feature_name="单集简介自动翻译",
+        )
+        if translated_text == episode.desc:
             return episode
 
         return episode.model_copy(update={"desc": translated_text})

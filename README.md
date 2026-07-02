@@ -1,7 +1,7 @@
 <div align="center">
 
 # Bangumi 搜索插件使用指南
-[![version](https://img.shields.io/badge/version-v1.5.5-blue.svg)](https://github.com/united-pooh/astrbot_plugin_bangumi)
+[![version](https://img.shields.io/badge/version-v1.5.6-blue.svg)](https://github.com/united-pooh/astrbot_plugin_bangumi)
 [![License](https://img.shields.io/badge/license-Apache%202.0-green.svg)](LICENSE-2.0)
 [![AstrBot](https://img.shields.io/badge/AstrBot-%3E%3D4.26.2-orange.svg)](https://github.com/Soulter/AstrBot)
 [![Python](https://img.shields.io/badge/python-3.12%2B-blue.svg)](https://www.python.org/)
@@ -93,6 +93,7 @@
 | `render_mode` | string | `pillow` | 渲染模式;可选 `pillow`、`playwright`、`rpc`;旧配置值 `html` 会兼容为 `playwright` |
 | `episode_card_template` | string | `pastel_lightbox` | 图片卡片风格;影响 `/bgm` 搜索结果、单集更新和长文本响应;可选 `pastel_lightbox`、`editorial_digest`、`cinematic_poster`,第一个为默认 |
 | `auto_translate_episode_summary` | bool | `false` | 订阅更新渲染单集卡片前,使用 AstrBot 默认聊天模型将非空单集简介翻译为中文;无默认模型、返回空文本或翻译失败时保留原文 |
+| `auto_translate_subject_summary` | bool | `false` | `/bgm` 搜索结果渲染番剧卡片前,自动识别日文或中日混合简介并使用 AstrBot 默认聊天模型翻译为中文;纯中文简介会跳过,失败时保留原文 |
 
 ### Access Token 获取
 
@@ -111,13 +112,13 @@
 
 ### 搜索结果卡片
 
-`/bgm` 搜索结果卡片同步支持三种风格:`pastel_lightbox`、`editorial_digest`、`cinematic_poster`。默认使用 `pastel_lightbox`,也可以在 `_conf_schema.json` 的 `episode_card_template` 中配置,或通过 `/bgm模板 1`、`/bgm模板 2`、`/bgm模板 3` 指令切换。Playwright/RPC 链路会内嵌同一张 Pillow 预渲染图片,保持三种渲染模式的视觉一致。可用本地脚本从 Bangumi API 拉取真实条目数据生成预览图:
+`/bgm` 搜索结果卡片同步支持三种风格:`pastel_lightbox`、`editorial_digest`、`cinematic_poster`。默认使用 `pastel_lightbox`,也可以在 `_conf_schema.json` 的 `episode_card_template` 中配置,或通过 `/bgm模板 1`、`/bgm模板 2`、`/bgm模板 3` 指令切换。开启 `auto_translate_subject_summary` 后,搜索结果卡片会在渲染前识别简介文本;纯中文简介保持原文,含日文假名的日文或中日混合简介会调用 AstrBot 默认聊天模型翻译为中文。Playwright/RPC 链路会内嵌同一张 Pillow 预渲染图片,保持三种渲染模式的视觉一致。可用本地脚本从 Bangumi API 拉取真实条目数据生成预览图:
 
 ```bash
 python scripts/render_subject_variants.py
 ```
 
-生成结果会写入本地忽略目录 `rendered_images/subject-card-v1.5.5/`,用于用户审核前的可读性自检。
+生成结果会写入本地忽略目录 `rendered_images/subject-card-v1.5.6/`,用于用户审核前的可读性自检。
 
 ### 长文本响应卡片
 
@@ -127,7 +128,7 @@ python scripts/render_subject_variants.py
 python scripts/render_response_previews.py
 ```
 
-生成结果会写入本地忽略目录 `rendered_images/response-card-v1.5.5/`,用于用户审核前的可读性自检。
+生成结果会写入本地忽略目录 `rendered_images/response-card-v1.5.6/`,用于用户审核前的可读性自检。
 
 ### 单集卡片预览
 
