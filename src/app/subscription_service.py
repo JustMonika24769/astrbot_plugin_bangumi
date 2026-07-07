@@ -49,6 +49,14 @@ class SubscriptionService:
         if not normalized_keyword:
             return "❌ 请提供要订阅的番剧关键词或ID", []
 
+        if normalized_keyword.isdigit():
+            candidate = await self._get_subscribe_candidate_by_subject_id(
+                normalized_keyword
+            )
+            if candidate is None:
+                return "🔍 未找到相关番剧", []
+            return None, [candidate]
+
         effective_limit = max(1, min(limit, 10))
         search_res = await self.service.search_subjects(
             keyword=normalized_keyword,
@@ -76,6 +84,24 @@ class SubscriptionService:
         if not candidates:
             return "🔍 未找到相关番剧", []
         return None, candidates
+
+    async def _get_subscribe_candidate_by_subject_id(
+        self, subject_id: str
+    ) -> SubscribeCandidate | None:
+        details = await self.service.get_subject_details(subject_id)
+        if not details:
+            return None
+
+        subject_type = details.get("type")
+        if subject_type is not None:
+            try:
+                if int(subject_type) != SubjectType.ANIME.value:
+                    return None
+            except (TypeError, ValueError):
+                return None
+
+        raw_name = details.get("name_cn") or details.get("name") or f"ID:{subject_id}"
+        return {"subject_id": subject_id, "name": str(raw_name)}
 
     async def _build_subscribable_subject(
         self, subject_id: str

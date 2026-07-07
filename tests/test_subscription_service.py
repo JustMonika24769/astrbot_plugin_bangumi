@@ -191,6 +191,52 @@ async def test_get_subscribe_candidates_multi_match(
 
 
 @pytest.mark.asyncio
+async def test_get_subscribe_candidates_numeric_id_uses_details(
+    mock_repo, mock_service, mock_config_manager
+) -> None:
+    mock_service.get_subject_details.return_value = {
+        "id": 237,
+        "type": 2,
+        "name": "Test Anime",
+        "name_cn": "测试番剧",
+    }
+
+    sub_service = SubscriptionService(
+        repository=mock_repo,
+        service=mock_service,
+        config_manager=mock_config_manager,
+    )
+    error_msg, candidates = await sub_service.get_subscribe_candidates("237", 5)
+
+    assert error_msg is None
+    assert candidates == [{"subject_id": "237", "name": "测试番剧"}]
+    mock_service.get_subject_details.assert_awaited_once_with("237")
+    mock_service.search_subjects.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_get_subscribe_candidates_numeric_non_anime_returns_no_match(
+    mock_repo, mock_service, mock_config_manager
+) -> None:
+    mock_service.get_subject_details.return_value = {
+        "id": 237,
+        "type": 1,
+        "name": "Test Book",
+    }
+
+    sub_service = SubscriptionService(
+        repository=mock_repo,
+        service=mock_service,
+        config_manager=mock_config_manager,
+    )
+    error_msg, candidates = await sub_service.get_subscribe_candidates("237", 5)
+
+    assert error_msg == "🔍 未找到相关番剧"
+    assert candidates == []
+    mock_service.search_subjects.assert_not_called()
+
+
+@pytest.mark.asyncio
 async def test_subscribe_by_subject_id_success(
     mock_repo, mock_service, mock_config_manager
 ) -> None:
