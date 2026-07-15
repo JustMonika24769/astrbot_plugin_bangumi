@@ -9,7 +9,7 @@
     "description": "Bangumi API User-Agent",
     "type": "string",
     "hint": "建议填写可联系的项目标识；留空使用插件默认值",
-    "default": "AstrBot-Bangumi-Plugin/v2.0.3 (https://github.com/united-pooh/astrbot_plugin_bangumi)"
+    "default": "AstrBot-Bangumi-Plugin/v2.0.4 (https://github.com/united-pooh/astrbot_plugin_bangumi)"
   },
   "proxy_url": {
     "description": "插件网络代理",

@@ -4,7 +4,7 @@ from typing import Any
 from urllib.parse import urlsplit, urlunsplit
 
 DEFAULT_USER_AGENT = (
-    "AstrBot-Bangumi-Plugin/v2.0.3 "
+    "AstrBot-Bangumi-Plugin/v2.0.4 "
     "(https://github.com/united-pooh/astrbot_plugin_bangumi)"
 )
 

@@ -109,6 +109,11 @@ class SubscriptionManager:
                     pending_sessions = self.repository.pending_sessions(
                         item.subject_id, latest.number
                     )
+                    pending_sessions = self._canonicalize_pending_sessions(
+                        item.subject_id,
+                        latest.number,
+                        pending_sessions,
+                    )
                     if session_id is not None:
                         pending_sessions = [
                             session
@@ -181,6 +186,41 @@ class SubscriptionManager:
 
             logger.info(f"追番检查完成: {report.summary}")
             return report
+
+    def _canonicalize_pending_sessions(
+        self,
+        subject_id: str,
+        episode_number: int,
+        pending_sessions: list[str],
+    ) -> list[str]:
+        aliases_by_target: dict[str, set[str]] = {}
+        for source_session in pending_sessions:
+            try:
+                target_session = self._notification_session(source_session)
+            except RuntimeError:
+                continue
+            if target_session != source_session:
+                aliases_by_target.setdefault(target_session, set()).add(
+                    source_session
+                )
+
+        migrated = 0
+        for target_session, aliases in aliases_by_target.items():
+            migrated += self.repository.migrate_session_aliases(
+                target_session, aliases
+            )
+        if not migrated:
+            return pending_sessions
+
+        normalized = self.repository.pending_sessions(
+            subject_id, episode_number
+        )
+        logger.info(
+            f"会话别名合并: 条目={subject_id}, "
+            f"原始待通知={len(pending_sessions)}, "
+            f"合并后={len(normalized)}, 迁移订阅={migrated}"
+        )
+        return normalized
 
     async def render_test_card(self, session_id: str, query: str) -> str:
         matches = self.repository.find_subscription(session_id, query)

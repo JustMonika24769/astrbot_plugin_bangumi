@@ -87,6 +87,53 @@ async def test_check_updates_marks_only_successful_delivery(
 
 
 @pytest.mark.asyncio
+async def test_check_updates_merges_aliases_before_sending(
+    subject, episode, context
+) -> None:
+    canonical = "onebot-main:GroupMessage:818800431"
+    api = MagicMock(session=MagicMock())
+    api.get_subject = AsyncMock(return_value=subject)
+    api.get_latest_aired_episode = AsyncMock(return_value=episode)
+    api.with_embedded_cover = AsyncMock(return_value=subject)
+    repository = MagicMock()
+    repository.list_tracked_subjects.return_value = [
+        TrackedSubject(
+            subject_id=str(subject.id),
+            title=subject.title,
+            name=subject.name,
+            cover_url=subject.cover_url,
+            air_date=subject.air_date,
+            total_episodes=12,
+            current_episode=3,
+            broadcast_time=None,
+            last_checked_at=None,
+            last_error=None,
+        )
+    ]
+    repository.pending_sessions.side_effect = [
+        ["818800431", canonical],
+        [canonical],
+    ]
+    repository.migrate_session_aliases.return_value = 1
+    repository.delivery_progress.return_value = {canonical: 3}
+    renderer = MagicMock()
+    renderer.update_card = AsyncMock(return_value="card.jpg")
+    manager = build_manager(api, repository, renderer, context)
+
+    report = await manager.check_updates(refresh=True)
+
+    assert report.pending_deliveries == 1
+    assert report.delivered == 1
+    assert context.send_message.await_count == 1
+    repository.migrate_session_aliases.assert_called_once_with(
+        canonical, {"818800431"}
+    )
+    repository.mark_notified.assert_called_once_with(
+        canonical, str(subject.id), 4
+    )
+
+
+@pytest.mark.asyncio
 async def test_check_updates_falls_back_to_text_when_t2i_fails(
     subject, episode, context
 ) -> None:
