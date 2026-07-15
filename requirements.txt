@@ -1,13 +1,4 @@
-playwright
-jinja2
-pillow
-fonttools
-py7zr
-numpy
 aiohttp
 apscheduler
 pytz
-
 SQLAlchemy
-
-astrbot

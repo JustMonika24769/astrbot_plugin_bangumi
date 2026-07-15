@@ -1,0 +1,9 @@
+<!doctype html>
+<html lang="zh-CN"><head><meta charset="utf-8"><style>/*__CARD_CSS__*/</style></head>
+<body><main class="sheet">
+  <header class="masthead"><div class="brand"><strong>Bangumi</strong><span>On air</span></div><div class="masthead-meta">{{ heading | e }}</div></header>
+  <section class="content"><p class="eyebrow">{{ subheading | e }}</p><div class="calendar-grid">
+    {% for day in days %}<section class="day-panel{% if day.is_today %} today{% endif %}"><header class="day-head"><strong>{{ day.name }}</strong><span>{{ day.count }} 部</span></header><div class="day-items">{% for item in day["items"] %}<div class="day-item"><span class="day-title">{{ item.title | e }}</span><span class="day-score">{{ item.score }}</span></div>{% else %}<div class="empty">暂无放送</div>{% endfor %}</div></section>{% endfor %}
+  </div></section>
+  <footer class="footer"><span>放送数据来自 Bangumi Calendar</span><span>AstrBot T2I</span></footer>
+</main></body></html>

@@ -1,597 +1,444 @@
-"""
-数据访问层(Repository 模式)
-
-此模块封装所有数据库操作,为业务层提供数据访问接口
-
-"""
+from __future__ import annotations
 
 import os
-from dataclasses import dataclass
+from datetime import datetime
 from difflib import SequenceMatcher
 
 from astrbot.api import logger
-from sqlalchemy import Engine, create_engine, or_
-from sqlalchemy.orm import joinedload, scoped_session, sessionmaker
+from sqlalchemy import Engine, create_engine, inspect, select, text
+from sqlalchemy.orm import sessionmaker
 
-from ..domain.exceptions import DatabaseError
+from ..entities import Subject, SubscriptionView, TrackedSubject
 from .models import BangumiSubject, Base, Subscription
 
 
-def _has_column(engine: Engine, table_name: str, column_name: str) -> bool:
-    """检查表是否已有指定列"""
-    from sqlalchemy import inspect
-
-    inspector = inspect(engine)
-    columns = [c["name"] for c in inspector.get_columns(table_name)]
-    return column_name in columns
-
-
-@dataclass(frozen=True)
-class _CandidateScore:
-    exact_id: int
-    prefix_id: int
-    name_contains: int
-    similarity: float
-    subject_id: str
+class RepositoryError(RuntimeError):
+    pass
 
 
 class BangumiRepository:
-    """
-    番剧数据访问层
-    """
-
     def __init__(self, db_path: str) -> None:
-        """
-        初始化数据访问层
-
-        Args:
-            db_path: 数据库文件路径
-        """
         os.makedirs(os.path.dirname(db_path), exist_ok=True)
         self.db_path = db_path
-        self._init_db()
-
-    def _init_db(self) -> None:
-        """
-        初始化数据库连接和表结构
-        """
         try:
-            # 使用 sqlite
-            engine = create_engine(f"sqlite:///{self.db_path}")
-            # 创建表
-            Base.metadata.create_all(engine)
-            # 迁移:为已有表添加 broadcast_time 列
-            self._run_migrations(engine)
-            # 创建 session factory
-            self.Session = scoped_session(sessionmaker(bind=engine))
-        except Exception as e:
-            raise DatabaseError(f"初始化数据库失败: {e}") from e
+            self.engine = create_engine(f"sqlite:///{db_path}")
+            Base.metadata.create_all(self.engine)
+            self._migrate(self.engine)
+            self.Session = sessionmaker(bind=self.engine, expire_on_commit=False)
+        except Exception as exc:
+            raise RepositoryError(f"数据库初始化失败: {exc}") from exc
 
     @staticmethod
-    def _run_migrations(engine: Engine) -> None:
-        """运行数据库迁移,为已有表添加新列"""
+    def _migrate(engine: Engine) -> None:
+        subject_columns = {
+            "broadcast_time": "VARCHAR",
+            "name_cn": "VARCHAR",
+            "cover_url": "TEXT",
+            "summary": "TEXT",
+            "score": "FLOAT NOT NULL DEFAULT 0",
+            "rank": "INTEGER NOT NULL DEFAULT 0",
+            "last_checked_at": "DATETIME",
+            "last_error": "TEXT",
+        }
+        subscription_columns = {
+            "last_notified_episode": "INTEGER NOT NULL DEFAULT 0",
+            "last_attempt_at": "DATETIME",
+            "last_error": "TEXT",
+        }
         try:
-            if not _has_column(engine, "bangumi_subjects", "broadcast_time"):
-                from sqlalchemy import text
-
-                with engine.connect() as conn:
-                    conn.execute(
+            inspector = inspect(engine)
+            existing_subject = {
+                column["name"] for column in inspector.get_columns("bangumi_subjects")
+            }
+            existing_subscription = {
+                column["name"] for column in inspector.get_columns("subscriptions")
+            }
+            with engine.begin() as connection:
+                for name, sql_type in subject_columns.items():
+                    if name not in existing_subject:
+                        connection.execute(
+                            text(
+                                f"ALTER TABLE bangumi_subjects ADD COLUMN {name} {sql_type}"
+                            )
+                        )
+                added_delivery_progress = (
+                    "last_notified_episode" not in existing_subscription
+                )
+                for name, sql_type in subscription_columns.items():
+                    if name not in existing_subscription:
+                        connection.execute(
+                            text(
+                                f"ALTER TABLE subscriptions ADD COLUMN {name} {sql_type}"
+                            )
+                        )
+                if added_delivery_progress:
+                    connection.execute(
                         text(
-                            "ALTER TABLE bangumi_subjects "
-                            "ADD COLUMN broadcast_time VARCHAR"
+                            "UPDATE subscriptions "
+                            "SET last_notified_episode = COALESCE(("
+                            "SELECT current_episode FROM bangumi_subjects "
+                            "WHERE bangumi_subjects.subject_id = subscriptions.subject_id"
+                            "), 0)"
                         )
                     )
-                    conn.commit()
-                    logger.info("数据库迁移:已添加 broadcast_time 列")
-        except Exception as e:
-            raise DatabaseError(f"数据库迁移失败: {e}") from e
-
-    def update_subject(self, subject_id: str, **kwargs: str | int | None) -> bool:
-        """
-        更新或保存番剧信息
-
-        Args:
-            subject_id: 番剧 ID
-            **kwargs: 支持传入 name, air_date, total_episodes, current_episode 等
-
-        Returns:
-            操作是否成功
-
-        """
-        session = self.Session()
-        try:
-            subject = (
-                session.query(BangumiSubject)
-                .filter_by(subject_id=str(subject_id))
-                .first()
-            )
-            if not subject:
-                name = kwargs.pop("name", "未知番剧")
-                subject = BangumiSubject(
-                    subject_id=str(subject_id), name=name, **kwargs
-                )
-                session.add(subject)
-            else:
-                for key, value in kwargs.items():
-                    if hasattr(subject, key) and value is not None:
-                        setattr(subject, key, value)
-            session.commit()
-            return True
-        except Exception as e:
-            logger.error(f"更新番剧信息失败: {e}")
-            session.rollback()
-            raise DatabaseError(f"更新番剧信息失败: {e}") from e
-        finally:
-            session.close()
-
-    def add_subscription(self, group_id: str, subject_id: str) -> bool:
-        """
-        添加订阅关系
-
-        Args:
-            group_id: 群组 ID
-            subject_id: 番剧 ID
-
-        Returns:
-            操作是否成功
-
-        """
-        session = self.Session()
-        try:
-            # 确保 Subject 存在
-            subject = (
-                session.query(BangumiSubject)
-                .filter_by(subject_id=str(subject_id))
-                .first()
-            )
-            if not subject:
-                subject = BangumiSubject(subject_id=str(subject_id), name="未知番剧")
-                session.add(subject)
-
-            existing = (
-                session.query(Subscription)
-                .filter_by(group_id=str(group_id), subject_id=str(subject_id))
-                .first()
-            )
-
-            if not existing:
-                new_sub = Subscription(
-                    group_id=str(group_id), subject_id=str(subject_id)
-                )
-                session.add(new_sub)
-
-            session.commit()  # 单次 commit,保证原子性
-            return True
-        except Exception as e:
-            logger.error(f"添加订阅失败: {e}")
-            session.rollback()
-            raise DatabaseError(f"添加订阅失败: {e}") from e
-        finally:
-            session.close()
-
-    def remove_subscription(self, group_id: str, subject_id: str) -> bool:
-        """
-        移除订阅关系
-
-        Args:
-            group_id: 群组 ID
-            subject_id: 番剧 ID
-
-        Returns:
-            操作是否成功
-
-        """
-        session = self.Session()
-        try:
-            normalized_subject_id = str(subject_id)
-            sub = (
-                session.query(Subscription)
-                .filter_by(group_id=str(group_id), subject_id=normalized_subject_id)
-                .first()
-            )
-            if sub:
-                session.delete(sub)
-                session.flush()
-                remaining_subscription = (
-                    session.query(Subscription)
-                    .filter_by(subject_id=normalized_subject_id)
-                    .first()
-                )
-                if not remaining_subscription:
-                    subject = (
-                        session.query(BangumiSubject)
-                        .filter_by(subject_id=normalized_subject_id)
-                        .first()
-                    )
-                    if subject:
-                        session.delete(subject)
-                session.commit()
-                return True
-            return False  # 订阅不存在
-        except Exception as e:
-            logger.error(f"移除订阅失败: {e}")
-            session.rollback()
-            raise DatabaseError(f"移除订阅失败: {e}") from e
-        finally:
-            session.close()
-
-    def get_subscriptions(self, group_id: str) -> list[str]:
-        """
-        获取指定群组的所有订阅
-
-        Args:
-            group_id: 群组 ID
-
-        Returns:
-            订阅的番剧 ID 列表
-
-        """
-        session = self.Session()
-        try:
-            subs = session.query(Subscription).filter_by(group_id=str(group_id)).all()
-            return [sub.subject_id for sub in subs]
-        except Exception as e:
-            logger.error(f"获取订阅失败: {e}")
-            raise DatabaseError(f"获取订阅失败: {e}") from e
-        finally:
-            session.close()
-
-    def get_monitored_subjects(self) -> list[BangumiSubject]:
-        """
-        获取所有已订阅的番剧列表,用于轮询更新
-
-        Returns:
-            番剧对象列表
-
-        """
-        session = self.Session()
-        try:
-            # Eager load subscriptions 避免 DetachedInstanceError
-            subjects = (
-                session.query(BangumiSubject)
-                .options(joinedload(BangumiSubject.subscriptions))
-                .all()
-            )
-            return subjects
-        except Exception as e:
-            logger.error(f"获取监控番剧失败: {e}")
-            raise DatabaseError(f"获取监控番剧失败: {e}") from e
-        finally:
-            session.close()
-
-    def update_subject_episode(self, subject_id: str, new_episode: int) -> bool:
-        """
-        更新番剧最新集数(快捷方法)
-
-        Args:
-            subject_id: 番剧 ID
-            new_episode: 新的集数
-
-        Returns:
-            操作是否成功
-
-        """
-        return self.update_subject(subject_id, current_episode=new_episode)
-
-    def subscribe_subject(
-        self,
-        group_id: str,
-        subject_id: str,
-        name: str,
-        air_date: str = "",
-        total_episodes: int = 0,
-    ) -> bool:
-        """
-        原子性地 upsert 番剧信息并建立订阅关系
-
-        将 update_subject + add_subscription 合并到单一事务中,
-        避免两次独立调用之间发生异常导致脏数据
-
-        Args:
-            group_id: 群组 ID
-            subject_id: 番剧 ID
-            name: 番剧名称
-            air_date: 开播日期
-            total_episodes: 总集数
-
-        Returns:
-            操作是否成功
-        """
-        session = self.Session()
-        try:
-            # 1. upsert BangumiSubject
-            subject = (
-                session.query(BangumiSubject)
-                .filter_by(subject_id=str(subject_id))
-                .first()
-            )
-            if not subject:
-                subject = BangumiSubject(
-                    subject_id=str(subject_id),
-                    name=name,
-                    air_date=air_date,
-                    total_episodes=total_episodes,
-                )
-                session.add(subject)
-            else:
-                subject.name = name
-                if air_date:
-                    subject.air_date = air_date
-                if total_episodes:
-                    subject.total_episodes = total_episodes
-
-            # 2. 添加订阅关系(若不存在)
-            existing = (
-                session.query(Subscription)
-                .filter_by(group_id=str(group_id), subject_id=str(subject_id))
-                .first()
-            )
-            if not existing:
-                session.add(
-                    Subscription(group_id=str(group_id), subject_id=str(subject_id))
-                )
-
-            # 3. 单次 commit,保证 subject 与 subscription 同时成功或同时回滚
-            session.commit()
-            return True
-        except Exception as e:
-            logger.error(f"原子订阅失败: {e}")
-            session.rollback()
-            raise DatabaseError(f"原子订阅失败: {e}") from e
-        finally:
-            session.close()
-
-    def get_subject_subscribers(self, subject_id: str) -> list[str]:
-        """
-        获取订阅了某番剧的所有群组 ID
-
-        Args:
-            subject_id: 番剧 ID
-
-        Returns:
-            群组 ID 列表
-
-        """
-        session = self.Session()
-        try:
-            subs = (
-                session.query(Subscription).filter_by(subject_id=str(subject_id)).all()
-            )
-            return [sub.group_id for sub in subs]
-        except Exception as e:
-            logger.error(f"获取订阅群组失败: {e}")
-            raise DatabaseError(f"获取订阅群组失败: {e}") from e
-        finally:
-            session.close()
-
-    def set_subject_broadcast_time(
-        self, subject_id: str, broadcast_time: str | None
-    ) -> bool:
-        """
-        设置番剧的广播时间
-
-        Args:
-            subject_id: 番剧 ID
-            broadcast_time: 播出时间,格式 "HH:MM",如 "22:00"。设为 None 清除
-
-        Returns:
-            操作是否成功
-        """
-        session = self.Session()
-        try:
-            subject = (
-                session.query(BangumiSubject)
-                .filter_by(subject_id=str(subject_id))
-                .first()
-            )
-            if not subject:
-                return False
-            subject.broadcast_time = broadcast_time
-            session.commit()
-            return True
-        except Exception as e:
-            logger.error(f"设置广播时间失败: {e}")
-            session.rollback()
-            raise DatabaseError(f"设置广播时间失败: {e}") from e
-        finally:
-            session.close()
-
-    def get_subject_broadcast_time(self, subject_id: str) -> str | None:
-        """
-        获取番剧的广播时间
-
-        Args:
-            subject_id: 番剧 ID
-
-        Returns:
-            "HH:MM" 格式的时间,如 "22:00",未设置则返回 None
-        """
-        session = self.Session()
-        try:
-            subject = (
-                session.query(BangumiSubject)
-                .filter_by(subject_id=str(subject_id))
-                .first()
-            )
-            if not subject:
-                return None
-            return subject.broadcast_time
-        except Exception as e:
-            logger.error(f"获取广播时间失败: {e}")
-            raise DatabaseError(f"获取广播时间失败: {e}") from e
-        finally:
-            session.close()
-
-    def batch_update_broadcast_times(self, mapping: dict[str, str]) -> int:
-        """
-        批量更新番剧广播时间(从 bgmlist API 填充用)
-
-        Args:
-            mapping: {subject_id: broadcast_time} 映射,如 {"377130": "22:00"}
-
-        Returns:
-            更新成功的数量
-
-        Raises:
-            DatabaseError: 数据库操作异常
-        """
-        session = self.Session()
-        updated = 0
-        try:
-            ids = [str(sid) for sid in mapping]
-            subjects = (
-                session.query(BangumiSubject)
-                .filter(BangumiSubject.subject_id.in_(ids))
-                .all()
-            )
-            for subject in subjects:
-                if subject.subject_id in mapping:
-                    subject.broadcast_time = mapping[subject.subject_id]
-                    updated += 1
-            session.commit()
-            return updated
-        except Exception as e:
-            logger.error(f"批量更新广播时间失败: {e}")
-            session.rollback()
-            raise DatabaseError(f"批量更新广播时间失败: {e}") from e
-        finally:
-            session.close()
-
-    def get_subject_name(self, subject_id: str) -> str:
-        """
-        获取番剧名称
-
-        Args:
-            subject_id: 番剧 ID
-
-        Returns:
-            番剧名称，未找到返回 "未知番剧"
-
-        Raises:
-            DatabaseError: 数据库操作异常
-        """
-        session = self.Session()
-        try:
-            subject = (
-                session.query(BangumiSubject)
-                .filter_by(subject_id=str(subject_id))
-                .first()
-            )
-            return subject.name if subject and subject.name else "未知番剧"
-        except Exception as e:
-            logger.error(f"获取番剧名称失败: {e}")
-            return "未知番剧"
-        finally:
-            session.close()
-
-    def get_all_subscribed_groups(self) -> list[str]:
-        """
-        获取所有拥有订阅的群组 ID
-
-        Returns:
-            群组 ID 列表
-
-        """
-        session = self.Session()
-        try:
-            groups = session.query(Subscription.group_id).distinct().all()
-            return [g[0] for g in groups]
-        except Exception as e:
-            logger.error(f"获取所有订阅群组失败: {e}")
-            raise DatabaseError(f"获取所有订阅群组失败: {e}") from e
-        finally:
-            session.close()
-
-    def find_group_subscription_candidates(
-        self, group_id: str, keyword: str, limit: int = 5
-    ) -> list[BangumiSubject]:
-        """
-        在指定群组的订阅中查找与关键词匹配的番剧候选
-
-        匹配优先级:
-        1. subject_id 精确匹配
-        2. subject_id 前缀匹配
-        3. name 包含匹配(忽略大小写)
-        4. name 相似度(SequenceMatcher)
-        """
-        session = self.Session()
-        try:
-            normalized_keyword = str(keyword).strip()
-            if not normalized_keyword:
-                return []
-
-            keyword_lower = normalized_keyword.lower()
-            search_pattern = f"%{normalized_keyword}%"
-            base_query = session.query(BangumiSubject).join(
-                Subscription, Subscription.subject_id == BangumiSubject.subject_id
-            )
-            base_query = base_query.filter(Subscription.group_id == str(group_id))
-
-            direct_candidates = base_query.filter(
-                or_(
-                    BangumiSubject.subject_id == normalized_keyword,
-                    BangumiSubject.subject_id.like(f"{normalized_keyword}%"),
-                    BangumiSubject.name.ilike(search_pattern),
-                )
-            ).all()
-            if direct_candidates:
-                return self._rank_candidates(
-                    direct_candidates,
-                    normalized_keyword,
-                    keyword_lower,
-                    limit=limit,
-                )
-
-            all_candidates = base_query.all()
-            return self._rank_candidates(
-                all_candidates,
-                normalized_keyword,
-                keyword_lower,
-                limit=limit,
-                min_similarity=0.35,
-            )
-        except Exception as e:
-            logger.error(f"查询群组订阅候选失败: {e}")
-            raise DatabaseError(f"查询群组订阅候选失败: {e}") from e
-        finally:
-            session.close()
+        except Exception as exc:
+            raise RepositoryError(f"数据库迁移失败: {exc}") from exc
 
     @staticmethod
-    def _rank_candidates(
-        candidates: list[BangumiSubject],
-        normalized_keyword: str,
-        keyword_lower: str,
-        limit: int,
-        min_similarity: float = 0.0,
-    ) -> list[BangumiSubject]:
-        scored_candidates: list[tuple[_CandidateScore, BangumiSubject]] = []
-        for subject in candidates:
-            subject_id = str(subject.subject_id or "")
-            name = str(subject.name or "")
-            name_lower = name.lower()
-            score = _CandidateScore(
-                exact_id=int(subject_id == normalized_keyword),
-                prefix_id=int(subject_id.startswith(normalized_keyword)),
-                name_contains=int(keyword_lower in name_lower),
-                similarity=SequenceMatcher(None, keyword_lower, name_lower).ratio(),
-                subject_id=subject_id,
-            )
-            if (
-                score.exact_id == 0
-                and score.prefix_id == 0
-                and score.name_contains == 0
-                and score.similarity < min_similarity
-            ):
-                continue
-            scored_candidates.append((score, subject))
+    def _apply_subject(row: BangumiSubject, subject: Subject) -> None:
+        row.name = subject.name
+        row.name_cn = subject.name_cn
+        row.cover_url = subject.cover_url
+        row.summary = subject.summary
+        row.score = subject.score
+        row.rank = subject.rank
+        row.air_date = subject.air_date
+        row.total_episodes = subject.total_episodes
 
-        scored_candidates.sort(
-            key=lambda item: (
-                -item[0].exact_id,
-                -item[0].prefix_id,
-                -item[0].name_contains,
-                -item[0].similarity,
-                item[0].subject_id,
+    def upsert_subject(
+        self, subject: Subject, *, current_episode: int | None = None
+    ) -> None:
+        with self.Session.begin() as session:
+            row = session.get(BangumiSubject, str(subject.id))
+            if row is None:
+                row = BangumiSubject(subject_id=str(subject.id))
+                session.add(row)
+            self._apply_subject(row, subject)
+            if current_episode is not None:
+                row.current_episode = max(
+                    int(row.current_episode or 0), int(current_episode)
+                )
+
+    def subscribe(
+        self,
+        session_id: str,
+        subject: Subject,
+        *,
+        baseline_episode: int,
+        broadcast_time: str | None = None,
+    ) -> bool:
+        try:
+            with self.Session.begin() as session:
+                subject_id = str(subject.id)
+                row = session.get(BangumiSubject, subject_id)
+                if row is None:
+                    row = BangumiSubject(subject_id=subject_id)
+                    session.add(row)
+                self._apply_subject(row, subject)
+                row.current_episode = max(
+                    int(row.current_episode or 0), int(baseline_episode)
+                )
+                if broadcast_time and not row.broadcast_time:
+                    row.broadcast_time = broadcast_time
+
+                key = {"group_id": session_id, "subject_id": subject_id}
+                existing = session.get(Subscription, key)
+                if existing is not None:
+                    return False
+                session.add(
+                    Subscription(
+                        group_id=session_id,
+                        subject_id=subject_id,
+                        last_notified_episode=int(baseline_episode),
+                    )
+                )
+                return True
+        except Exception as exc:
+            raise RepositoryError(f"保存订阅失败: {exc}") from exc
+
+    def unsubscribe(self, session_id: str, subject_id: str) -> bool:
+        try:
+            with self.Session.begin() as session:
+                key = {"group_id": session_id, "subject_id": str(subject_id)}
+                subscription = session.get(Subscription, key)
+                if subscription is None:
+                    return False
+                session.delete(subscription)
+                session.flush()
+                remaining = session.scalar(
+                    select(Subscription).where(
+                        Subscription.subject_id == str(subject_id)
+                    )
+                )
+                if remaining is None:
+                    subject = session.get(BangumiSubject, str(subject_id))
+                    if subject is not None:
+                        session.delete(subject)
+                return True
+        except Exception as exc:
+            raise RepositoryError(f"取消订阅失败: {exc}") from exc
+
+    def migrate_session_aliases(
+        self, target_session_id: str, aliases: set[str]
+    ) -> int:
+        normalized_aliases = {
+            alias.strip()
+            for alias in aliases
+            if alias.strip() and alias.strip() != target_session_id
+        }
+        if not normalized_aliases:
+            return 0
+        try:
+            with self.Session.begin() as session:
+                sources = session.scalars(
+                    select(Subscription).where(
+                        Subscription.group_id.in_(normalized_aliases)
+                    )
+                ).all()
+                migrated = 0
+                for source in sources:
+                    key = {
+                        "group_id": target_session_id,
+                        "subject_id": source.subject_id,
+                    }
+                    target = session.get(Subscription, key)
+                    if target is None:
+                        target = Subscription(
+                            group_id=target_session_id,
+                            subject_id=source.subject_id,
+                            last_notified_episode=int(
+                                source.last_notified_episode or 0
+                            ),
+                            last_attempt_at=source.last_attempt_at,
+                            last_error=source.last_error,
+                            created_at=source.created_at,
+                        )
+                        session.add(target)
+                        session.flush()
+                    else:
+                        source_progress = int(source.last_notified_episode or 0)
+                        target_progress = int(target.last_notified_episode or 0)
+                        if source_progress > target_progress:
+                            target.last_notified_episode = source_progress
+                            target.last_attempt_at = source.last_attempt_at
+                            target.last_error = source.last_error
+                        if source.created_at and (
+                            not target.created_at
+                            or source.created_at < target.created_at
+                        ):
+                            target.created_at = source.created_at
+                    session.delete(source)
+                    migrated += 1
+                return migrated
+        except Exception as exc:
+            raise RepositoryError(f"迁移旧会话订阅失败: {exc}") from exc
+
+    def list_tracked_subjects(
+        self, *, session_id: str | None = None
+    ) -> list[TrackedSubject]:
+        try:
+            with self.Session() as session:
+                statement = select(BangumiSubject).join(Subscription).distinct()
+                if session_id is not None:
+                    statement = statement.where(Subscription.group_id == session_id)
+                rows = session.scalars(
+                    statement.order_by(BangumiSubject.subject_id)
+                ).all()
+                return [self._tracked(row) for row in rows]
+        except Exception as exc:
+            raise RepositoryError(f"读取追番条目失败: {exc}") from exc
+
+    def list_subscriptions(self, session_id: str) -> list[SubscriptionView]:
+        try:
+            with self.Session() as session:
+                rows = session.execute(
+                    select(Subscription, BangumiSubject)
+                    .join(
+                        BangumiSubject,
+                        BangumiSubject.subject_id == Subscription.subject_id,
+                    )
+                    .where(Subscription.group_id == session_id)
+                    .order_by(BangumiSubject.name_cn, BangumiSubject.name)
+                ).all()
+                return [
+                    self._subscription(subscription, subject)
+                    for subscription, subject in rows
+                ]
+        except Exception as exc:
+            raise RepositoryError(f"读取订阅列表失败: {exc}") from exc
+
+    def find_subscription(self, session_id: str, query: str) -> list[SubscriptionView]:
+        normalized = query.strip().lower()
+        if not normalized:
+            return []
+        rows = self.list_subscriptions(session_id)
+
+        def score(item: SubscriptionView) -> tuple[int, int, float, str]:
+            title = item.title.lower()
+            return (
+                int(item.subject_id == normalized),
+                int(normalized in title or item.subject_id.startswith(normalized)),
+                SequenceMatcher(None, normalized, title).ratio(),
+                item.subject_id,
             )
+
+        matches = [
+            item
+            for item in rows
+            if item.subject_id == normalized
+            or item.subject_id.startswith(normalized)
+            or normalized in item.title.lower()
+            or SequenceMatcher(None, normalized, item.title.lower()).ratio() >= 0.35
+        ]
+        return sorted(matches, key=score, reverse=True)
+
+    def pending_sessions(self, subject_id: str, episode: int) -> list[str]:
+        try:
+            with self.Session() as session:
+                rows = session.scalars(
+                    select(Subscription).where(
+                        Subscription.subject_id == str(subject_id),
+                        Subscription.last_notified_episode < int(episode),
+                    )
+                ).all()
+                return [str(row.group_id) for row in rows]
+        except Exception as exc:
+            raise RepositoryError(f"读取待通知会话失败: {exc}") from exc
+
+    def delivery_progress(
+        self, subject_id: str, session_ids: list[str]
+    ) -> dict[str, int]:
+        if not session_ids:
+            return {}
+        try:
+            with self.Session() as session:
+                rows = session.scalars(
+                    select(Subscription).where(
+                        Subscription.subject_id == str(subject_id),
+                        Subscription.group_id.in_(session_ids),
+                    )
+                ).all()
+                return {
+                    str(row.group_id): int(row.last_notified_episode or 0)
+                    for row in rows
+                }
+        except Exception as exc:
+            raise RepositoryError(f"读取通知进度失败: {exc}") from exc
+
+    def mark_notified(self, session_id: str, subject_id: str, episode: int) -> None:
+        try:
+            with self.Session.begin() as session:
+                subscription = session.get(
+                    Subscription,
+                    {"group_id": session_id, "subject_id": str(subject_id)},
+                )
+                if subscription is None:
+                    raise RepositoryError("订阅关系不存在")
+                subscription.last_notified_episode = max(
+                    int(subscription.last_notified_episode or 0), int(episode)
+                )
+                subscription.last_attempt_at = datetime.now()
+                subscription.last_error = None
+        except RepositoryError:
+            raise
+        except Exception as exc:
+            raise RepositoryError(f"更新通知进度失败: {exc}") from exc
+
+    def mark_delivery_error(self, session_id: str, subject_id: str, error: str) -> None:
+        try:
+            with self.Session.begin() as session:
+                subscription = session.get(
+                    Subscription,
+                    {"group_id": session_id, "subject_id": str(subject_id)},
+                )
+                if subscription is not None:
+                    subscription.last_attempt_at = datetime.now()
+                    subscription.last_error = error[:1000]
+        except Exception as exc:
+            logger.error(f"记录通知错误失败: {exc}")
+
+    def mark_checked(
+        self,
+        subject_id: str,
+        *,
+        current_episode: int | None = None,
+        error: str | None = None,
+    ) -> None:
+        try:
+            with self.Session.begin() as session:
+                subject = session.get(BangumiSubject, str(subject_id))
+                if subject is None:
+                    return
+                if current_episode is not None:
+                    subject.current_episode = max(
+                        int(subject.current_episode or 0), int(current_episode)
+                    )
+                subject.last_checked_at = datetime.now()
+                subject.last_error = error[:1000] if error else None
+        except Exception as exc:
+            raise RepositoryError(f"记录检查状态失败: {exc}") from exc
+
+    def set_broadcast_time(self, subject_id: str, value: str | None) -> bool:
+        try:
+            with self.Session.begin() as session:
+                subject = session.get(BangumiSubject, str(subject_id))
+                if subject is None:
+                    return False
+                subject.broadcast_time = value
+                return True
+        except Exception as exc:
+            raise RepositoryError(f"设置放送时间失败: {exc}") from exc
+
+    def apply_broadcast_times(self, mapping: dict[str, str]) -> int:
+        if not mapping:
+            return 0
+        updated = 0
+        try:
+            with self.Session.begin() as session:
+                rows = session.scalars(
+                    select(BangumiSubject).where(
+                        BangumiSubject.subject_id.in_(list(mapping))
+                    )
+                ).all()
+                for row in rows:
+                    if not row.broadcast_time and row.subject_id in mapping:
+                        row.broadcast_time = mapping[row.subject_id]
+                        updated += 1
+            return updated
+        except Exception as exc:
+            raise RepositoryError(f"更新放送时间失败: {exc}") from exc
+
+    @staticmethod
+    def _tracked(row: BangumiSubject) -> TrackedSubject:
+        return TrackedSubject(
+            subject_id=str(row.subject_id),
+            title=str(row.name_cn or row.name or f"条目 {row.subject_id}"),
+            name=str(row.name or ""),
+            cover_url=str(row.cover_url or ""),
+            air_date=str(row.air_date or ""),
+            total_episodes=int(row.total_episodes or 0),
+            current_episode=int(row.current_episode or 0),
+            broadcast_time=str(row.broadcast_time) if row.broadcast_time else None,
+            last_checked_at=(
+                row.last_checked_at.isoformat(timespec="seconds")
+                if row.last_checked_at
+                else None
+            ),
+            last_error=str(row.last_error) if row.last_error else None,
         )
-        return [subject for _, subject in scored_candidates[:limit]]
+
+    @staticmethod
+    def _subscription(
+        subscription: Subscription, subject: BangumiSubject
+    ) -> SubscriptionView:
+        return SubscriptionView(
+            session_id=str(subscription.group_id),
+            subject_id=str(subject.subject_id),
+            title=str(subject.name_cn or subject.name or f"条目 {subject.subject_id}"),
+            cover_url=str(subject.cover_url or ""),
+            total_episodes=int(subject.total_episodes or 0),
+            current_episode=int(subject.current_episode or 0),
+            last_notified_episode=int(subscription.last_notified_episode or 0),
+            broadcast_time=(
+                str(subject.broadcast_time) if subject.broadcast_time else None
+            ),
+            last_checked_at=(
+                subject.last_checked_at.isoformat(timespec="seconds")
+                if subject.last_checked_at
+                else None
+            ),
+            subject_error=str(subject.last_error) if subject.last_error else None,
+            delivery_error=(
+                str(subscription.last_error) if subscription.last_error else None
+            ),
+        )

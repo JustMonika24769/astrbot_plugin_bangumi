@@ -1,0 +1,18 @@
+<!doctype html>
+<html lang="zh-CN"><head><meta charset="utf-8"><style>/*__CARD_CSS__*/</style></head>
+<body><main class="sheet">
+  <header class="masthead"><div class="brand"><strong>Bangumi</strong><span>Subject dossier</span></div><div class="masthead-meta">ID {{ subject.id }}{% if subscribed %} · 已加入追番{% endif %}</div></header>
+  <section class="content subject-layout">
+    <div class="cover"><div class="cover-placeholder">NO COVER</div>{% if subject.cover_url %}<img src="{{ subject.cover_url | e }}" alt="cover" onerror="this.style.display='none'">{% endif %}{% if subscribed %}<span class="cover-badge">TRACKING</span>{% endif %}</div>
+    <article>
+      <p class="eyebrow">{{ subject.platform }} · {{ subject.air_date }}</p><h1>{{ subject.title | e }}</h1>
+      {% if subject.original_title %}<p class="subtle">{{ subject.original_title | e }}</p>{% endif %}
+      <div class="score-row"><div class="score-box"><strong>{{ subject.score }}</strong><span>{{ subject.score_count }} 人评分</span></div><div class="metric"><strong>{% if subject.rank %}#{{ subject.rank }}{% else %}--{% endif %}</strong><span>Bangumi 排名</span></div><div class="metric"><strong>{% if subject.total_episodes %}{{ subject.total_episodes }}{% else %}?{% endif %}</strong><span>计划集数</span></div></div>
+      <div class="meta-grid"><div class="meta-item"><span>条目 ID</span><strong>{{ subject.id }}</strong></div><div class="meta-item"><span>开播日期</span><strong>{{ subject.air_date }}</strong></div>{% if latest %}<div class="meta-item"><span>当前已播</span><strong>第 {{ latest.number }} 集</strong></div><div class="meta-item"><span>最近播出</span><strong>{{ latest.air_date }}</strong></div>{% endif %}</div>
+      {% if subject.tags %}<div class="tags">{% for tag in subject.tags %}<span class="tag">{{ tag | e }}</span>{% endfor %}</div>{% endif %}
+      <section class="summary"><p>{% if subject.summary %}{{ subject.summary | e }}{% else %}暂无条目简介。{% endif %}</p></section>
+      {% if latest %}<div class="status-strip"><span>最近一集：{{ latest.title | e }}</span><strong>EP {{ latest.number }}</strong></div>{% endif %}
+    </article>
+  </section>
+  <footer class="footer"><span>{{ subject.url }}</span><span>AstrBot T2I</span></footer>
+</main></body></html>

@@ -6,6 +6,12 @@
 """
 
 from .models import BangumiSubject, Base, Subscription
-from .repository import BangumiRepository
+from .repository import BangumiRepository, RepositoryError
 
-__all__ = ["BangumiRepository", "BangumiSubject", "Base", "Subscription"]
+__all__ = [
+    "BangumiRepository",
+    "BangumiSubject",
+    "Base",
+    "RepositoryError",
+    "Subscription",
+]

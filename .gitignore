@@ -12,6 +12,7 @@ data/
 *.iml
 .env
 rendered_images/
+dist/
 
 # Agent/Codex artifacts
 memory.md

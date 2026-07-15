@@ -1,10 +1,9 @@
 """
 APScheduler 管理器
 
-此模块提供了一个为 asyncio 和特定时区配置的 APScheduler 单例管理器
+此模块提供了一个使用指定时区的 APScheduler 生命周期管理器
 """
 
-import asyncio
 from collections.abc import Callable
 
 import pytz
@@ -19,24 +18,10 @@ class SchedulerManager:
     它使用 Asia/Shanghai 时区初始化调度器,并提供添加、删除和管理任务的方法
     """
 
-    _instance = None
-    _lock = asyncio.Lock()
-
-    def __new__(cls, *args: object, **kwargs: object) -> "SchedulerManager":
-        # 伪单例实现,确保只存在一个调度器实例
-        if cls._instance is None:
-            cls._instance = super().__new__(cls)
-        return cls._instance
-
     def __init__(self) -> None:
-        """
-        初始化 SchedulerManager
-        每次调用 SchedulerManager() 时都会调用此方法,但调度器本身只创建一次
-        """
-        if not hasattr(self, "scheduler"):
-            self.scheduler = AsyncIOScheduler(timezone=pytz.timezone("Asia/Shanghai"))
-            self.scheduler.start()
-            logger.info("调度器已初始化并在 Asia/Shanghai 时区启动.")
+        self.scheduler = AsyncIOScheduler(timezone=pytz.timezone("Asia/Shanghai"))
+        self.scheduler.start()
+        logger.info("调度器已初始化并在 Asia/Shanghai 时区启动.")
 
     def add_job(
         self, func: Callable[..., object], trigger: str, **kwargs: object
@@ -74,10 +59,10 @@ class SchedulerManager:
         except (RuntimeError, ValueError, TypeError) as e:
             logger.error(f"取消任务失败{job_id}: {e}")
 
-    def shutdown(self) -> None:
+    def shutdown(self, wait: bool = False) -> None:
         """
         关闭调度器
         """
         if self.scheduler.running:
-            self.scheduler.shutdown()
+            self.scheduler.shutdown(wait=wait)
             logger.info("调度器已关闭.")

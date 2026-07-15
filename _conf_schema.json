@@ -1,74 +1,72 @@
 {
   "access_token": {
-    "description": "Bangumi API访问令牌(部分接口需授权)",
+    "description": "Bangumi API 访问令牌（可选）",
     "type": "string",
-    "hint": "在https://next.bgm.tv/demo/access-token生成,格式为Bearer令牌",
+    "hint": "公开查询无需令牌；配置后请求会携带 Bearer Token",
     "default": ""
   },
   "user_agent": {
-    "description": "请求头User-Agent标识",
+    "description": "Bangumi API User-Agent",
     "type": "string",
-    "hint": "如果为空,则使用插件默认值",
+    "hint": "建议填写可联系的项目标识；留空使用插件默认值",
+    "default": "AstrBot-Bangumi-Plugin/v2.0.3 (https://github.com/united-pooh/astrbot_plugin_bangumi)"
+  },
+  "proxy_url": {
+    "description": "插件网络代理",
+    "type": "string",
+    "hint": "用于 Bangumi 和 bgmlist 请求的完整代理地址，例如 http://127.0.0.1:7890；留空直连",
     "default": ""
   },
-  "max_fuzzy_results": {
-    "description": "模糊搜索返回的最大结果数量",
+  "search_limit": {
+    "description": "默认搜索结果数",
     "type": "int",
-    "hint": "取值范围1-200,数值越大返回结果越多",
+    "hint": "名称搜索和追番候选最多展示多少项",
     "default": 5,
-    "min": 1,
-    "max": 200
-  },
-  "proxy_http": {
-    "description": "代理地址",
-    "type": "string",
-    "hint": "IP, 例: 192.168.0.x",
-    "default": ""
-  },
-  "port": {
-    "description": "端口",
-    "type": "string",
-    "hint": "代理端口, 例: 7890",
-    "default": ""
-  },
-  "max_retries": {
-    "description": "最大重试次数",
-    "type": "int",
-    "hint": "网络错误时最大的重试次数",
-    "default": 3,
     "min": 1,
     "max": 10
   },
-  "render_server_url": {
-    "description": "RPC 渲染服务器地址",
-    "type": "string",
-    "hint": "用于远程渲染图片的 RPC 服务器地址",
-    "default": "https://api.unitedpooh.top/rpc"
+  "check_interval_minutes": {
+    "description": "追番检查间隔（分钟）",
+    "type": "int",
+    "hint": "插件启动约 12 秒后首次检查，随后按此间隔执行",
+    "default": 15,
+    "min": 5,
+    "max": 180
   },
-  "render_mode": {
-    "description": "图片渲染方式",
-    "type": "string",
-    "hint": "默认 pillow；playwright 为本地浏览器渲染；rpc 为远程 RPC 渲染。旧值 html 会兼容为 playwright",
-    "default": "pillow",
-    "options": ["pillow", "playwright", "rpc"]
+  "request_timeout_seconds": {
+    "description": "Bangumi API 超时（秒）",
+    "type": "int",
+    "hint": "单次 HTTP 请求的总超时时间",
+    "default": 25,
+    "min": 5,
+    "max": 120
   },
-  "episode_card_template": {
-    "description": "图片卡片风格",
-    "type": "string",
-    "hint": "用于 /bgm 搜索结果、单集更新卡片和长文本响应卡片；1=pastel_lightbox，2=editorial_digest，3=cinematic_poster；默认使用第 1 个粉彩模板",
-    "default": "pastel_lightbox",
-    "options": ["pastel_lightbox", "editorial_digest", "cinematic_poster"]
+  "max_retries": {
+    "description": "Bangumi API 最大尝试次数",
+    "type": "int",
+    "hint": "网络错误、限流或服务端错误时自动重试",
+    "default": 3,
+    "min": 1,
+    "max": 6
+  },
+  "card_quality": {
+    "description": "AstrBot T2I JPEG 质量",
+    "type": "int",
+    "hint": "所有卡片统一通过 AstrBot 配置的 t2i-service 渲染",
+    "default": 88,
+    "min": 50,
+    "max": 100
+  },
+  "auto_translate_subject_summary": {
+    "description": "自动翻译条目简介",
+    "type": "bool",
+    "hint": "简介包含日文假名时调用当前 AstrBot 默认模型翻译成中文，失败时保留原文",
+    "default": false
   },
   "auto_translate_episode_summary": {
     "description": "自动翻译单集简介",
     "type": "bool",
-    "hint": "订阅更新渲染单集卡片前，使用 AstrBot 默认聊天模型将非空单集简介翻译为中文；失败时保留原文",
-    "default": false
-  },
-  "auto_translate_subject_summary": {
-    "description": "自动翻译番剧简介",
-    "type": "bool",
-    "hint": "/bgm 搜索结果渲染番剧卡片前，自动识别日文或中日混合简介并使用 AstrBot 默认聊天模型翻译为中文；纯中文简介会跳过，失败时保留原文",
+    "hint": "单集简介包含日文假名时调用当前 AstrBot 默认模型翻译，失败时保留原文",
     "default": false
   }
 }

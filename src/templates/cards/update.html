@@ -1,0 +1,14 @@
+<!doctype html>
+<html lang="zh-CN"><head><meta charset="utf-8"><style>/*__CARD_CSS__*/</style></head>
+<body><main class="sheet">
+  <header class="masthead"><div class="brand"><strong>Bangumi</strong><span>Episode alert</span></div><div class="masthead-meta">{{ episode.air_date }} · ID {{ subject.id }}</div></header>
+  <section class="content update-layout">
+    <div class="cover"><div class="cover-placeholder">NO COVER</div>{% if subject.cover_url %}<img src="{{ subject.cover_url | e }}" alt="cover" onerror="this.style.display='none'">{% endif %}<span class="cover-badge">NEW EPISODE</span></div>
+    <article><p class="eyebrow">{{ subject.title | e }}</p><div class="episode-number"><small>EPISODE</small> {{ episode.number }}</div><h1>{{ episode.title | e }}</h1>{% if episode.original_title %}<p class="subtle">{{ episode.original_title | e }}</p>{% endif %}
+      <div class="meta-grid"><div class="meta-item"><span>播出日期</span><strong>{{ episode.air_date }}</strong></div><div class="meta-item"><span>时长</span><strong>{{ episode.duration or '未知' }}</strong></div><div class="meta-item"><span>此前已通知</span><strong>EP {{ previous_episode }}</strong></div><div class="meta-item"><span>评论</span><strong>{{ episode.comments }}</strong></div></div>
+      {% if missed_count %}<div class="status-strip"><span>期间还有 {{ missed_count }} 集未逐集推送</span><strong>已定位到最新集</strong></div>{% endif %}
+      <div class="episode-summary">{% if episode.summary %}{{ episode.summary | e }}{% else %}本集暂无简介，详情可前往 Bangumi 查看。{% endif %}</div>
+    </article>
+  </section>
+  <footer class="footer"><span>{{ episode.url }}</span><span>AstrBot T2I</span></footer>
+</main></body></html>

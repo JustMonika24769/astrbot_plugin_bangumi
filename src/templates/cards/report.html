@@ -1,0 +1,7 @@
+<!doctype html>
+<html lang="zh-CN"><head><meta charset="utf-8"><style>/*__CARD_CSS__*/</style></head>
+<body><main class="sheet">
+  <header class="masthead"><div class="brand"><strong>Bangumi</strong><span>Diagnostics</span></div><div class="masthead-meta">追番检查报告</div></header>
+  <section class="content"><h1>{{ summary | e }}</h1><div class="report-metrics"><div class="report-metric"><strong>{{ subjects_checked }}/{{ subjects_total }}</strong><span>已检查条目</span></div><div class="report-metric"><strong>{{ pending }}</strong><span>待通知</span></div><div class="report-metric"><strong>{{ delivered }}</strong><span>发送成功</span></div><div class="report-metric"><strong>{{ failed }}</strong><span>失败</span></div></div>{% if details %}<ul class="log-list">{% for detail in details %}<li>{{ detail | e }}</li>{% endfor %}</ul>{% endif %}</section>
+  <footer class="footer"><span>失败通知将在下一轮重试</span><span>AstrBot T2I</span></footer>
+</main></body></html>

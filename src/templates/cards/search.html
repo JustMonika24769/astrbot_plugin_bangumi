@@ -1,0 +1,13 @@
+<!doctype html>
+<html lang="zh-CN"><head><meta charset="utf-8"><style>/*__CARD_CSS__*/</style></head>
+<body><main class="sheet">
+  <header class="masthead"><div class="brand"><strong>Bangumi</strong><span>{{ heading }}</span></div><div class="masthead-meta">“{{ query | e }}” · {{ subjects | length }} 项</div></header>
+  <section class="content"><div class="list">
+    {% for subject in subjects %}<article class="result-row">
+      <div class="thumb"><span>NO COVER</span>{% if subject.cover_url %}<img src="{{ subject.cover_url | e }}" alt="cover" onerror="this.style.display='none'">{% endif %}</div>
+      <div class="row-main"><span class="result-index">{{ loop.index }}</span><h2>{{ subject.title | e }}</h2>{% if subject.original_title %}<p>{{ subject.original_title | e }}</p>{% endif %}<div class="tags">{% for tag in subject.tags[:4] %}<span class="tag">{{ tag | e }}</span>{% endfor %}</div><span class="id-label">ID {{ subject.id }} · {{ subject.air_date }} · {{ subject.platform }}</span></div>
+      <div class="row-side"><strong>{{ subject.score }}</strong><span class="subtle">{% if subject.rank %}排名 #{{ subject.rank }}{% else %}暂无排名{% endif %}</span><span class="subtle">{% if subject.total_episodes %}{{ subject.total_episodes }} 集{% endif %}</span></div>
+    </article>{% endfor %}
+  </div></section>
+  <footer class="footer"><span>使用条目 ID 可精确查询或追番</span><span>AstrBot T2I</span></footer>
+</main></body></html>

@@ -1,0 +1,13 @@
+<!doctype html>
+<html lang="zh-CN"><head><meta charset="utf-8"><style>/*__CARD_CSS__*/</style></head>
+<body><main class="sheet">
+  <header class="masthead"><div class="brand"><strong>Bangumi</strong><span>Tracking desk</span></div><div class="masthead-meta">本会话 {{ subscriptions | length }} 项订阅</div></header>
+  <section class="content"><div class="list">
+    {% for item in subscriptions %}<article class="subscription-row">
+      <div class="thumb"><span>NO COVER</span>{% if item.cover_url %}<img src="{{ item.cover_url | e }}" alt="cover" onerror="this.style.display='none'">{% endif %}</div>
+      <div class="row-main"><h2>{{ item.title | e }}</h2><span class="id-label">ID {{ item.subject_id }} · 放送 {{ item.broadcast_time }}</span><p>API 已检测 EP {{ item.current_episode }} · 本会话已通知 EP {{ item.last_notified_episode }}{% if item.total_episodes %} · 全 {{ item.total_episodes }} 集{% endif %}</p><div class="progress-track"><div class="progress-fill" style="width: {{ item.progress }}%"></div></div>{% if item.error %}<p class="error-label">{{ item.error | e }}</p>{% endif %}</div>
+      <div class="row-side">{% if item.pending %}<span class="pending-label">等待重试</span>{% else %}<span class="ok-label">进度正常</span>{% endif %}<span class="subtle">{{ item.last_checked_at }}</span></div>
+    </article>{% endfor %}
+  </div></section>
+  <footer class="footer"><span>/追番检查 可立即检查更新</span><span>AstrBot T2I</span></footer>
+</main></body></html>

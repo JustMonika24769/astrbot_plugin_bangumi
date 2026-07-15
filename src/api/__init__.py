@@ -1,17 +1,3 @@
-from .bangumi import BangumiService
-from .base import BaseBangumiService
-from .calendar import CalendarService
-from .characters import CharactersService
-from .persons import PersonsService
-from .subjects import SubjectsService
-from .users import UsersService
+from .bgmlist import fetch_onair_data
 
-__all__ = [
-    "BangumiService",
-    "BaseBangumiService",
-    "CalendarService",
-    "CharactersService",
-    "PersonsService",
-    "SubjectsService",
-    "UsersService",
-]
+__all__ = ["fetch_onair_data"]

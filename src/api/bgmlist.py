@@ -49,6 +49,7 @@ def _parse_broadcast_time(begin_iso: str) -> str | None:
 
 async def fetch_onair_data(
     session: aiohttp.ClientSession | None = None,
+    proxy_url: str | None = None,
 ) -> dict[str, str] | None:
     """
     从 bgmlist API 获取放送中番剧的播出时间数据
@@ -69,7 +70,7 @@ async def fetch_onair_data(
             _session = aiohttp.ClientSession(
                 timeout=aiohttp.ClientTimeout(total=15, connect=10),
                 headers={
-                    "User-Agent": "AstrBot-BangumiPlugin/1.0",
+                    "User-Agent": "AstrBot-BangumiPlugin/2.0",
                     "Accept": "application/json",
                 },
             )
@@ -80,9 +81,10 @@ async def fetch_onair_data(
             BGM_LIST_API,
             timeout=aiohttp.ClientTimeout(total=15, connect=10),
             headers={
-                "User-Agent": "AstrBot-BangumiPlugin/1.0",
+                "User-Agent": "AstrBot-BangumiPlugin/2.0",
                 "Accept": "application/json",
             },
+            proxy=proxy_url,
         ) as resp:
             if resp.status != 200:
                 logger.warning(f"bgmlist API 返回 {resp.status}")
