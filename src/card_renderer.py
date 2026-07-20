@@ -44,7 +44,26 @@ class T2ICardRenderer:
             raise CardRenderError(f"AstrBot T2I 渲染失败: {exc}") from exc
         if not path:
             raise CardRenderError("AstrBot T2I 未返回图片路径")
+        output = Path(str(path))
+        if output.is_file() and not self._has_image_signature(output):
+            raise CardRenderError(
+                "AstrBot T2I 返回了非图片文件，可能是远程服务错误页"
+            )
         return str(path)
+
+    @staticmethod
+    def _has_image_signature(path: Path) -> bool:
+        try:
+            with path.open("rb") as file:
+                header = file.read(12)
+        except OSError:
+            return False
+        return (
+            header.startswith(b"\xff\xd8\xff")
+            or header.startswith(b"\x89PNG\r\n\x1a\n")
+            or header.startswith((b"GIF87a", b"GIF89a"))
+            or (header.startswith(b"RIFF") and header[8:12] == b"WEBP")
+        )
 
     async def subject_card(
         self,
@@ -109,7 +128,7 @@ class T2ICardRenderer:
                         "current_episode": item.current_episode,
                         "last_notified_episode": item.last_notified_episode,
                         "total_episodes": item.total_episodes,
-                        "broadcast_time": item.broadcast_time or "未设置",
+                        "broadcast_schedule": item.broadcast_schedule,
                         "last_checked_at": self._display_datetime(item.last_checked_at),
                         "pending": item.is_pending,
                         "error": item.delivery_error or item.subject_error or "",

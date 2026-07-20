@@ -4,7 +4,7 @@ import sqlite3
 from pathlib import Path
 
 from astrbot_plugin_bangumi.src.db import BangumiRepository
-from astrbot_plugin_bangumi.src.entities import Subject
+from astrbot_plugin_bangumi.src.entities import BroadcastSchedule, Subject
 
 
 def build_repository(tmp_path: Path) -> BangumiRepository:
@@ -46,6 +46,26 @@ def test_delivery_error_is_visible_and_cleared_after_success(tmp_path: Path) -> 
 
     repository.mark_notified("g1", "1", 2)
     assert repository.list_subscriptions("g1")[0].delivery_error is None
+
+
+def test_broadcast_schedule_stores_date_weekday_and_time(tmp_path: Path) -> None:
+    repository = build_repository(tmp_path)
+    repository.subscribe("g1", sample_subject(), baseline_episode=1)
+
+    updated = repository.apply_broadcast_schedules(
+        {
+            "1": BroadcastSchedule(
+                broadcast_date="2026-07-15",
+                broadcast_time="23:30",
+            )
+        }
+    )
+
+    assert updated == 1
+    status = repository.list_subscriptions("g1")[0]
+    assert status.broadcast_date == "2026-07-15"
+    assert status.broadcast_time == "23:30"
+    assert status.broadcast_schedule == "首播 2026-07-15 · 每周三 23:30"
 
 
 def test_find_and_unsubscribe_are_session_scoped(tmp_path: Path) -> None:
@@ -107,3 +127,4 @@ def test_old_database_is_migrated_without_losing_progress(tmp_path: Path) -> Non
     status = repository.list_subscriptions("g1")[0]
     assert status.last_notified_episode == 5
     assert status.current_episode == 5
+    assert status.broadcast_date is None

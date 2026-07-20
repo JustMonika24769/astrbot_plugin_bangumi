@@ -13,18 +13,20 @@ from collections.abc import Mapping
 import aiohttp
 from astrbot.api import logger
 
+from ..entities import BroadcastSchedule
+
 BGM_LIST_API = "https://bgmlist.com/api/v1/bangumi/onair"
 
 
-def _parse_broadcast_time(begin_iso: str) -> str | None:
+def _parse_broadcast_schedule(begin_iso: str) -> BroadcastSchedule | None:
     """
-    从 bgmlist 的 begin 字段解析出 CST (UTC+8) 的播出时间 HH:MM
+    从 bgmlist 的 begin 字段解析出 CST (UTC+8) 的首播日期和时间
 
     Args:
         begin_iso: ISO 格式的首次播出时间,如 "2026-04-06T14:00:00.000Z"
 
     Returns:
-        "HH:MM" 格式的 CST 时间,解析失败返回 None
+        CST 首播安排,解析失败返回 None
     """
     if not begin_iso:
         return None
@@ -41,16 +43,25 @@ def _parse_broadcast_time(begin_iso: str) -> str | None:
         cst_offset = datetime.timedelta(hours=8)
         cst_dt = dt.astimezone(datetime.timezone(cst_offset))
 
-        return cst_dt.strftime("%H:%M")
+        return BroadcastSchedule(
+            broadcast_date=cst_dt.strftime("%Y-%m-%d"),
+            broadcast_time=cst_dt.strftime("%H:%M"),
+        )
     except (ValueError, TypeError) as e:
         logger.warning(f"解析广播时间失败: {begin_iso} - {e}")
         return None
 
 
+def _parse_broadcast_time(begin_iso: str) -> str | None:
+    """兼容旧调用方，仅返回 CST 时间。"""
+    schedule = _parse_broadcast_schedule(begin_iso)
+    return schedule.broadcast_time if schedule else None
+
+
 async def fetch_onair_data(
     session: aiohttp.ClientSession | None = None,
     proxy_url: str | None = None,
-) -> dict[str, str] | None:
+) -> dict[str, BroadcastSchedule] | None:
     """
     从 bgmlist API 获取放送中番剧的播出时间数据
 
@@ -58,8 +69,7 @@ async def fetch_onair_data(
         session: 可选的 aiohttp.ClientSession。若为 None 则创建临时 session。
 
     Returns:
-        {bangumi_subject_id: broadcast_time_cst} 的映射
-        如 {"377130": "22:00", "558088": "23:30"}
+        {bangumi_subject_id: BroadcastSchedule} 的映射
         失败返回 None
     """
     _session: aiohttp.ClientSession | None = session
@@ -96,7 +106,7 @@ async def fetch_onair_data(
             logger.warning("bgmlist API 返回格式异常: data 非列表")
             return None
 
-        result: dict[str, str] = {}
+        result: dict[str, BroadcastSchedule] = {}
         for item in items:
             if not isinstance(item, Mapping):
                 continue
@@ -115,9 +125,11 @@ async def fetch_onair_data(
 
             # 解析播出时间
             begin_raw = item.get("begin")
-            broadcast_time = _parse_broadcast_time(str(begin_raw) if begin_raw else "")
-            if broadcast_time:
-                result[bangumi_id] = broadcast_time
+            schedule = _parse_broadcast_schedule(
+                str(begin_raw) if begin_raw else ""
+            )
+            if schedule:
+                result[bangumi_id] = schedule
 
         logger.info(f"从 bgmlist 获取到 {len(result)} 条放送时间数据")
         return result

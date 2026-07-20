@@ -1,7 +1,7 @@
 name: astrbot_plugin_bangumi_enhance
 display_name: Bangumi 增强版v2
 desc: 基于 Bangumi API 与 AstrBot T2I 的条目检索、放送日历和可靠追番通知插件
-version: v2.0.4
+version: v2.1.0
 author: JustMonika
 license: Apache-2.0
 repo: https://github.com/JustMonika24769/astrbot_plugin_bangumi

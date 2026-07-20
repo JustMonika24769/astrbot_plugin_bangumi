@@ -3,9 +3,10 @@ from __future__ import annotations
 import asyncio
 import os
 import re
-from collections.abc import AsyncGenerator
+from collections.abc import AsyncGenerator, Awaitable, Callable
+from contextlib import suppress
 from dataclasses import replace
-from datetime import datetime, timedelta
+from datetime import date, datetime, timedelta
 from typing import Any
 
 import aiohttp
@@ -15,6 +16,12 @@ from astrbot.api import logger
 from astrbot.api.all import AstrBotConfig
 from astrbot.api.event import AstrMessageEvent, filter
 from astrbot.api.star import Context, Star, StarTools
+from astrbot.core.utils.session_waiter import (
+    USER_SESSIONS,
+    SessionController,
+    SessionFilter,
+    session_waiter,
+)
 
 from .src.app.summary_translation import (
     summary_needs_chinese_translation,
@@ -40,7 +47,7 @@ HELP_COMMANDS = [
     {"command": "/today", "description": "查看今天的动画放送。"},
     {
         "command": "/追番 <名称|ID>",
-        "description": "订阅动画更新；名称有歧义时会给出候选 ID。",
+        "description": "订阅动画更新；名称有歧义时回复候选序号。",
     },
     {
         "command": "/追番列表",
@@ -53,10 +60,31 @@ HELP_COMMANDS = [
     },
     {"command": "/弃坑 <名称|ID>", "description": "取消本会话订阅。"},
     {
-        "command": "/放送时间 [名称|ID] [HH:MM|清空]",
-        "description": "查看或修正中国标准时间下的放送时间。",
+        "command": "/放送时间 [名称|ID] [日期] [时间]",
+        "description": "查看或修正 CST 首播日期和每周放送时间。",
     },
 ]
+
+
+class _NumericSelectionFilter(SessionFilter):
+    """Match numeric replies from the user who started a selection."""
+
+    def __init__(self, origin_event: AstrMessageEvent) -> None:
+        self.origin_event = origin_event
+        self.session_id = self._event_key(origin_event)
+
+    @staticmethod
+    def _event_key(event: AstrMessageEvent) -> str:
+        return (
+            "astrbot-plugin-bangumi:selection:"
+            f"{event.unified_msg_origin}:{event.get_sender_id()}"
+        )
+
+    def filter(self, event: AstrMessageEvent) -> str:
+        message = event.get_message_str().strip()
+        if event is self.origin_event or re.fullmatch(r"\d+", message):
+            return self.session_id
+        return f"{self._event_key(event)}:non-selection"
 
 
 class BangumiPlugin(Star):  # type: ignore[misc]
@@ -156,12 +184,9 @@ class BangumiPlugin(Star):  # type: ignore[misc]
             session_id = f"{platform_id}:{message_type}:{raw_session_id}"
 
         platform_id = session_id.split(":", 1)[0]
-        platform_name = str(
-            getattr(getattr(event, "platform_meta", None), "name", "")
-        )
+        platform_name = str(getattr(getattr(event, "platform_meta", None), "name", ""))
         is_legacy_qq_context = (
-            platform_id.lower() == "aiocqhttp"
-            or platform_name.lower() == "aiocqhttp"
+            platform_id.lower() == "aiocqhttp" or platform_name.lower() == "aiocqhttp"
         )
         if group_id and is_legacy_qq_context and self.repository is not None:
             legacy_id = str(group_id)
@@ -172,13 +197,9 @@ class BangumiPlugin(Star):  # type: ignore[misc]
             }
             aliases.discard(session_id)
             try:
-                migrated = self.repository.migrate_session_aliases(
-                    session_id, aliases
-                )
+                migrated = self.repository.migrate_session_aliases(session_id, aliases)
                 if migrated:
-                    logger.info(
-                        f"已将 {migrated} 条旧会话订阅迁移到 {session_id}"
-                    )
+                    logger.info(f"已将 {migrated} 条旧会话订阅迁移到 {session_id}")
             except RepositoryError as exc:
                 logger.warning(f"迁移旧会话订阅失败，继续使用当前会话: {exc}")
         return session_id
@@ -256,6 +277,133 @@ class BangumiPlugin(Star):  # type: ignore[misc]
             logger.error(f"卡片渲染失败，回退文字: {type(exc).__name__}: {exc}")
             return event.plain_result(fallback_text)
 
+    @staticmethod
+    def _command_argument_text(
+        event: AstrMessageEvent,
+        command_names: tuple[str, ...],
+        fallback: str = "",
+    ) -> str:
+        """Read the complete command tail instead of AstrBot's first token only."""
+        raw_message = event.get_message_str()
+        if not isinstance(raw_message, str):
+            return fallback.strip()
+        message = re.sub(r"\s+", " ", raw_message.strip())
+        for command_name in sorted(command_names, key=len, reverse=True):
+            for prefix in (command_name, f"/{command_name}"):
+                if message == prefix:
+                    return ""
+                if message.startswith(f"{prefix} "):
+                    return message[len(prefix) :].strip()
+        return fallback.strip()
+
+    @staticmethod
+    def _search_request(value: str, default_limit: int = 3) -> tuple[str, int]:
+        normalized = value.strip()
+        parts = normalized.rsplit(maxsplit=1)
+        if len(parts) == 2 and parts[1].isdigit():
+            requested_limit = int(parts[1])
+            if 1 <= requested_limit <= 10:
+                return parts[0].strip(), requested_limit
+        return normalized, default_limit
+
+    async def _subject_result(
+        self, event: AstrMessageEvent, candidate: Subject
+    ) -> object:
+        assert self.api is not None and self.cards is not None
+        subject = await self.api.get_subject(candidate.id)
+        subject = await self.api.with_embedded_cover(subject)
+        subject = await self._translate_subject(subject)
+        latest = None
+        if subject.type == 2:
+            latest = await self.api.get_latest_aired_episode(subject.id)
+        fallback = self._subject_text(subject, latest.number if latest else 0)
+        return await self._render_or_text(
+            event,
+            self.cards.subject_card(subject, latest=latest),
+            fallback,
+        )
+
+    async def _subscribe_result(
+        self,
+        event: AstrMessageEvent,
+        session_id: str,
+        candidate: Subject,
+    ) -> object:
+        assert (
+            self.api is not None
+            and self.cards is not None
+            and self.tracking is not None
+        )
+        try:
+            subject = await self.api.get_subject(candidate.id)
+            outcome = await self.tracking.subscribe(session_id, subject)
+            subject_for_card = await self.api.with_embedded_cover(subject)
+            subject_for_card = await self._translate_subject(subject_for_card)
+            status = "订阅成功" if outcome.created else "本会话已经订阅过该条目"
+            try:
+                path = await self.cards.subject_card(
+                    subject_for_card,
+                    latest=outcome.latest_episode,
+                    subscribed=True,
+                )
+            except CardRenderError as exc:
+                logger.error(f"订阅已保存，但确认卡片渲染失败: {exc}")
+                latest_number = (
+                    outcome.latest_episode.number if outcome.latest_episode else 0
+                )
+                return event.plain_result(
+                    f"{status}：《{subject.title}》\n"
+                    f"当前通知基线：EP {latest_number}\n"
+                    "确认卡片渲染失败，请使用 /追番测试 检查 AstrBot T2I。"
+                )
+            return event.chain_result(
+                [
+                    Comp.Image.fromFileSystem(path),
+                    Comp.Plain(f"\n{status}：{subject_for_card.title}"),
+                ]
+            )
+        except (BangumiClientError, RepositoryError) as exc:
+            return event.plain_result(f"追番失败: {exc}")
+
+    async def _wait_for_subject_selection(
+        self,
+        event: AstrMessageEvent,
+        subjects: list[Subject],
+        on_selected: Callable[[AstrMessageEvent, Subject], Awaitable[object]],
+    ) -> None:
+        selection_filter = _NumericSelectionFilter(event)
+        previous = USER_SESSIONS.get(selection_filter.session_id)
+        if previous is not None:
+            previous.session_controller.stop()
+            await asyncio.sleep(0)
+
+        @session_waiter(60)
+        async def selection_waiter(
+            controller: SessionController,
+            reply_event: AstrMessageEvent,
+        ) -> None:
+            selected_index = int(reply_event.get_message_str().strip()) - 1
+            if not 0 <= selected_index < len(subjects):
+                await reply_event.send(
+                    reply_event.plain_result(
+                        f"序号无效，请回复 1-{len(subjects)} 之间的数字。"
+                    )
+                )
+                controller.keep(timeout=60, reset_timeout=True)
+                return
+
+            controller.keep(timeout=60, reset_timeout=True)
+            try:
+                result = await on_selected(reply_event, subjects[selected_index])
+            except Exception as exc:
+                logger.error(f"处理搜索结果选择失败: {type(exc).__name__}: {exc}")
+                result = reply_event.plain_result(f"处理所选条目失败: {exc}")
+            await reply_event.send(result)
+            controller.stop()
+
+        with suppress(TimeoutError):
+            await selection_waiter(event, selection_filter)
+
     async def _help_result(self, event: AstrMessageEvent) -> object:
         assert self.cards is not None
         fallback = "Bangumi 指令\n" + "\n".join(
@@ -276,11 +424,12 @@ class BangumiPlugin(Star):  # type: ignore[misc]
         subject_types: tuple[int, ...] | None = None,
         tags: tuple[str, ...] | None = None,
         heading: str = "搜索结果",
-    ) -> object:
+    ) -> AsyncGenerator[object, None]:
         assert self.api is not None and self.cards is not None
         normalized = query.strip()
         if not normalized or normalized.lower() in {"help", "帮助", "?"}:
-            return await self._help_result(event)
+            yield await self._help_result(event)
+            return
 
         limit = max(1, min(self.config.search_limit, top_k))
         try:
@@ -291,93 +440,105 @@ class BangumiPlugin(Star):  # type: ignore[misc]
                 tags=tags,
             )
             if not subjects:
-                return event.plain_result(f"没有找到与“{normalized}”匹配的条目")
+                yield event.plain_result(f"没有找到与“{normalized}”匹配的条目")
+                return
 
             if len(subjects) == 1:
-                subject = await self.api.get_subject(subjects[0].id)
-                subject = await self.api.with_embedded_cover(subject)
-                subject = await self._translate_subject(subject)
-                latest = None
-                if subject.type == 2:
-                    latest = await self.api.get_latest_aired_episode(subject.id)
-                fallback = self._subject_text(subject, latest.number if latest else 0)
-                return await self._render_or_text(
-                    event,
-                    self.cards.subject_card(subject, latest=latest),
-                    fallback,
-                )
+                yield await self._subject_result(event, subjects[0])
+                return
 
             subjects = await self._embed_search_covers(subjects)
-            fallback = "\n".join(
+            fallback = "请选择条目并在 60 秒内回复序号：\n" + "\n".join(
                 f"{index}. {subject.title} (ID:{subject.id})"
                 for index, subject in enumerate(subjects, start=1)
             )
-            return await self._render_or_text(
+            yield await self._render_or_text(
                 event,
                 self.cards.search_card(normalized, subjects, heading=heading),
                 fallback,
             )
+            await self._wait_for_subject_selection(
+                event,
+                subjects,
+                self._subject_result,
+            )
         except BangumiClientError as exc:
-            return event.plain_result(f"Bangumi 查询失败: {exc}")
+            yield event.plain_result(f"Bangumi 查询失败: {exc}")
 
     @filter.command("bgm")  # type: ignore[untyped-decorator]
     async def search(
-        self, event: AstrMessageEvent, query: str = "", top_k: int = 3
+        self, event: AstrMessageEvent, query: str = ""
     ) -> AsyncGenerator[object, None]:
         if not self._ready():
             yield event.plain_result("Bangumi 服务尚未初始化")
             return
-        yield await self._search(event, query, top_k)
+        raw_query = self._command_argument_text(event, ("bgm",), query)
+        normalized, top_k = self._search_request(raw_query)
+        async for result in self._search(event, normalized, top_k):
+            yield result
 
     @filter.command(  # type: ignore[untyped-decorator]
         "bgm番剧", alias={"bgm动漫", "bgm动画", "bgm番", "bgm动画片"}
     )
     async def search_anime(
-        self, event: AstrMessageEvent, query: str = "", top_k: int = 3
+        self, event: AstrMessageEvent, query: str = ""
     ) -> AsyncGenerator[object, None]:
         if not self._ready():
             yield event.plain_result("Bangumi 服务尚未初始化")
             return
-        yield await self._search(
+        raw_query = self._command_argument_text(
             event,
+            ("bgm番剧", "bgm动漫", "bgm动画", "bgm番", "bgm动画片"),
             query,
+        )
+        normalized, top_k = self._search_request(raw_query)
+        async for result in self._search(
+            event,
+            normalized,
             top_k,
             subject_types=(2,),
             tags=("TV",),
             heading="TV 动画",
-        )
+        ):
+            yield result
 
     @filter.command("bgm剧场版", alias={"bgm电影"})  # type: ignore[untyped-decorator]
     async def search_movie(
-        self, event: AstrMessageEvent, query: str = "", top_k: int = 3
+        self, event: AstrMessageEvent, query: str = ""
     ) -> AsyncGenerator[object, None]:
         if not self._ready():
             yield event.plain_result("Bangumi 服务尚未初始化")
             return
-        yield await self._search(
+        raw_query = self._command_argument_text(event, ("bgm剧场版", "bgm电影"), query)
+        normalized, top_k = self._search_request(raw_query)
+        async for result in self._search(
             event,
-            query,
+            normalized,
             top_k,
             subject_types=(2,),
             tags=("剧场版",),
             heading="动画剧场版",
-        )
+        ):
+            yield result
 
     @filter.command("bgm漫画")  # type: ignore[untyped-decorator]
     async def search_manga(
-        self, event: AstrMessageEvent, query: str = "", top_k: int = 3
+        self, event: AstrMessageEvent, query: str = ""
     ) -> AsyncGenerator[object, None]:
         if not self._ready():
             yield event.plain_result("Bangumi 服务尚未初始化")
             return
-        yield await self._search(
+        raw_query = self._command_argument_text(event, ("bgm漫画",), query)
+        normalized, top_k = self._search_request(raw_query)
+        async for result in self._search(
             event,
-            query,
+            normalized,
             top_k,
             subject_types=(1,),
             tags=("漫画",),
             heading="漫画",
-        )
+        ):
+            yield result
 
     @filter.command("calendar", alias={"放送表"})  # type: ignore[untyped-decorator]
     async def calendar(self, event: AstrMessageEvent) -> AsyncGenerator[object, None]:
@@ -428,7 +589,7 @@ class BangumiPlugin(Star):  # type: ignore[misc]
         if not self._ready() or not session_id:
             yield event.plain_result("订阅服务未就绪或无法识别当前会话")
             return
-        normalized = query.strip()
+        normalized = self._command_argument_text(event, ("追番",), query)
         if not normalized:
             yield event.plain_result("用法：/追番 <动画名称或 Bangumi ID>")
             return
@@ -447,47 +608,29 @@ class BangumiPlugin(Star):  # type: ignore[misc]
                 yield event.plain_result(f"没有找到动画“{normalized}”")
                 return
             if len(candidates) > 1:
-                fallback = "匹配到多个条目，请使用 ID 追番：\n" + "\n".join(
-                    f"{item.title} (ID:{item.id})" for item in candidates
+                candidates = await self._embed_search_covers(candidates)
+                fallback = "请选择要追番的条目并在 60 秒内回复序号：\n" + "\n".join(
+                    f"{index}. {item.title} (ID:{item.id})"
+                    for index, item in enumerate(candidates, start=1)
                 )
                 result = await self._render_or_text(
                     event,
                     self.cards.search_card(
-                        normalized, candidates, heading="请选择准确条目 ID"
+                        normalized, candidates, heading="请选择要追番的条目"
                     ),
                     fallback,
                 )
                 yield result
+                await self._wait_for_subject_selection(
+                    event,
+                    candidates,
+                    lambda reply_event, candidate: self._subscribe_result(
+                        reply_event, session_id, candidate
+                    ),
+                )
                 return
 
-            subject = await self.api.get_subject(candidates[0].id)
-            outcome = await self.tracking.subscribe(session_id, subject)
-            subject_for_card = await self.api.with_embedded_cover(subject)
-            subject_for_card = await self._translate_subject(subject_for_card)
-            status = "订阅成功" if outcome.created else "本会话已经订阅过该条目"
-            try:
-                path = await self.cards.subject_card(
-                    subject_for_card,
-                    latest=outcome.latest_episode,
-                    subscribed=True,
-                )
-            except CardRenderError as exc:
-                logger.error(f"订阅已保存，但确认卡片渲染失败: {exc}")
-                latest_number = (
-                    outcome.latest_episode.number if outcome.latest_episode else 0
-                )
-                yield event.plain_result(
-                    f"{status}：《{subject.title}》\n"
-                    f"当前通知基线：EP {latest_number}\n"
-                    "确认卡片渲染失败，请使用 /追番测试 检查 AstrBot T2I。"
-                )
-                return
-            yield event.chain_result(
-                [
-                    Comp.Image.fromFileSystem(path),
-                    Comp.Plain(f"\n{status}：{subject_for_card.title}"),
-                ]
-            )
+            yield await self._subscribe_result(event, session_id, candidates[0])
         except (BangumiClientError, RepositoryError) as exc:
             yield event.plain_result(f"追番失败: {exc}")
 
@@ -499,13 +642,14 @@ class BangumiPlugin(Star):  # type: ignore[misc]
         if not self._ready() or not session_id:
             yield event.plain_result("订阅服务未就绪或无法识别当前会话")
             return
-        if not query.strip():
+        normalized = self._command_argument_text(event, ("弃坑",), query)
+        if not normalized:
             yield event.plain_result("用法：/弃坑 <动画名称或 Bangumi ID>")
             return
         assert self.repository is not None
-        matches = self.repository.find_subscription(session_id, query)
+        matches = self.repository.find_subscription(session_id, normalized)
         if not matches:
-            yield event.plain_result(f"本会话没有与“{query}”匹配的订阅")
+            yield event.plain_result(f"本会话没有与“{normalized}”匹配的订阅")
             return
         if len(matches) > 1:
             yield event.plain_result(
@@ -566,12 +710,13 @@ class BangumiPlugin(Star):  # type: ignore[misc]
         if not self._ready() or not session_id:
             yield event.plain_result("订阅服务未就绪或无法识别当前会话")
             return
-        if not query.strip():
+        normalized = self._command_argument_text(event, ("追番测试",), query)
+        if not normalized:
             yield event.plain_result("用法：/追番测试 <动画名称或 Bangumi ID>")
             return
         assert self.tracking is not None
         try:
-            path = await self.tracking.render_test_card(session_id, query)
+            path = await self.tracking.render_test_card(session_id, normalized)
             yield event.image_result(path)
         except Exception as exc:
             yield event.plain_result(f"测试卡片生成失败: {exc}")
@@ -582,6 +727,7 @@ class BangumiPlugin(Star):  # type: ignore[misc]
         event: AstrMessageEvent,
         query: str = "",
         value: str = "",
+        time_value: str = "",
     ) -> AsyncGenerator[object, None]:
         session_id = self._session_id(event)
         if not self._ready() or not session_id:
@@ -612,23 +758,52 @@ class BangumiPlugin(Star):  # type: ignore[misc]
             return
         item = matches[0]
         normalized_value = value.strip()
-        if not normalized_value:
+        normalized_time = time_value.strip()
+        if not normalized_value and not normalized_time:
             yield event.plain_result(
-                f"《{item.title}》当前放送时间：{item.broadcast_time or '未设置'}（CST）"
+                f"《{item.title}》当前放送安排：{item.broadcast_schedule}（CST）"
             )
             return
-        if normalized_value in {"清空", "清除", "reset", "none"}:
+        target_date = item.broadcast_date
+        target_time = item.broadcast_time
+        clear_values = {"清空", "清除", "reset", "none"}
+        time_pattern = r"(?:[01]\d|2[0-3]):[0-5]\d"
+        date_pattern = r"\d{4}-\d{2}-\d{2}"
+        if normalized_value.lower() in clear_values and not normalized_time:
+            target_date = None
             target_time = None
-        elif re.fullmatch(r"(?:[01]\d|2[0-3]):[0-5]\d", normalized_value):
+        elif normalized_time:
+            if not re.fullmatch(date_pattern, normalized_value) or not self._is_date(
+                normalized_value
+            ):
+                yield event.plain_result(
+                    "日期格式错误，请使用 YYYY-MM-DD，例如 2026-07-15"
+                )
+                return
+            if not re.fullmatch(time_pattern, normalized_time):
+                yield event.plain_result("时间格式错误，请使用 HH:MM，例如 22:30")
+                return
+            target_date = normalized_value
+            target_time = normalized_time
+        elif re.fullmatch(time_pattern, normalized_value):
             target_time = normalized_value
+        elif re.fullmatch(date_pattern, normalized_value) and self._is_date(
+            normalized_value
+        ):
+            target_date = normalized_value
         else:
             yield event.plain_result(
-                "时间格式错误，请使用 HH:MM，例如 22:30，或使用“清空”"
+                "格式错误：可使用 HH:MM、YYYY-MM-DD、YYYY-MM-DD HH:MM，或“清空”"
             )
             return
-        self.repository.set_broadcast_time(item.subject_id, target_time)
+        self.repository.set_broadcast_schedule(
+            item.subject_id,
+            broadcast_date=target_date,
+            broadcast_time=target_time,
+        )
+        updated = self.repository.find_subscription(session_id, item.subject_id)[0]
         yield event.plain_result(
-            f"已将《{item.title}》放送时间设置为 {target_time or '未设置'}（CST）"
+            f"已将《{item.title}》放送安排设置为：{updated.broadcast_schedule}（CST）"
         )
 
     @filter.command("bgm模板")  # type: ignore[untyped-decorator]
@@ -671,6 +846,14 @@ class BangumiPlugin(Star):  # type: ignore[misc]
         return "\n".join(
             f"{item.title} (ID:{item.subject_id}) "
             f"API EP{item.current_episode} / 已通知 EP{item.last_notified_episode} "
-            f"放送 {item.broadcast_time or '未设置'}"
+            f"放送 {item.broadcast_schedule}"
             for item in subscriptions
         )
+
+    @staticmethod
+    def _is_date(value: str) -> bool:
+        try:
+            date.fromisoformat(value)
+            return True
+        except ValueError:
+            return False

@@ -23,6 +23,7 @@ class BangumiSubject(Base):
     air_date: Mapped[str | None] = mapped_column(String, nullable=True)
     total_episodes: Mapped[int] = mapped_column(Integer, default=0)
     current_episode: Mapped[int] = mapped_column(Integer, default=0)
+    broadcast_date: Mapped[str | None] = mapped_column(String, nullable=True)
     broadcast_time: Mapped[str | None] = mapped_column(String, nullable=True)
     last_checked_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     last_error: Mapped[str | None] = mapped_column(Text, nullable=True)

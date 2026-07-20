@@ -63,7 +63,10 @@ def episode_fixture() -> Episode:
     )
 
 
-async def render_previews(output_dir: Path) -> list[Path]:
+async def render_previews(
+    output_dir: Path,
+    only: set[str] | None = None,
+) -> list[Path]:
     await html_renderer.initialize()
     renderer = T2ICardRenderer(html_renderer.render_custom_template, quality=90)
     subject = subject_fixture()
@@ -116,6 +119,7 @@ async def render_previews(output_dir: Path) -> list[Path]:
             total_episodes=13,
             current_episode=11,
             last_notified_episode=10,
+            broadcast_date="2024-04-05",
             broadcast_time="23:30",
             last_checked_at="2026-07-14T19:30:00",
             subject_error=None,
@@ -155,6 +159,8 @@ async def render_previews(output_dir: Path) -> list[Path]:
     output_dir.mkdir(parents=True, exist_ok=True)
     outputs: list[Path] = []
     for name, render in renders.items():
+        if only and name not in only:
+            continue
         source = Path(await render())
         target = output_dir / f"{name}.jpg"
         shutil.copy2(source, target)
@@ -169,8 +175,23 @@ def main() -> int:
         type=Path,
         default=PROJECT_ROOT / "rendered_images" / "t2i-v2",
     )
+    parser.add_argument(
+        "--only",
+        nargs="+",
+        choices=(
+            "subject",
+            "search",
+            "calendar",
+            "subscriptions",
+            "update",
+            "report",
+        ),
+        help="只渲染指定卡片，可同时指定多个名称",
+    )
     args = parser.parse_args()
-    outputs = asyncio.run(render_previews(args.output_dir))
+    outputs = asyncio.run(
+        render_previews(args.output_dir, set(args.only) if args.only else None)
+    )
     for output in outputs:
         print(output)
     return 0

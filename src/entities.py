@@ -4,6 +4,46 @@ from dataclasses import dataclass, field
 from datetime import date
 from typing import Any
 
+WEEKDAY_NAMES = ("一", "二", "三", "四", "五", "六", "日")
+
+
+def format_broadcast_schedule(
+    broadcast_date: str | None,
+    broadcast_time: str | None,
+) -> str:
+    normalized_date = (broadcast_date or "").strip()
+    normalized_time = (broadcast_time or "").strip()
+    weekday = ""
+    if normalized_date:
+        parsed = parse_iso_date(normalized_date)
+        if parsed:
+            weekday = WEEKDAY_NAMES[parsed.weekday()]
+    if normalized_date and normalized_time:
+        weekday_text = f" · 每周{weekday}" if weekday else " · 时间"
+        return f"首播 {normalized_date}{weekday_text} {normalized_time}"
+    if normalized_date:
+        return (
+            f"首播 {normalized_date}（周{weekday}）"
+            if weekday
+            else f"首播 {normalized_date}"
+        )
+    if normalized_time:
+        return f"时间 {normalized_time}"
+    return "未设置"
+
+
+@dataclass(frozen=True, slots=True)
+class BroadcastSchedule:
+    broadcast_date: str
+    broadcast_time: str
+
+    @property
+    def display(self) -> str:
+        return format_broadcast_schedule(
+            self.broadcast_date,
+            self.broadcast_time,
+        )
+
 
 @dataclass(frozen=True, slots=True)
 class Subject:
@@ -76,9 +116,17 @@ class TrackedSubject:
     air_date: str
     total_episodes: int
     current_episode: int
+    broadcast_date: str | None
     broadcast_time: str | None
     last_checked_at: str | None
     last_error: str | None
+
+    @property
+    def broadcast_schedule(self) -> str:
+        return format_broadcast_schedule(
+            self.broadcast_date,
+            self.broadcast_time,
+        )
 
 
 @dataclass(frozen=True, slots=True)
@@ -90,6 +138,7 @@ class SubscriptionView:
     total_episodes: int
     current_episode: int
     last_notified_episode: int
+    broadcast_date: str | None
     broadcast_time: str | None
     last_checked_at: str | None
     subject_error: str | None
@@ -98,6 +147,13 @@ class SubscriptionView:
     @property
     def is_pending(self) -> bool:
         return self.current_episode > self.last_notified_episode
+
+    @property
+    def broadcast_schedule(self) -> str:
+        return format_broadcast_schedule(
+            self.broadcast_date,
+            self.broadcast_time,
+        )
 
 
 @dataclass(frozen=True, slots=True)

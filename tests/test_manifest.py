@@ -40,9 +40,9 @@ def test_metadata_and_readme_versions_match() -> None:
     readme = (ROOT / "README.md").read_text(encoding="utf-8")
     changelog = (ROOT / "CHANGELOG.md").read_text(encoding="utf-8")
 
-    assert metadata["version"] == "v2.0.4"
-    assert "version-v2.0.4-blue" in readme
-    assert "## v2.0.4" in changelog
+    assert metadata["version"] == "v2.1.0"
+    assert "version-v2.1.0-blue" in readme
+    assert "## v2.1.0" in changelog
 
 
 def test_all_registered_commands_are_documented() -> None:

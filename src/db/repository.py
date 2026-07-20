@@ -8,7 +8,7 @@ from astrbot.api import logger
 from sqlalchemy import Engine, create_engine, inspect, select, text
 from sqlalchemy.orm import sessionmaker
 
-from ..entities import Subject, SubscriptionView, TrackedSubject
+from ..entities import BroadcastSchedule, Subject, SubscriptionView, TrackedSubject
 from .models import BangumiSubject, Base, Subscription
 
 
@@ -31,6 +31,7 @@ class BangumiRepository:
     @staticmethod
     def _migrate(engine: Engine) -> None:
         subject_columns = {
+            "broadcast_date": "VARCHAR",
             "broadcast_time": "VARCHAR",
             "name_cn": "VARCHAR",
             "cover_url": "TEXT",
@@ -115,6 +116,7 @@ class BangumiRepository:
         subject: Subject,
         *,
         baseline_episode: int,
+        broadcast_date: str | None = None,
         broadcast_time: str | None = None,
     ) -> bool:
         try:
@@ -130,6 +132,8 @@ class BangumiRepository:
                 )
                 if broadcast_time and not row.broadcast_time:
                     row.broadcast_time = broadcast_time
+                if broadcast_date and not row.broadcast_date:
+                    row.broadcast_date = broadcast_date
 
                 key = {"group_id": session_id, "subject_id": subject_id}
                 existing = session.get(Subscription, key)
@@ -368,18 +372,40 @@ class BangumiRepository:
         except Exception as exc:
             raise RepositoryError(f"记录检查状态失败: {exc}") from exc
 
-    def set_broadcast_time(self, subject_id: str, value: str | None) -> bool:
+    def set_broadcast_schedule(
+        self,
+        subject_id: str,
+        *,
+        broadcast_date: str | None,
+        broadcast_time: str | None,
+    ) -> bool:
         try:
             with self.Session.begin() as session:
                 subject = session.get(BangumiSubject, str(subject_id))
                 if subject is None:
                     return False
-                subject.broadcast_time = value
+                subject.broadcast_date = broadcast_date
+                subject.broadcast_time = broadcast_time
                 return True
+        except Exception as exc:
+            raise RepositoryError(f"设置放送安排失败: {exc}") from exc
+
+    def set_broadcast_time(self, subject_id: str, value: str | None) -> bool:
+        try:
+            with self.Session() as session:
+                subject = session.get(BangumiSubject, str(subject_id))
+                broadcast_date = subject.broadcast_date if subject else None
+            return self.set_broadcast_schedule(
+                subject_id,
+                broadcast_date=broadcast_date,
+                broadcast_time=value,
+            )
         except Exception as exc:
             raise RepositoryError(f"设置放送时间失败: {exc}") from exc
 
-    def apply_broadcast_times(self, mapping: dict[str, str]) -> int:
+    def apply_broadcast_schedules(
+        self, mapping: dict[str, BroadcastSchedule]
+    ) -> int:
         if not mapping:
             return 0
         updated = 0
@@ -391,12 +417,21 @@ class BangumiRepository:
                     )
                 ).all()
                 for row in rows:
-                    if not row.broadcast_time and row.subject_id in mapping:
-                        row.broadcast_time = mapping[row.subject_id]
+                    schedule = mapping.get(row.subject_id)
+                    if schedule is None:
+                        continue
+                    changed = False
+                    if not row.broadcast_date:
+                        row.broadcast_date = schedule.broadcast_date
+                        changed = True
+                    if not row.broadcast_time:
+                        row.broadcast_time = schedule.broadcast_time
+                        changed = True
+                    if changed:
                         updated += 1
             return updated
         except Exception as exc:
-            raise RepositoryError(f"更新放送时间失败: {exc}") from exc
+            raise RepositoryError(f"更新放送安排失败: {exc}") from exc
 
     @staticmethod
     def _tracked(row: BangumiSubject) -> TrackedSubject:
@@ -408,6 +443,9 @@ class BangumiRepository:
             air_date=str(row.air_date or ""),
             total_episodes=int(row.total_episodes or 0),
             current_episode=int(row.current_episode or 0),
+            broadcast_date=(
+                str(row.broadcast_date) if row.broadcast_date else None
+            ),
             broadcast_time=str(row.broadcast_time) if row.broadcast_time else None,
             last_checked_at=(
                 row.last_checked_at.isoformat(timespec="seconds")
@@ -429,6 +467,9 @@ class BangumiRepository:
             total_episodes=int(subject.total_episodes or 0),
             current_episode=int(subject.current_episode or 0),
             last_notified_episode=int(subscription.last_notified_episode or 0),
+            broadcast_date=(
+                str(subject.broadcast_date) if subject.broadcast_date else None
+            ),
             broadcast_time=(
                 str(subject.broadcast_time) if subject.broadcast_time else None
             ),

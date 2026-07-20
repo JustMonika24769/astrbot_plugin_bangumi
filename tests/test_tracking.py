@@ -6,7 +6,11 @@ from unittest.mock import AsyncMock, MagicMock
 import pytest
 
 from astrbot_plugin_bangumi.src.card_renderer import CardRenderError
-from astrbot_plugin_bangumi.src.entities import SubscribeResult, TrackedSubject
+from astrbot_plugin_bangumi.src.entities import (
+    BroadcastSchedule,
+    SubscribeResult,
+    TrackedSubject,
+)
 from astrbot_plugin_bangumi.src.plugin_config import PluginConfig
 from astrbot_plugin_bangumi.src.tracking import SubscriptionManager
 
@@ -30,15 +34,25 @@ async def test_subscribe_uses_latest_episode_as_baseline(
     repository = MagicMock()
     repository.subscribe.return_value = True
     manager = build_manager(api, repository, MagicMock(), context)
+    manager._broadcast_schedules[str(subject.id)] = BroadcastSchedule(
+        broadcast_date="2026-07-15",
+        broadcast_time="23:30",
+    )
 
     result = await manager.subscribe("session", subject)
 
     assert result == SubscribeResult(subject, episode, True)
+    api.get_latest_aired_episode.assert_awaited_once_with(
+        subject.id,
+        broadcast_time="23:30",
+        refresh=True,
+    )
     repository.subscribe.assert_called_once_with(
         "session",
         subject,
         baseline_episode=4,
-        broadcast_time=None,
+        broadcast_date="2026-07-15",
+        broadcast_time="23:30",
     )
 
 
@@ -60,6 +74,7 @@ async def test_check_updates_marks_only_successful_delivery(
             air_date=subject.air_date,
             total_episodes=12,
             current_episode=3,
+            broadcast_date=None,
             broadcast_time=None,
             last_checked_at=None,
             last_error=None,
@@ -105,6 +120,7 @@ async def test_check_updates_merges_aliases_before_sending(
             air_date=subject.air_date,
             total_episodes=12,
             current_episode=3,
+            broadcast_date=None,
             broadcast_time=None,
             last_checked_at=None,
             last_error=None,
@@ -151,6 +167,7 @@ async def test_check_updates_falls_back_to_text_when_t2i_fails(
             air_date=subject.air_date,
             total_episodes=12,
             current_episode=3,
+            broadcast_date=None,
             broadcast_time=None,
             last_checked_at=None,
             last_error=None,
@@ -184,6 +201,7 @@ async def test_check_updates_does_not_render_without_pending_sessions(
         SimpleNamespace(
             subject_id=str(subject.id),
             title=subject.title,
+            broadcast_date=None,
             broadcast_time=None,
         )
     ]

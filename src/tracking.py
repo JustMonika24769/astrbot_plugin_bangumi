@@ -16,7 +16,13 @@ from .app.summary_translation import (
 from .bangumi_client import BangumiClient
 from .card_renderer import CardRenderError, T2ICardRenderer
 from .db import BangumiRepository
-from .entities import Episode, Subject, SubscribeResult, UpdateReport
+from .entities import (
+    BroadcastSchedule,
+    Episode,
+    Subject,
+    SubscribeResult,
+    UpdateReport,
+)
 from .plugin_config import PluginConfig
 
 
@@ -36,7 +42,7 @@ class SubscriptionManager:
         self.context = context
         self.config = config
         self._check_lock = asyncio.Lock()
-        self._broadcast_times: dict[str, str] = {}
+        self._broadcast_schedules: dict[str, BroadcastSchedule] = {}
 
     async def refresh_broadcast_times(self) -> int:
         mapping = await fetch_onair_data(
@@ -46,13 +52,14 @@ class SubscriptionManager:
         if not mapping:
             logger.warning("bgmlist 放送时间不可用，保留现有设置")
             return 0
-        self._broadcast_times = mapping
-        updated = self.repository.apply_broadcast_times(mapping)
+        self._broadcast_schedules = mapping
+        updated = self.repository.apply_broadcast_schedules(mapping)
         logger.info(f"放送时间刷新完成: API={len(mapping)}, 数据库更新={updated}")
         return updated
 
     async def subscribe(self, session_id: str, subject: Subject) -> SubscribeResult:
-        broadcast_time = self._broadcast_times.get(str(subject.id))
+        schedule = self._broadcast_schedules.get(str(subject.id))
+        broadcast_time = schedule.broadcast_time if schedule else None
         latest = await self.api.get_latest_aired_episode(
             subject.id, broadcast_time=broadcast_time, refresh=True
         )
@@ -61,6 +68,7 @@ class SubscriptionManager:
             session_id,
             subject,
             baseline_episode=baseline,
+            broadcast_date=schedule.broadcast_date if schedule else None,
             broadcast_time=broadcast_time,
         )
         return SubscribeResult(subject=subject, latest_episode=latest, created=created)
