@@ -125,9 +125,7 @@ async def fetch_onair_data(
 
             # 解析播出时间
             begin_raw = item.get("begin")
-            schedule = _parse_broadcast_schedule(
-                str(begin_raw) if begin_raw else ""
-            )
+            schedule = _parse_broadcast_schedule(str(begin_raw) if begin_raw else "")
             if schedule:
                 result[bangumi_id] = schedule
 

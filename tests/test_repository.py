@@ -128,3 +128,26 @@ def test_old_database_is_migrated_without_losing_progress(tmp_path: Path) -> Non
     assert status.last_notified_episode == 5
     assert status.current_episode == 5
     assert status.broadcast_date is None
+
+
+def test_exact_id_and_title_are_not_ambiguous(tmp_path: Path) -> None:
+    from dataclasses import replace
+
+    repository = build_repository(tmp_path)
+    repository.subscribe("g1", sample_subject(), baseline_episode=0)
+    repository.subscribe(
+        "g1", replace(sample_subject(), id=12, name_cn="示例续集"), baseline_episode=0
+    )
+
+    assert [row.subject_id for row in repository.find_subscription("g1", "1")] == ["1"]
+    assert [row.subject_id for row in repository.find_subscription("g1", "示例")] == [
+        "1"
+    ]
+    assert repository.find_subscription("g1", "2") == []
+
+
+def test_database_filename_without_directory(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.chdir(tmp_path)
+    repository = BangumiRepository("data.db")
+    assert repository.subscribe("g1", sample_subject(), baseline_episode=0)
+    repository.close()

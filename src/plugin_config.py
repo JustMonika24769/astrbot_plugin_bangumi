@@ -4,8 +4,8 @@ from typing import Any
 from urllib.parse import urlsplit, urlunsplit
 
 DEFAULT_USER_AGENT = (
-    "AstrBot-Bangumi-Plugin/v2.1.0 "
-    "(https://github.com/united-pooh/astrbot_plugin_bangumi)"
+    "AstrBot-Bangumi-Plugin/v2.3.3 "
+    "(https://github.com/JustMonika24769/astrbot_plugin_bangumi)"
 )
 
 
@@ -20,7 +20,7 @@ class PluginConfig:
     def _integer(self, key: str, default: int, low: int, high: int) -> int:
         try:
             value = int(self._config.get(key, default))
-        except (TypeError, ValueError):
+        except (TypeError, ValueError, OverflowError):
             value = default
         return max(low, min(high, value))
 

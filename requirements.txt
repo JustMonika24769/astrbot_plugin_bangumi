@@ -1,4 +1,4 @@
 aiohttp
-apscheduler
+apscheduler>=3.10,<4
 pytz
-SQLAlchemy
+SQLAlchemy>=2,<3

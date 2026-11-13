@@ -40,3 +40,7 @@ def test_config_boolean_parsing() -> None:
 
     assert config.auto_translate_subject_summary is True
     assert config.auto_translate_episode_summary is False
+
+
+def test_infinite_numeric_config_falls_back_to_default() -> None:
+    assert PluginConfig({"search_limit": float("inf")}).search_limit == 5

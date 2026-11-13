@@ -45,10 +45,10 @@ class T2ICardRenderer:
         if not path:
             raise CardRenderError("AstrBot T2I 未返回图片路径")
         output = Path(str(path))
-        if output.is_file() and not self._has_image_signature(output):
-            raise CardRenderError(
-                "AstrBot T2I 返回了非图片文件，可能是远程服务错误页"
-            )
+        if not output.is_file():
+            raise CardRenderError("AstrBot T2I 返回的图片文件不存在")
+        if not self._has_image_signature(output):
+            raise CardRenderError("AstrBot T2I 返回了非图片文件，可能是远程服务错误页")
         return str(path)
 
     @staticmethod

@@ -289,3 +289,95 @@ def _event(message: str = "") -> MagicMock:
     event.chain_result.side_effect = lambda chain: chain
     event.send = AsyncMock()
     return event
+
+
+def test_selection_filter_rejects_other_users_and_sessions() -> None:
+    origin = _event("/bgm sample")
+    selection = module._NumericSelectionFilter(origin)
+    own_reply = _event("1")
+    other_user = _event("1")
+    other_user.get_sender_id.return_value = "someone-else"
+    other_session = _event("1")
+    other_session.unified_msg_origin = "telegram:GroupMessage:999"
+
+    assert selection.filter(origin) == selection.session_id
+    assert selection.filter(own_reply) == selection.session_id
+    assert selection.filter(other_user) != selection.session_id
+    assert selection.filter(other_session) != selection.session_id
+    assert selection.filter(_event("hello")) != selection.session_id
+    assert selection.filter(_event("²")) != selection.session_id
+
+
+@pytest.mark.asyncio
+async def test_subscription_covers_do_not_fetch_subject_details() -> None:
+    plugin = BangumiPlugin.__new__(BangumiPlugin)
+    plugin.api = MagicMock()
+    plugin.api.with_embedded_cover = AsyncMock(side_effect=lambda subject: subject)
+    item = SimpleNamespace(subject_id="1", title="Sample", cover_url="cover.jpg")
+    # A dataclass is required by replace; reuse the repository view shape.
+    subscription = SubscriptionView(
+        session_id="s",
+        subject_id=item.subject_id,
+        title=item.title,
+        cover_url=item.cover_url,
+        total_episodes=12,
+        current_episode=1,
+        last_notified_episode=1,
+        broadcast_date=None,
+        broadcast_time=None,
+        last_checked_at=None,
+        subject_error=None,
+        delivery_error=None,
+    )
+
+    result = await plugin._embed_subscription_covers([subscription])
+
+    assert result == [subscription]
+    plugin.api.get_subject.assert_not_called()
+    plugin.api.with_embedded_cover.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_initialize_failure_releases_resources() -> None:
+    plugin = BangumiPlugin.__new__(BangumiPlugin)
+    plugin._initialize = AsyncMock(side_effect=RuntimeError("database unavailable"))
+    plugin.terminate = AsyncMock()
+
+    with pytest.raises(RuntimeError, match="database unavailable"):
+        await plugin.initialize()
+
+    plugin.terminate.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_search_uses_configured_default_limit() -> None:
+    plugin = BangumiPlugin.__new__(BangumiPlugin)
+    plugin.config = SimpleNamespace(search_limit=7)
+    plugin.api = MagicMock()
+    plugin.api.search_subjects = AsyncMock(return_value=[])
+    plugin.cards = MagicMock()
+    plugin.tracking = MagicMock()
+    plugin.repository = MagicMock()
+
+    _ = [result async for result in BangumiPlugin.search(plugin, _event("/bgm 示例"))]
+
+    assert plugin.api.search_subjects.await_args.kwargs["limit"] == 7
+
+
+@pytest.mark.asyncio
+async def test_terminate_closes_session_and_database() -> None:
+    plugin = BangumiPlugin.__new__(BangumiPlugin)
+    plugin.scheduler = MagicMock()
+    plugin.session = MagicMock(closed=False)
+    plugin.session.close = AsyncMock()
+    plugin.repository = MagicMock()
+    plugin.api = MagicMock()
+    plugin.cards = MagicMock()
+    plugin.tracking = MagicMock()
+
+    await plugin.terminate()
+
+    plugin.scheduler.shutdown.assert_called_once_with(wait=False)
+    plugin.session.close.assert_awaited_once()
+    plugin.repository.close.assert_called_once()
+    assert not plugin._ready()

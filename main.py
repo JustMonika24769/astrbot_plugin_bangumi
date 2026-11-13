@@ -7,6 +7,7 @@ from collections.abc import AsyncGenerator, Awaitable, Callable
 from contextlib import suppress
 from dataclasses import replace
 from datetime import date, datetime, timedelta
+from pathlib import Path
 from typing import Any
 
 import aiohttp
@@ -34,6 +35,7 @@ from .src.entities import CalendarDay, Subject, SubscriptionView
 from .src.plugin_config import PluginConfig
 from .src.tracking import SubscriptionManager
 from .src.utils.scheduler import SchedulerManager
+from .src.webui import BangumiWebUI
 
 HELP_COMMANDS = [
     {
@@ -66,7 +68,7 @@ HELP_COMMANDS = [
 ]
 
 
-class _NumericSelectionFilter(SessionFilter):
+class _NumericSelectionFilter(SessionFilter):  # type: ignore[misc]
     """Match numeric replies from the user who started a selection."""
 
     def __init__(self, origin_event: AstrMessageEvent) -> None:
@@ -82,7 +84,10 @@ class _NumericSelectionFilter(SessionFilter):
 
     def filter(self, event: AstrMessageEvent) -> str:
         message = event.get_message_str().strip()
-        if event is self.origin_event or re.fullmatch(r"\d+", message):
+        if event is self.origin_event or (
+            self._event_key(event) == self.session_id
+            and re.fullmatch(r"[0-9]+", message)
+        ):
             return self.session_id
         return f"{self._event_key(event)}:non-selection"
 
@@ -100,8 +105,16 @@ class BangumiPlugin(Star):  # type: ignore[misc]
         self.cards: T2ICardRenderer | None = None
         self.tracking: SubscriptionManager | None = None
         self.scheduler: SchedulerManager | None = None
+        self.webui: BangumiWebUI | None = None
 
     async def initialize(self) -> None:
+        try:
+            await self._initialize()
+        except BaseException:
+            await self.terminate()
+            raise
+
+    async def _initialize(self) -> None:
         data_dir = StarTools.get_data_dir()
         self.session = aiohttp.ClientSession(trust_env=True)
         self.repository = BangumiRepository(os.path.join(data_dir, "data.db"))
@@ -112,6 +125,7 @@ class BangumiPlugin(Star):  # type: ignore[misc]
             proxy_url=self.config.proxy_url,
             timeout_seconds=self.config.request_timeout_seconds,
             max_retries=self.config.max_retries,
+            cover_cache_dir=Path(data_dir) / "covers",
         )
         self.cards = T2ICardRenderer(
             self.html_render,
@@ -124,6 +138,10 @@ class BangumiPlugin(Star):  # type: ignore[misc]
             context=self.context,
             config=self.config,
         )
+        self.webui = BangumiWebUI(
+            self.context, self.api, self.repository, self.tracking
+        )
+        self.webui.register()
 
         self.scheduler = SchedulerManager()
         timezone = pytz.timezone("Asia/Shanghai")
@@ -165,8 +183,17 @@ class BangumiPlugin(Star):  # type: ignore[misc]
     async def terminate(self) -> None:
         if self.scheduler is not None:
             self.scheduler.shutdown(wait=False)
+        if getattr(self, "webui", None) is not None:
+            assert self.webui is not None
+            await self.webui.close()
+            self.webui = None
         if self.session is not None and not self.session.closed:
             await self.session.close()
+        if self.repository is not None:
+            self.repository.close()
+        self.api = None
+        self.tracking = None
+        self.cards = None
         await super().terminate()
 
     def _session_id(self, event: AstrMessageEvent) -> str | None:
@@ -252,11 +279,18 @@ class BangumiPlugin(Star):  # type: ignore[misc]
         self, subscriptions: list[SubscriptionView]
     ) -> list[SubscriptionView]:
         assert self.api is not None
+        api = self.api
 
         async def enrich(item: SubscriptionView) -> SubscriptionView:
             try:
-                subject = await self.api.get_subject(int(item.subject_id))
-                subject = await self.api.with_embedded_cover(subject)
+                subject = await api.with_embedded_cover(
+                    Subject(
+                        id=int(item.subject_id),
+                        type=2,
+                        name=item.title,
+                        cover_url=item.cover_url,
+                    )
+                )
                 return replace(item, cover_url=subject.cover_url)
             except Exception as exc:
                 logger.warning(f"订阅 {item.subject_id} 封面预取失败: {exc}")
@@ -377,7 +411,7 @@ class BangumiPlugin(Star):  # type: ignore[misc]
             previous.session_controller.stop()
             await asyncio.sleep(0)
 
-        @session_waiter(60)
+        @session_waiter(60)  # type: ignore
         async def selection_waiter(
             controller: SessionController,
             reply_event: AstrMessageEvent,
@@ -465,7 +499,7 @@ class BangumiPlugin(Star):  # type: ignore[misc]
         except BangumiClientError as exc:
             yield event.plain_result(f"Bangumi 查询失败: {exc}")
 
-    @filter.command("bgm")  # type: ignore[untyped-decorator]
+    @filter.command("bgm")  # type: ignore
     async def search(
         self, event: AstrMessageEvent, query: str = ""
     ) -> AsyncGenerator[object, None]:
@@ -473,11 +507,11 @@ class BangumiPlugin(Star):  # type: ignore[misc]
             yield event.plain_result("Bangumi 服务尚未初始化")
             return
         raw_query = self._command_argument_text(event, ("bgm",), query)
-        normalized, top_k = self._search_request(raw_query)
+        normalized, top_k = self._search_request(raw_query, self.config.search_limit)
         async for result in self._search(event, normalized, top_k):
             yield result
 
-    @filter.command(  # type: ignore[untyped-decorator]
+    @filter.command(  # type: ignore
         "bgm番剧", alias={"bgm动漫", "bgm动画", "bgm番", "bgm动画片"}
     )
     async def search_anime(
@@ -491,7 +525,7 @@ class BangumiPlugin(Star):  # type: ignore[misc]
             ("bgm番剧", "bgm动漫", "bgm动画", "bgm番", "bgm动画片"),
             query,
         )
-        normalized, top_k = self._search_request(raw_query)
+        normalized, top_k = self._search_request(raw_query, self.config.search_limit)
         async for result in self._search(
             event,
             normalized,
@@ -502,7 +536,7 @@ class BangumiPlugin(Star):  # type: ignore[misc]
         ):
             yield result
 
-    @filter.command("bgm剧场版", alias={"bgm电影"})  # type: ignore[untyped-decorator]
+    @filter.command("bgm剧场版", alias={"bgm电影"})  # type: ignore
     async def search_movie(
         self, event: AstrMessageEvent, query: str = ""
     ) -> AsyncGenerator[object, None]:
@@ -510,7 +544,7 @@ class BangumiPlugin(Star):  # type: ignore[misc]
             yield event.plain_result("Bangumi 服务尚未初始化")
             return
         raw_query = self._command_argument_text(event, ("bgm剧场版", "bgm电影"), query)
-        normalized, top_k = self._search_request(raw_query)
+        normalized, top_k = self._search_request(raw_query, self.config.search_limit)
         async for result in self._search(
             event,
             normalized,
@@ -521,7 +555,7 @@ class BangumiPlugin(Star):  # type: ignore[misc]
         ):
             yield result
 
-    @filter.command("bgm漫画")  # type: ignore[untyped-decorator]
+    @filter.command("bgm漫画")  # type: ignore
     async def search_manga(
         self, event: AstrMessageEvent, query: str = ""
     ) -> AsyncGenerator[object, None]:
@@ -529,7 +563,7 @@ class BangumiPlugin(Star):  # type: ignore[misc]
             yield event.plain_result("Bangumi 服务尚未初始化")
             return
         raw_query = self._command_argument_text(event, ("bgm漫画",), query)
-        normalized, top_k = self._search_request(raw_query)
+        normalized, top_k = self._search_request(raw_query, self.config.search_limit)
         async for result in self._search(
             event,
             normalized,
@@ -540,7 +574,7 @@ class BangumiPlugin(Star):  # type: ignore[misc]
         ):
             yield result
 
-    @filter.command("calendar", alias={"放送表"})  # type: ignore[untyped-decorator]
+    @filter.command("calendar", alias={"放送表"})  # type: ignore
     async def calendar(self, event: AstrMessageEvent) -> AsyncGenerator[object, None]:
         if not self._ready():
             yield event.plain_result("Bangumi 服务尚未初始化")
@@ -560,7 +594,7 @@ class BangumiPlugin(Star):  # type: ignore[misc]
         except BangumiClientError as exc:
             yield event.plain_result(f"读取放送表失败: {exc}")
 
-    @filter.command("today", alias={"今日番剧"})  # type: ignore[untyped-decorator]
+    @filter.command("today", alias={"今日番剧"})  # type: ignore
     async def today(self, event: AstrMessageEvent) -> AsyncGenerator[object, None]:
         if not self._ready():
             yield event.plain_result("Bangumi 服务尚未初始化")
@@ -574,14 +608,16 @@ class BangumiPlugin(Star):  # type: ignore[misc]
                 self.cards.calendar_card(
                     today_days,
                     heading="今日放送",
-                    subheading=datetime.now().strftime("%Y-%m-%d"),
+                    subheading=datetime.now(pytz.timezone("Asia/Shanghai")).strftime(
+                        "%Y-%m-%d"
+                    ),
                 ),
                 self._calendar_text(today_days),
             )
         except BangumiClientError as exc:
             yield event.plain_result(f"读取今日放送失败: {exc}")
 
-    @filter.command("追番")  # type: ignore[untyped-decorator]
+    @filter.command("追番")  # type: ignore
     async def subscribe(
         self, event: AstrMessageEvent, query: str = ""
     ) -> AsyncGenerator[object, None]:
@@ -634,7 +670,7 @@ class BangumiPlugin(Star):  # type: ignore[misc]
         except (BangumiClientError, RepositoryError) as exc:
             yield event.plain_result(f"追番失败: {exc}")
 
-    @filter.command("弃坑")  # type: ignore[untyped-decorator]
+    @filter.command("弃坑")  # type: ignore
     async def unsubscribe(
         self, event: AstrMessageEvent, query: str = ""
     ) -> AsyncGenerator[object, None]:
@@ -665,7 +701,7 @@ class BangumiPlugin(Star):  # type: ignore[misc]
         else:
             yield event.plain_result("取消订阅失败，订阅关系可能已不存在")
 
-    @filter.command("追番列表", alias={"追番状态"})  # type: ignore[untyped-decorator]
+    @filter.command("追番列表", alias={"追番状态"})  # type: ignore
     async def subscription_list(
         self, event: AstrMessageEvent
     ) -> AsyncGenerator[object, None]:
@@ -685,7 +721,7 @@ class BangumiPlugin(Star):  # type: ignore[misc]
             self._subscriptions_text(subscriptions),
         )
 
-    @filter.command("追番检查")  # type: ignore[untyped-decorator]
+    @filter.command("追番检查")  # type: ignore
     async def check_subscriptions(
         self, event: AstrMessageEvent
     ) -> AsyncGenerator[object, None]:
@@ -702,7 +738,7 @@ class BangumiPlugin(Star):  # type: ignore[misc]
             + ("\n" + "\n".join(report.details) if report.details else ""),
         )
 
-    @filter.command("追番测试")  # type: ignore[untyped-decorator]
+    @filter.command("追番测试")  # type: ignore
     async def test_subscription_card(
         self, event: AstrMessageEvent, query: str = ""
     ) -> AsyncGenerator[object, None]:
@@ -721,7 +757,7 @@ class BangumiPlugin(Star):  # type: ignore[misc]
         except Exception as exc:
             yield event.plain_result(f"测试卡片生成失败: {exc}")
 
-    @filter.command("放送时间")  # type: ignore[untyped-decorator]
+    @filter.command("放送时间")  # type: ignore
     async def broadcast_time(
         self,
         event: AstrMessageEvent,
@@ -806,7 +842,7 @@ class BangumiPlugin(Star):  # type: ignore[misc]
             f"已将《{item.title}》放送安排设置为：{updated.broadcast_schedule}（CST）"
         )
 
-    @filter.command("bgm模板")  # type: ignore[untyped-decorator]
+    @filter.command("bgm模板")  # type: ignore
     async def legacy_template_command(
         self, event: AstrMessageEvent, _value: str = ""
     ) -> AsyncGenerator[object, None]:

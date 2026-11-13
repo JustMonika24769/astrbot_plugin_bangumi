@@ -32,6 +32,7 @@ async def test_subscribe_uses_latest_episode_as_baseline(
     api = MagicMock(session=MagicMock())
     api.get_latest_aired_episode = AsyncMock(return_value=episode)
     repository = MagicMock()
+    repository.broadcast_schedule.return_value = None
     repository.subscribe.return_value = True
     manager = build_manager(api, repository, MagicMock(), context)
     manager._broadcast_schedules[str(subject.id)] = BroadcastSchedule(
@@ -93,8 +94,7 @@ async def test_check_updates_marks_only_successful_delivery(
     assert report.failed == 1
     assert renderer.update_card.await_count == 2
     baselines = {
-        call.kwargs["previous_episode"]
-        for call in renderer.update_card.await_args_list
+        call.kwargs["previous_episode"] for call in renderer.update_card.await_args_list
     }
     assert baselines == {2, 3}
     repository.mark_notified.assert_called_once_with("good", str(subject.id), 4)
@@ -141,12 +141,8 @@ async def test_check_updates_merges_aliases_before_sending(
     assert report.pending_deliveries == 1
     assert report.delivered == 1
     assert context.send_message.await_count == 1
-    repository.migrate_session_aliases.assert_called_once_with(
-        canonical, {"818800431"}
-    )
-    repository.mark_notified.assert_called_once_with(
-        canonical, str(subject.id), 4
-    )
+    repository.migrate_session_aliases.assert_called_once_with(canonical, {"818800431"})
+    repository.mark_notified.assert_called_once_with(canonical, str(subject.id), 4)
 
 
 @pytest.mark.asyncio
@@ -243,25 +239,23 @@ async def test_render_test_card_does_not_advance_progress(
 def test_notification_session_uses_astrbot_message_type_values() -> None:
     context = MagicMock()
     onebot = MagicMock()
-    onebot.meta.return_value = SimpleNamespace(
-        id="onebot-main", name="aiocqhttp"
-    )
+    onebot.meta.return_value = SimpleNamespace(id="onebot-main", name="aiocqhttp")
     telegram = MagicMock()
-    telegram.meta.return_value = SimpleNamespace(
-        id="telegram-main", name="telegram"
-    )
+    telegram.meta.return_value = SimpleNamespace(id="telegram-main", name="telegram")
     context.platform_manager.platform_insts = [onebot, telegram]
     manager = build_manager(MagicMock(), MagicMock(), MagicMock(), context)
 
     assert manager._notification_session("818800431") == (
         "onebot-main:GroupMessage:818800431"
     )
-    assert manager._notification_session(
-        "aiocqhttp:group:123"
-    ) == "onebot-main:GroupMessage:123"
-    assert manager._notification_session(
-        "telegram-main:FriendMessage:456"
-    ) == "telegram-main:FriendMessage:456"
+    assert (
+        manager._notification_session("aiocqhttp:group:123")
+        == "onebot-main:GroupMessage:123"
+    )
+    assert (
+        manager._notification_session("telegram-main:FriendMessage:456")
+        == "telegram-main:FriendMessage:456"
+    )
 
 
 def test_notification_session_rejects_ambiguous_legacy_platform() -> None:
@@ -269,12 +263,37 @@ def test_notification_session_rejects_ambiguous_legacy_platform() -> None:
     platforms = []
     for platform_id in ("onebot-a", "onebot-b"):
         platform = MagicMock()
-        platform.meta.return_value = SimpleNamespace(
-            id=platform_id, name="aiocqhttp"
-        )
+        platform.meta.return_value = SimpleNamespace(id=platform_id, name="aiocqhttp")
         platforms.append(platform)
     context.platform_manager.platform_insts = platforms
     manager = build_manager(MagicMock(), MagicMock(), MagicMock(), context)
 
     with pytest.raises(RuntimeError, match="多个 aiocqhttp"):
         manager._notification_session("818800431")
+
+
+@pytest.mark.asyncio
+async def test_subscribe_uses_persisted_manual_schedule(
+    tmp_path, subject, episode, context
+) -> None:
+    from astrbot_plugin_bangumi.src.db import BangumiRepository
+
+    repository = BangumiRepository(str(tmp_path / "data.db"))
+    repository.subscribe("old", subject, baseline_episode=3)
+    repository.set_broadcast_schedule(
+        str(subject.id), broadcast_date="2026-07-15", broadcast_time="23:30"
+    )
+    api = MagicMock()
+    api.get_latest_aired_episode = AsyncMock(return_value=episode)
+    manager = build_manager(api, repository, MagicMock(), context)
+    manager._broadcast_schedules[str(subject.id)] = BroadcastSchedule(
+        "2026-07-01", "20:00"
+    )
+
+    await manager.subscribe("new", subject)
+
+    api.get_latest_aired_episode.assert_awaited_once_with(
+        subject.id, broadcast_time="23:30", refresh=True
+    )
+    assert repository.list_subscriptions("new")[0].broadcast_time == "23:30"
+    repository.close()

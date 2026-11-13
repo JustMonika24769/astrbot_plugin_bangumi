@@ -98,3 +98,26 @@ async def test_subscription_card_contains_date_weekday_and_time(
 
     data = html_render.await_args.args[1]["subscriptions"][0]
     assert data["broadcast_schedule"] == "首播 2026-07-15 · 每周三 23:30"
+
+
+@pytest.mark.asyncio
+async def test_renderer_rejects_missing_file(html_render, subject, tmp_path) -> None:
+    html_render.return_value = str(tmp_path / "missing.jpg")
+    renderer = T2ICardRenderer(html_render)
+    with pytest.raises(CardRenderError, match="不存在"):
+        await renderer.subject_card(subject)
+
+
+@pytest.mark.asyncio
+async def test_external_metadata_is_escaped_without_service_autoescape(
+    html_render, subject
+) -> None:
+    from dataclasses import replace
+
+    renderer = T2ICardRenderer(html_render)
+    hostile = "<script>alert(1)</script>"
+    await renderer.subject_card(replace(subject, platform=hostile, air_date=hostile))
+    template, data = html_render.await_args.args
+    output = Environment(autoescape=False).from_string(template).render(**data)
+    assert hostile not in output
+    assert "&lt;script&gt;" in output

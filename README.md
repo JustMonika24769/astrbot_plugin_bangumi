@@ -1,6 +1,6 @@
 # AstrBot Bangumi 追番助手
 
-[![version](https://img.shields.io/badge/version-v2.1.0-blue.svg)](https://github.com/united-pooh/astrbot_plugin_bangumi)
+[![version](https://img.shields.io/badge/version-v2.3.3-blue.svg)](https://github.com/JustMonika24769/astrbot_plugin_bangumi)
 [![license](https://img.shields.io/badge/license-Apache--2.0-green.svg)](LICENSE-2.0)
 
 面向群聊和多平台会话的 Bangumi 条目查询、放送日历与更新通知插件。2.0 版本重写了 API、数据库、调度、订阅和卡片层，所有卡片统一使用 AstrBot 的 `html_render` 接口调用 [astrbot-t2i-service](https://github.com/AstrBotDevs/astrbot-t2i-service) 渲染。
@@ -21,6 +21,31 @@
 以下总览由 `scripts/preview_t2i_cards.py` 通过 AstrBot 官方 T2I 服务实际生成，包含条目详情、搜索、日历、追番状态、更新通知和检查报告。
 
 ![Bangumi 2.0 卡片总览](docs/card-preview-v2.jpg)
+
+## 追番手帐 WebUI
+
+重载插件后，在 **AstrBot 后台 → 插件 → Bangumi 增强版 → 追番手帐** 打开页面。页面使用 AstrBot 的插件可视化视图和后台登录，不需要配置额外端口或密码。若看不到入口，请更新 AstrBot 到提供插件视图功能的版本并刷新插件详情。
+
+- 按会话、动画名称/ID、等待通知或异常状态筛选订阅。
+- 搜索动画并添加到现有会话，或选择在线平台、群聊/私聊和目标 ID 新建订阅。
+- 查看已播/已通知进度及投递错误，取消指定会话的订阅。
+- 浏览每周放送，直接选择条目加入追番。
+- 点击「条目详情」在页面内查看简介、评分、常规放送星期/北京时间和单集具体日期；Bangumi 地址可复制到浏览器打开。
+- 常规放送安排与单集排期分开展示。本周无已收录日期时提示可能停更、延期或资料未补全，不自动断言停更，也不按每周规则虚构下一集日期。单集资料按需加载并复用 API 缓存，临时调整仍以官方公告为准。
+- 发起全部或指定会话的后台更新检查，自动刷新结果；检查可能实际发送更新通知，执行前会确认。
+- 导出全部订阅及当前状态的 JSON 清单；导出文件可包含群号和用户 ID，请妥善保存。当前不提供导入。
+
+封面由插件使用 Bangumi 图片 API 下载，通过 AstrBot bridge 传入页面，复用插件的代理设置和缓存；浏览器无需直连图片站。图片按可见区域加载，下载失败时保留占位，点击页面右上角刷新可重试。
+
+封面首次下载后持久保存在 AstrBot 的 `data/plugin_data/astrbot_plugin_bangumi_enhance/covers/`，以条目 ID 命名（如 `454083.cover`）。WebUI 与消息卡片共用缓存，插件重载和 AstrBot 重启后继续复用；缓存不自动过期，不定期回源。同一条目的并发下载会合并，文件损坏时自动重新下载，磁盘不可写时回退到内存缓存。若需手动更新封面，删除对应 `.cover` 文件后重载插件并刷新页面；页面刷新本身不会清理磁盘缓存。
+
+检查记录仅包含本次插件运行期间从 WebUI 发起的最近 20 次检查；自动检查及聊天命令检查仍通过原有日志查看。此页面为 Dashboard 管理员提供全局订阅管理，不改变现有聊天指令的权限与放送判定策略。
+
+界面采用薄荷绿、奶油白与樱花粉的二次元手帐风格，支持移动端、深色主题、空列表、断线重试和减少动画偏好。预览使用隔离的示例数据，实际页面读取真实订阅：
+
+![追番手帐桌面预览](docs/webui-desktop.png)
+
+[手机预览](docs/webui-mobile.png) · [深色预览](docs/webui-dark.png)
 
 ## 命令
 
@@ -87,7 +112,7 @@ POST {规范化后以 /text2img 结尾的 endpoint}/generate
 
 如果 T2I 服务不可用：
 
-- 主动更新通知会自动发送纯文字，不会推进失败的通知状态。
+- 主动更新通知会自动发送纯文字；文字发送成功后推进通知进度，发送失败则保留状态等待重试。
 - 查询命令会回退为结构化纯文字结果。
 - `/追番测试 <ID>` 可独立验证卡片渲染链路。
 
@@ -96,7 +121,7 @@ POST {规范化后以 /text2img 结尾的 endpoint}/generate
 | 配置项 | 默认值 | 说明 |
 | --- | --- | --- |
 | `access_token` | 空 | 可选 Bangumi Bearer Token |
-| `user_agent` | `AstrBot-Bangumi-Plugin/v2.1.0 ...` | Bangumi API User-Agent；空值自动回退默认值 |
+| `user_agent` | `AstrBot-Bangumi-Plugin/v2.3.3 ...` | Bangumi API User-Agent；空值自动回退默认值 |
 | `proxy_url` | 空 | 完整代理 URL |
 | `search_limit` | `5` | 名称搜索和追番候选上限，范围 1–10 |
 | `check_interval_minutes` | `15` | 自动检查间隔，范围 5–180 分钟 |
@@ -149,8 +174,11 @@ POST {规范化后以 /text2img 结尾的 endpoint}/generate
 
 ```powershell
 python -m pip install -r requirements.txt
+python -m pip install "astrbot>=4.26.2,<5" ruff mypy pytest pytest-asyncio types-PyYAML
 python -m pytest
-python -m ruff check main.py src tests
+python -m ruff check .
+python -m ruff format --check .
+python -m mypy src main.py
 ```
 
 使用 AstrBot 当前配置的 T2I 服务生成全部卡片预览：
@@ -176,9 +204,18 @@ Windows 下使用本机 7-Zip，并由 Git 按 `.gitignore` 生成文件列表�
 默认输出：
 
 ```text
-dist/astrbot_plugin_bangumi_enhance-v2.1.0.zip
+dist/astrbot_plugin_bangumi_enhance-v2.3.3.zip
 ```
 
 ## 许可
 
 Apache License 2.0，详见 [LICENSE-2.0](LICENSE-2.0)。
+
+
+浏览器回归测试可选安装 `playwright` 并准备 Chromium，再运行：
+
+```bash
+python -m pytest -q tests/test_webui.py tests/test_webui_browser.py
+```
+
+浏览器测试使用本地请求拦截和模拟 bridge，不连接真实平台或发送消息；未安装 Playwright/Chromium 时跳过浏览器用例。

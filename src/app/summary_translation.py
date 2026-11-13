@@ -53,7 +53,8 @@ async def translate_text_to_chinese(
         logger.error(f"{feature_name}失败,保留原文: {e}")
         return text
 
-    translated_text = getattr(response, "completion_text", "").strip()
+    completion = getattr(response, "completion_text", "")
+    translated_text = completion.strip() if isinstance(completion, str) else ""
     if not translated_text:
         logger.warning(f"{feature_name}返回空文本,保留原文")
         return text

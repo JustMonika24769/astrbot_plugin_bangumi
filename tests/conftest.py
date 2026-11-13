@@ -46,8 +46,10 @@ def episode() -> Episode:
 
 
 @pytest.fixture
-def html_render() -> AsyncMock:
-    return AsyncMock(return_value=str(Path("rendered.jpg").resolve()))
+def html_render(tmp_path: Path) -> AsyncMock:
+    image = tmp_path / "rendered.jpg"
+    image.write_bytes(b"\xff\xd8\xff\xe0")
+    return AsyncMock(return_value=str(image))
 
 
 @pytest.fixture

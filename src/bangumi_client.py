@@ -3,13 +3,17 @@ from __future__ import annotations
 import asyncio
 import base64
 import time
+from collections import OrderedDict
 from dataclasses import replace
 from datetime import datetime, timedelta, timezone
-from typing import Any
+from pathlib import Path
+from typing import Any, TypeVar, cast
+from weakref import WeakValueDictionary
 
 import aiohttp
 from astrbot.api import logger
 
+from .cover_cache import CoverDiskCache, image_mime
 from .entities import (
     CalendarDay,
     Episode,
@@ -19,6 +23,8 @@ from .entities import (
     safe_int,
 )
 from .plugin_config import DEFAULT_USER_AGENT
+
+CacheValue = TypeVar("CacheValue")
 
 
 class BangumiClientError(RuntimeError):
@@ -31,6 +37,7 @@ class BangumiNotFound(BangumiClientError):
 
 class BangumiClient:
     BASE_URL = "https://api.bgm.tv"
+    MAX_CACHE_ENTRIES = 256
 
     def __init__(
         self,
@@ -41,6 +48,7 @@ class BangumiClient:
         proxy_url: str | None,
         timeout_seconds: int,
         max_retries: int,
+        cover_cache_dir: Path | None = None,
     ) -> None:
         self.session = session
         self.proxy_url = proxy_url
@@ -57,7 +65,13 @@ class BangumiClient:
             self.headers["Authorization"] = f"Bearer {access_token.strip()}"
         self._rate_lock = asyncio.Lock()
         self._last_request_at = 0.0
-        self._cache: dict[str, tuple[float, Any]] = {}
+        self._cache: OrderedDict[str, tuple[float, Any]] = OrderedDict()
+        self._cover_disk_cache = (
+            CoverDiskCache(cover_cache_dir) if cover_cache_dir else None
+        )
+        self._cover_locks: WeakValueDictionary[int, asyncio.Lock] = (
+            WeakValueDictionary()
+        )
 
     async def _rate_limit(self) -> None:
         async with self._rate_lock:
@@ -74,10 +88,18 @@ class BangumiClient:
         if time.monotonic() >= expires_at:
             self._cache.pop(key, None)
             return None
+        self._cache.move_to_end(key)
         return value
 
-    def _remember(self, key: str, value: Any, ttl_seconds: int) -> Any:
-        self._cache[key] = (time.monotonic() + ttl_seconds, value)
+    def _remember(self, key: str, value: CacheValue, ttl_seconds: int) -> CacheValue:
+        now = time.monotonic()
+        for expired_key, (expires_at, _) in list(self._cache.items()):
+            if expires_at <= now:
+                del self._cache[expired_key]
+        self._cache[key] = (now + ttl_seconds, value)
+        self._cache.move_to_end(key)
+        while len(self._cache) > self.MAX_CACHE_ENTRIES:
+            self._cache.popitem(last=False)
         return value
 
     async def _request(
@@ -134,7 +156,7 @@ class BangumiClient:
     async def get_subject(self, subject_id: int, *, refresh: bool = False) -> Subject:
         cache_key = f"subject:{subject_id}"
         if not refresh and (cached := self._cached(cache_key)) is not None:
-            return cached
+            return cast(Subject, cached)
         payload = await self._request("GET", f"/v0/subjects/{subject_id}")
         if not isinstance(payload, dict):
             raise BangumiClientError("Bangumi 条目详情格式异常")
@@ -144,22 +166,37 @@ class BangumiClient:
     async def with_embedded_cover(self, subject: Subject) -> Subject:
         if subject.id <= 0:
             return subject
+        lock = self._cover_locks.setdefault(subject.id, asyncio.Lock())
+        async with lock:
+            return await self._embedded_cover(subject)
+
+    async def _embedded_cover(self, subject: Subject) -> Subject:
         cache_key = f"cover:{subject.id}"
         if (cached := self._cached(cache_key)) is not None:
             return replace(subject, cover_url=cached)
-        try:
-            image, content_type = await self._request_bytes(
-                f"/v0/subjects/{subject.id}/image",
-                params={"type": "large"},
-            )
-        except BangumiClientError as exc:
-            logger.warning(f"获取条目 {subject.id} 封面失败: {exc}")
-            return subject
-        if not image:
-            return subject
-        mime = content_type.split(";", maxsplit=1)[0].strip()
-        if not mime.startswith("image/"):
-            mime = "image/jpeg"
+        cached_image = (
+            await self._cover_disk_cache.read(subject.id)
+            if self._cover_disk_cache
+            else None
+        )
+        if cached_image is not None:
+            image, mime = cached_image
+        else:
+            try:
+                image, _ = await self._request_bytes(
+                    f"/v0/subjects/{subject.id}/image",
+                    params={"type": "large"},
+                )
+            except BangumiClientError as exc:
+                logger.warning(f"获取条目 {subject.id} 封面失败: {exc}")
+                return subject
+            detected_mime = image_mime(image)
+            if detected_mime is None:
+                logger.warning(f"Bangumi cover {subject.id} is not a supported image")
+                return subject
+            mime = detected_mime
+            if self._cover_disk_cache is not None:
+                await self._cover_disk_cache.write(subject.id, image)
         data_uri = f"data:{mime};base64,{base64.b64encode(image).decode('ascii')}"
         self._remember(cache_key, data_uri, 60 * 60)
         return replace(subject, cover_url=data_uri)
@@ -192,10 +229,9 @@ class BangumiClient:
         payload = await self._request(
             "POST",
             "/v0/search/subjects",
+            params={"limit": max(1, min(10, limit)), "offset": 0},
             json_data={
                 "keyword": normalized,
-                "limit": max(1, min(10, limit)),
-                "offset": 0,
                 "filter": filters,
             },
         )
@@ -255,7 +291,7 @@ class BangumiClient:
     ) -> list[Episode]:
         cache_key = f"episodes:{subject_id}"
         if not refresh and (cached := self._cached(cache_key)) is not None:
-            return cached
+            return cast(list[Episode], cached)
 
         episodes: list[Episode] = []
         offset = 0
@@ -267,10 +303,10 @@ class BangumiClient:
                 params={"subject_id": subject_id, "limit": page_size, "offset": offset},
             )
             if not isinstance(payload, dict):
-                break
+                raise BangumiClientError("Bangumi 剧集列表格式异常")
             raw_items = payload.get("data")
             if not isinstance(raw_items, list):
-                break
+                raise BangumiClientError("Bangumi 剧集列表格式异常")
             episodes.extend(
                 self._parse_episode(item)
                 for item in raw_items
@@ -321,9 +357,10 @@ class BangumiClient:
         return None
 
     async def get_calendar(self, *, refresh: bool = False) -> list[CalendarDay]:
-        cache_key = "calendar"
+        today_id = datetime.now(timezone(timedelta(hours=8))).isoweekday()
+        cache_key = f"calendar:{today_id}"
         if not refresh and (cached := self._cached(cache_key)) is not None:
-            return cached
+            return cast(list[CalendarDay], cached)
         payload = await self._request("GET", "/calendar")
         if not isinstance(payload, list):
             return []
@@ -337,6 +374,8 @@ class BangumiClient:
                 weekday = {}
             weekday_id = safe_int(weekday.get("id"))
             raw_items = raw_day.get("items", [])
+            if not isinstance(raw_items, list):
+                raise BangumiClientError("Bangumi 放送表格式异常")
             items = tuple(
                 self._parse_subject(item)
                 for item in raw_items
@@ -355,9 +394,15 @@ class BangumiClient:
 
     @staticmethod
     def _parse_subject(data: dict[str, Any]) -> Subject:
-        images = data.get("images") if isinstance(data.get("images"), dict) else {}
-        rating = data.get("rating") if isinstance(data.get("rating"), dict) else {}
-        tags = data.get("tags") if isinstance(data.get("tags"), list) else []
+        images = data.get("images")
+        if not isinstance(images, dict):
+            images = {}
+        rating = data.get("rating")
+        if not isinstance(rating, dict):
+            rating = {}
+        tags = data.get("tags")
+        if not isinstance(tags, list):
+            tags = []
         return Subject(
             id=safe_int(data.get("id")),
             type=safe_int(data.get("type")),
@@ -369,7 +414,7 @@ class BangumiClient:
             total_episodes=safe_int(data.get("eps") or data.get("total_episodes")),
             score=safe_float(rating.get("score")),
             score_count=safe_int(rating.get("total")),
-            rank=safe_int(data.get("rank")),
+            rank=safe_int(rating.get("rank") or data.get("rank")),
             cover_url=str(
                 images.get("large")
                 or images.get("common")

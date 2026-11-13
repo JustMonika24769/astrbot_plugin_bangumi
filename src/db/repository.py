@@ -18,15 +18,32 @@ class RepositoryError(RuntimeError):
 
 class BangumiRepository:
     def __init__(self, db_path: str) -> None:
-        os.makedirs(os.path.dirname(db_path), exist_ok=True)
         self.db_path = db_path
         try:
+            os.makedirs(os.path.dirname(os.path.abspath(db_path)), exist_ok=True)
             self.engine = create_engine(f"sqlite:///{db_path}")
             Base.metadata.create_all(self.engine)
             self._migrate(self.engine)
             self.Session = sessionmaker(bind=self.engine, expire_on_commit=False)
         except Exception as exc:
+            if hasattr(self, "engine"):
+                self.engine.dispose()
             raise RepositoryError(f"数据库初始化失败: {exc}") from exc
+
+    def close(self) -> None:
+        self.engine.dispose()
+
+    def broadcast_schedule(self, subject_id: str) -> BroadcastSchedule | None:
+        try:
+            with self.Session() as session:
+                row = session.get(BangumiSubject, subject_id)
+                if row is None:
+                    return None
+                return BroadcastSchedule(
+                    row.broadcast_date or "", row.broadcast_time or ""
+                )
+        except Exception as exc:
+            raise RepositoryError(f"读取放送安排失败: {exc}") from exc
 
     @staticmethod
     def _migrate(engine: Engine) -> None:
@@ -172,9 +189,7 @@ class BangumiRepository:
         except Exception as exc:
             raise RepositoryError(f"取消订阅失败: {exc}") from exc
 
-    def migrate_session_aliases(
-        self, target_session_id: str, aliases: set[str]
-    ) -> int:
+    def migrate_session_aliases(self, target_session_id: str, aliases: set[str]) -> int:
         normalized_aliases = {
             alias.strip()
             for alias in aliases
@@ -242,17 +257,19 @@ class BangumiRepository:
         except Exception as exc:
             raise RepositoryError(f"读取追番条目失败: {exc}") from exc
 
-    def list_subscriptions(self, session_id: str) -> list[SubscriptionView]:
+    def list_subscriptions(
+        self, session_id: str | None = None
+    ) -> list[SubscriptionView]:
         try:
             with self.Session() as session:
+                statement = select(Subscription, BangumiSubject).join(
+                    BangumiSubject,
+                    BangumiSubject.subject_id == Subscription.subject_id,
+                )
+                if session_id is not None:
+                    statement = statement.where(Subscription.group_id == session_id)
                 rows = session.execute(
-                    select(Subscription, BangumiSubject)
-                    .join(
-                        BangumiSubject,
-                        BangumiSubject.subject_id == Subscription.subject_id,
-                    )
-                    .where(Subscription.group_id == session_id)
-                    .order_by(BangumiSubject.name_cn, BangumiSubject.name)
+                    statement.order_by(BangumiSubject.name_cn, BangumiSubject.name)
                 ).all()
                 return [
                     self._subscription(subscription, subject)
@@ -266,6 +283,11 @@ class BangumiRepository:
         if not normalized:
             return []
         rows = self.list_subscriptions(session_id)
+        if normalized.isdecimal():
+            return [item for item in rows if item.subject_id == normalized]
+        exact = [item for item in rows if item.title.strip().lower() == normalized]
+        if exact:
+            return exact
 
         def score(item: SubscriptionView) -> tuple[int, int, float, str]:
             title = item.title.lower()
@@ -403,9 +425,7 @@ class BangumiRepository:
         except Exception as exc:
             raise RepositoryError(f"设置放送时间失败: {exc}") from exc
 
-    def apply_broadcast_schedules(
-        self, mapping: dict[str, BroadcastSchedule]
-    ) -> int:
+    def apply_broadcast_schedules(self, mapping: dict[str, BroadcastSchedule]) -> int:
         if not mapping:
             return 0
         updated = 0
@@ -443,9 +463,7 @@ class BangumiRepository:
             air_date=str(row.air_date or ""),
             total_episodes=int(row.total_episodes or 0),
             current_episode=int(row.current_episode or 0),
-            broadcast_date=(
-                str(row.broadcast_date) if row.broadcast_date else None
-            ),
+            broadcast_date=(str(row.broadcast_date) if row.broadcast_date else None),
             broadcast_time=str(row.broadcast_time) if row.broadcast_time else None,
             last_checked_at=(
                 row.last_checked_at.isoformat(timespec="seconds")

@@ -59,7 +59,15 @@ class SubscriptionManager:
 
     async def subscribe(self, session_id: str, subject: Subject) -> SubscribeResult:
         schedule = self._broadcast_schedules.get(str(subject.id))
-        broadcast_time = schedule.broadcast_time if schedule else None
+        stored_schedule = self.repository.broadcast_schedule(str(subject.id))
+        if stored_schedule is not None:
+            schedule = BroadcastSchedule(
+                stored_schedule.broadcast_date
+                or (schedule.broadcast_date if schedule else ""),
+                stored_schedule.broadcast_time
+                or (schedule.broadcast_time if schedule else ""),
+            )
+        broadcast_time = schedule.broadcast_time or None if schedule else None
         latest = await self.api.get_latest_aired_episode(
             subject.id, broadcast_time=broadcast_time, refresh=True
         )
@@ -146,18 +154,16 @@ class SubscriptionManager:
                     image_paths: dict[int, str | None] = {}
                     for previous_episode in sorted(set(progress.values())):
                         try:
-                            image_paths[previous_episode] = (
-                                await self.renderer.update_card(
-                                    subject_for_card,
-                                    episode,
-                                    previous_episode=previous_episode,
-                                )
+                            image_paths[
+                                previous_episode
+                            ] = await self.renderer.update_card(
+                                subject_for_card,
+                                episode,
+                                previous_episode=previous_episode,
                             )
                         except CardRenderError as exc:
                             image_paths[previous_episode] = None
-                            logger.error(
-                                f"{exc}（通知基线 EP{previous_episode}）"
-                            )
+                            logger.error(f"{exc}（通知基线 EP{previous_episode}）")
 
                     for target_session in pending_sessions:
                         try:
@@ -208,21 +214,15 @@ class SubscriptionManager:
             except RuntimeError:
                 continue
             if target_session != source_session:
-                aliases_by_target.setdefault(target_session, set()).add(
-                    source_session
-                )
+                aliases_by_target.setdefault(target_session, set()).add(source_session)
 
         migrated = 0
         for target_session, aliases in aliases_by_target.items():
-            migrated += self.repository.migrate_session_aliases(
-                target_session, aliases
-            )
+            migrated += self.repository.migrate_session_aliases(target_session, aliases)
         if not migrated:
             return pending_sessions
 
-        normalized = self.repository.pending_sessions(
-            subject_id, episode_number
-        )
+        normalized = self.repository.pending_sessions(subject_id, episode_number)
         logger.info(
             f"会话别名合并: 条目={subject_id}, "
             f"原始待通知={len(pending_sessions)}, "
